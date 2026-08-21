@@ -34,6 +34,7 @@ __all__ = [
     "pep440_compare",
     "maven_compare",
     "go_compare",
+    "windows_compare",
     "generic_compare",
 ]
 
@@ -547,6 +548,43 @@ def go_compare(a: str, b: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Windows (registry DisplayVersion, MSIX package versions)
+# ---------------------------------------------------------------------------
+
+_WINDOWS_RE = re.compile(r"^[vV]?(\d+(?:\.\d+)*)(.*)$")
+
+
+def windows_compare(a: str, b: str) -> int:
+    """Compare two Windows version strings.
+
+    Windows has no version grammar: the value is whatever an installer wrote
+    into the registry. In practice it is dotted-numeric with an optional "V"
+    prefix that vendors apply inconsistently -- a real estate carried both
+    ``V16.0`` and ``2.0.6`` for the same kind of product. Comparing those
+    literally puts every V-prefixed version below every numeric one, because a
+    letter sorts below a digit.
+
+    Segments are compared numerically and the shorter is zero-padded, so
+    ``3.12`` and ``3.12.0.0`` are equal. Anything left over after the numeric
+    run is compared lexically, which is a guess -- but a Windows finding is
+    already capped at low confidence because its identity comes from a
+    generated CPE.
+    """
+    ma = _WINDOWS_RE.match((a or "").strip())
+    mb = _WINDOWS_RE.match((b or "").strip())
+    if not ma or not mb:
+        return generic_compare(a, b)
+    na = [int(x) for x in ma.group(1).split(".") if x.isdigit()]
+    nb = [int(x) for x in mb.group(1).split(".") if x.isdigit()]
+    for i in range(max(len(na), len(nb))):
+        x = na[i] if i < len(na) else 0
+        y = nb[i] if i < len(nb) else 0
+        if x != y:
+            return _cmp(x, y)
+    return _cmp(ma.group(2).strip().lower(), mb.group(2).strip().lower())
+
+
+# ---------------------------------------------------------------------------
 # Generic fallback
 # ---------------------------------------------------------------------------
 
@@ -626,6 +664,10 @@ _COMPARATORS = {
     "pub": semver_compare,
     "conan": semver_compare,
     "swift": semver_compare,
+    # Windows: no formal grammar, so a tolerant dotted-numeric comparison.
+    "windows": windows_compare,
+    "msix": windows_compare,
+    "hotfix": windows_compare,
 }
 
 # Types that have a comparator but whose results should still be treated as
@@ -660,6 +702,7 @@ _PARSE_CHECKS = {
     semver_compare: lambda v: _SEMVER_RE.match((v or "").strip()) is not None,
     pep440_compare: lambda v: _pep440_parse(v) is not None,
     go_compare: lambda v: _SEMVER_RE.match(_go_normalise(v)) is not None,
+    windows_compare: lambda v: _WINDOWS_RE.match((v or "").strip()) is not None,
     maven_compare: _looks_like_a_version,
     generic_compare: lambda v: False,
 }

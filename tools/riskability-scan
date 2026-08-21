@@ -104,6 +104,8 @@ def main() -> int:
         for name in matchlib._candidate_names(comp):
             cand_r.extend(ranges.get((eco, name), ()))
             cand_n.extend(notaffected.get((eco, name), ()))
+        for key in matchlib.cpe_candidate_keys(comp):
+            cand_r.extend(ranges.get(("cpe", key), ()))
         if cand_r:
             covered_by_type[eco] += 1
         for f in matchlib.match_component(comp, cand_r, cand_n):

@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from . import feed as feedlib
 from . import purl as purllib
 from . import scope as scopelib
 from . import vercmp
@@ -197,12 +198,17 @@ def _in_range(ecosystem: str, installed: str, row: dict) -> Optional[bool]:
     introduced = (row.get("introduced") or "").strip()
     fixed = (row.get("fixed") or "").strip()
     last_affected = (row.get("last_affected") or "").strip()
+    # NVD expresses lower bounds both inclusively and exclusively; OSV only
+    # ever does the former, so this is CPE-specific.
+    introduced_excl = (row.get("introduced_excluding") or "").strip()
 
-    if not (introduced or fixed or last_affected):
+    if not (introduced or fixed or last_affected or introduced_excl):
         return None
 
     cmp_fn = lambda a, b: vercmp.compare(ecosystem, a, b)  # noqa: E731
 
+    if introduced_excl and cmp_fn(installed, introduced_excl) <= 0:
+        return False
     if introduced and cmp_fn(installed, introduced) < 0:
         return False
     if fixed:
@@ -213,6 +219,27 @@ def _in_range(ecosystem: str, installed: str, row: dict) -> Optional[bool]:
         return cmp_fn(installed, last_affected) <= 0
     # Only an "introduced" bound: affected from here on.
     return True
+
+
+def cpe_candidate_keys(component: dict) -> List[str]:
+    """The (vendor, product) keys this component might be advised under in NVD.
+
+    swinv generates several candidate CPEs per Windows component, permuting how
+    the vendor string might be normalised ("Igor Pavlov" -> igor, igor_pavlov)
+    and whether the version and architecture are part of the product name. They
+    are guesses, and are treated as such: any finding they produce is capped at
+    low confidence, because the *identity* is inferred even when the version
+    comparison is exact.
+    """
+    cpes = component.get("cpes") or ()
+    if isinstance(cpes, str):
+        cpes = [cpes]
+    keys = []
+    for c in cpes:
+        k = feedlib.cpe_key(c)
+        if k and k not in keys:
+            keys.append(k)
+    return keys
 
 
 def _candidate_names(component: dict) -> List[str]:
@@ -338,6 +365,13 @@ def match_component(
             installed_parses and all(vercmp.parses(ecosystem, b) for b in bounds)
         )
 
+        # Only a row we reached through the CPE pseudo-ecosystem represents an
+        # inferred identity. A deb matched by its real package name against an
+        # NVD range is not that case, even though the range came from NVD --
+        # there the backport caveat below is the accurate and more specific
+        # explanation, so it must be tested first.
+        is_cpe_identity = row.get("ecosystem") == feedlib.CPE_ECOSYSTEM
+
         confidence = "high"
         reason = ""
         if upstream_claim_about_distro_pkg:
@@ -346,6 +380,14 @@ def match_component(
                 "upstream range for a distribution package; the vendor may have "
                 "backported the fix without changing the upstream version"
             )
+        elif is_cpe_identity:
+            # The version comparison may be exact, but the component was tied to
+            # this advisory through a CPE generated from a display name. That
+            # identity is a guess, so the finding is a lead to verify rather
+            # than a fact to report.
+            confidence = "low"
+            reason = ("matched through a generated CPE rather than a package "
+                      "record, so the product identity is inferred")
         elif not have_comparator:
             confidence = "low"
             reason = f"no version comparator for ecosystem {ecosystem!r}"

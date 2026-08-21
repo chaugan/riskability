@@ -39,6 +39,9 @@ RANGES_COLLECTION = "riskability_ranges"
 NOTAFFECTED_COLLECTION = "riskability_notaffected"
 ADVISORIES_COLLECTION = "riskability_advisories"
 
+# Pseudo-ecosystem for CPE-keyed rows; see riskability.feed.CPE_ECOSYSTEM.
+CPE_ECOSYSTEM = "cpe"
+
 # KV Store refuses to return more than this per query (limits.conf
 # [kvstore] max_rows_per_query, default 50000), so paginate rather than
 # silently truncating a package with many advisories.
@@ -155,6 +158,11 @@ class RiskabilityMatchCommand(EventingCommand):
                 continue
             for name in matchlib._candidate_names(r):
                 wanted.setdefault(eco, set()).add(name)
+            # Software no package manager installed -- most of a Windows estate
+            # -- has no PURL, only generated CPEs. Those are looked up under a
+            # pseudo-ecosystem keyed on vendor:product.
+            for key in matchlib.cpe_candidate_keys(r):
+                wanted.setdefault(CPE_ECOSYSTEM, set()).add(key)
 
         try:
             ranges, notaffected = self._candidates(wanted)
@@ -174,6 +182,8 @@ class RiskabilityMatchCommand(EventingCommand):
             for name in matchlib._candidate_names(r):
                 cand_ranges.extend(ranges.get((eco, name), ()))
                 cand_notaffected.extend(notaffected.get((eco, name), ()))
+            for key in matchlib.cpe_candidate_keys(r):
+                cand_ranges.extend(ranges.get((CPE_ECOSYSTEM, key), ()))
             if not cand_ranges:
                 continue
             for finding in matchlib.match_component(r, cand_ranges, cand_notaffected):

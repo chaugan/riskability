@@ -37,6 +37,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import gzip
 import zipfile
 from typing import Dict, Iterable, List, Optional
 
@@ -51,6 +52,16 @@ USER_AGENT = "riskability-feed/0.1 (+https://github.com/chaugan/riskability)"
 OSV_BASE = "https://storage.googleapis.com/osv-vulnerabilities"
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
+
+# NVD is the only source that covers software no package manager installed --
+# most of a Windows estate -- and the only one carrying the CWE classification
+# the MITRE ATT&CK mapping is derived from.
+NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz"
+NVD_FIRST_YEAR = 2002
+
+# MITRE's own catalogues. Small, and each hop is a published mapping.
+CWE_URL = "https://cwe.mitre.org/data/csv/1000.csv.zip"
+CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
 
 # Ecosystems worth offering, with the swinv package types they answer for.
 KNOWN_ECOSYSTEMS = {
@@ -98,6 +109,29 @@ def _human(n: Optional[int]) -> str:
     return f"{n:.1f} GB"
 
 
+def _nvd_years(spec: str) -> list:
+    """Expand an NVD year spec into a concrete list of years."""
+    import datetime
+    this_year = 2026
+    spec = (spec or "").strip().lower()
+    if spec in ("all", "*"):
+        return list(range(NVD_FIRST_YEAR, this_year + 1))
+    years = set()
+    for part in spec.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, _, b = part.partition("-")
+            try:
+                years.update(range(int(a), int(b) + 1))
+            except ValueError:
+                continue
+        elif part.isdigit():
+            years.add(int(part))
+    return sorted(y for y in years if NVD_FIRST_YEAR <= y <= this_year)
+
+
 def osv_url(ecosystem: str) -> str:
     return f"{OSV_BASE}/{urllib.parse.quote(ecosystem)}/all.zip"
 
@@ -133,9 +167,32 @@ def _iter_osv_zip(raw: bytes) -> Iterable[dict]:
                     continue
 
 
+def _read_single_csv_from_zip(raw: bytes) -> str:
+    """Return the one CSV inside a zip. MITRE serves zips named .csv."""
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        for info in z.infolist():
+            if info.filename.lower().endswith(".csv"):
+                with z.open(info) as fh:
+                    return fh.read().decode("utf-8", errors="replace")
+    raise ValueError("no CSV inside the archive")
+
+
+def _fetch_csv(url: str) -> str:
+    """Fetch a CSV that may or may not actually be a zip.
+
+    MITRE serves CAPEC at a .csv URL that is really a zip archive, so sniff the
+    magic bytes rather than trusting the extension.
+    """
+    with _open(url) as r:
+        raw = r.read()
+    if raw[:2] == b"PK":
+        return _read_single_csv_from_zip(raw)
+    return raw.decode("utf-8", errors="replace")
+
+
 def cmd_build(args) -> int:
     ecosystems = args.ecosystem or []
-    if not ecosystems and not (args.kev or args.epss):
+    if not ecosystems and not (args.kev or args.epss or args.nvd or args.mitre):
         print("error: name at least one --ecosystem (see 'riskability-feed sources')",
               file=sys.stderr)
         return 2
@@ -192,6 +249,65 @@ def cmd_build(args) -> int:
             "licence": "per-record; see OSV source attribution",
         })
 
+    # NVD: CPE-keyed ranges for unmanaged software, and CWE for MITRE mapping.
+    cwe_by_cve: Dict[str, List[str]] = {}
+    if args.nvd:
+        years = _nvd_years(args.nvd)
+        print(f"fetching NVD          {len(years)} year file(s): "
+              f"{years[0]}-{years[-1]}", file=sys.stderr)
+        n_cve = n_ranges = 0
+        for year in years:
+            url = NVD_YEAR_URL.format(year=year)
+            try:
+                with _open(url) as r:
+                    raw = r.read()
+                doc = json.loads(gzip.decompress(raw).decode("utf-8"))
+            except Exception as exc:
+                print(f"  ERROR {exc} - skipping {year}", file=sys.stderr)
+                continue
+            for item in doc.get("vulnerabilities") or []:
+                try:
+                    advisory, ranges, _ = feedlib.normalize_nvd(item, feed_source="nvd")
+                except feedlib.FeedError:
+                    continue
+                if advisory.get("cwes"):
+                    cwe_by_cve[advisory["cve_id"]] = advisory["cwes"]
+                # NVD never outranks a distro or ecosystem advisory, so it only
+                # fills in advisories nothing else described.
+                if advisory["advisory_id"] not in seen_advisories:
+                    seen_advisories[advisory["advisory_id"]] = advisory
+                else:
+                    # Keep the CWE list even when another source owns the row.
+                    seen_advisories[advisory["advisory_id"]].setdefault(
+                        "cwes", advisory["cwes"])
+                for row in ranges:
+                    writer.add_range(row)
+                    n_ranges += 1
+                n_cve += 1
+            print(f"  {year}: {n_cve} CVEs, {n_ranges} CPE ranges so far", file=sys.stderr)
+        sources.append({"name": "nvd", "url": NVD_YEAR_URL.format(year="YYYY"),
+                        "fetched_at": int(time.time()), "records": n_cve,
+                        "licence": "NIST/NVD; US Government work. Not endorsed by NVD."})
+
+    # MITRE: the CWE -> CAPEC -> ATT&CK chain, each hop a published mapping.
+    if args.mitre:
+        print(f"fetching MITRE CWE    {CWE_URL}", file=sys.stderr)
+        try:
+            cwe_capec = feedlib.parse_cwe_capec(_fetch_csv(CWE_URL))
+            print(f"  {len(cwe_capec)} CWEs with attack patterns", file=sys.stderr)
+            print(f"fetching MITRE CAPEC  {CAPEC_URL}", file=sys.stderr)
+            capec_attack = feedlib.parse_capec_attack(_fetch_csv(CAPEC_URL))
+            print(f"  {len(capec_attack)} CAPECs mapped to ATT&CK", file=sys.stderr)
+            rows = feedlib.build_attack_rows(cwe_capec, capec_attack)
+            for row in rows:
+                writer.add_attack(row)
+            print(f"  {len(rows)} CWE -> ATT&CK technique mappings", file=sys.stderr)
+            sources.append({"name": "mitre-attack", "url": CAPEC_URL,
+                            "fetched_at": int(time.time()), "records": len(rows),
+                            "licence": "MITRE CWE/CAPEC; see MITRE terms of use"})
+        except Exception as exc:
+            print(f"  ERROR {exc} - continuing without MITRE mapping", file=sys.stderr)
+
     # Overlays enrich advisories that already exist; they never create findings.
     kev: Dict[str, dict] = {}
     if args.kev:
@@ -208,7 +324,11 @@ def cmd_build(args) -> int:
 
     epss: Dict[str, dict] = {}
     if args.epss:
-        import gzip
+        # gzip is imported at module scope. A function-local "import gzip" here
+        # would make the name local to the WHOLE function, so the NVD block
+        # above -- which also decompresses -- would fail with "cannot access
+        # local variable 'gzip'" for every year, and only in builds that also
+        # requested EPSS.
         print(f"fetching EPSS         {EPSS_URL}", file=sys.stderr)
         try:
             with _open(EPSS_URL) as r:
@@ -223,6 +343,9 @@ def cmd_build(args) -> int:
 
     for advisory in seen_advisories.values():
         cve = (advisory.get("cve_id") or "").upper()
+        # A CWE learned from NVD applies to the advisory whichever source owns it.
+        if cve in cwe_by_cve and not advisory.get("cwes"):
+            advisory["cwes"] = cwe_by_cve[cve]
         if cve in kev:
             advisory.update(kev[cve])
         if cve in epss:
@@ -266,6 +389,12 @@ def main(argv=None) -> int:
     b.add_argument("--out", required=True)
     b.add_argument("--ecosystem", action="append",
                    help="OSV ecosystem, repeatable (e.g. --ecosystem Ubuntu)")
+    b.add_argument("--nvd", metavar="YEARS", default="",
+                   help="include NVD CPE ranges and CWE. YEARS is 'all', a year, "
+                        "a range like 2020-2026, or a comma-separated list. "
+                        "Needed for Windows and other unmanaged software.")
+    b.add_argument("--mitre", action="store_true",
+                   help="include the MITRE CWE->CAPEC->ATT&CK mapping")
     b.add_argument("--kev", action="store_true", help="include CISA KEV")
     b.add_argument("--epss", action="store_true", help="include EPSS scores")
     b.add_argument("--version", default="", help="bundle version label")

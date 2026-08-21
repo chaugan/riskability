@@ -40,7 +40,12 @@ ADVISORIES_NAME = "advisories.jsonl"
 RANGES_NAME = "ranges.jsonl"
 NOTAFFECTED_NAME = "notaffected.jsonl"
 
-MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME)
+# attack.jsonl arrived after schema 1.0 and is optional: a bundle built before
+# MITRE mapping existed must still import, so readers treat it as "no mapping"
+# rather than as a malformed bundle.
+ATTACK_MEMBER = "attack.jsonl"
+MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER)
+OPTIONAL_MEMBERS = (ATTACK_MEMBER,)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -372,10 +377,11 @@ class BundleWriter:
         self._dir = os.path.dirname(os.path.abspath(path)) or "."
         os.makedirs(self._dir, exist_ok=True)
         self._files: Dict[str, io.TextIOWrapper] = {}
-        self._counts = {ADVISORIES_NAME: 0, RANGES_NAME: 0, NOTAFFECTED_NAME: 0}
+        self._counts = {ADVISORIES_NAME: 0, RANGES_NAME: 0, NOTAFFECTED_NAME: 0,
+                        ATTACK_MEMBER: 0}
         self._staging = self._tmp + ".d"
         os.makedirs(self._staging, exist_ok=True)
-        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME):
+        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -391,12 +397,15 @@ class BundleWriter:
     def add_notaffected(self, rec: dict) -> None:
         self.write(NOTAFFECTED_NAME, rec)
 
+    def add_attack(self, rec: dict) -> None:
+        self.write(ATTACK_MEMBER, rec)
+
     def close(self, bundle_version: str = "") -> dict:
         for f in self._files.values():
             f.close()
 
         digests = {}
-        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME):
+        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -411,6 +420,7 @@ class BundleWriter:
                 "advisories": self._counts[ADVISORIES_NAME],
                 "ranges": self._counts[RANGES_NAME],
                 "notaffected": self._counts[NOTAFFECTED_NAME],
+                "attack": self._counts[ATTACK_MEMBER],
             },
             "digests": digests,
         }
@@ -492,7 +502,10 @@ def read_manifest(path: str) -> dict:
 
 
 def iter_member(path: str, member_name: str) -> Iterator[dict]:
-    """Stream one JSONL member without materialising it in memory."""
+    """Stream one JSONL member without materialising it in memory.
+
+    Yields nothing for an optional member a older bundle does not carry.
+    """
     with tarfile.open(path, "r:gz") as tar:
         for member in _safe_members(tar):
             if member.name != member_name:
@@ -505,3 +518,248 @@ def iter_member(path: str, member_name: str) -> Iterator[dict]:
                 if line:
                     yield json.loads(line)
             return
+
+
+# ---------------------------------------------------------------------------
+# NVD normalisation (CPE ranges, and the CWE that MITRE mapping depends on)
+# ---------------------------------------------------------------------------
+
+# Feed rows for CPE-matched software use this pseudo-ecosystem, keyed on
+# "vendor:product" so they slot into the same (ecosystem, package) index the
+# PURL-based rows use. Nothing else changes in the matcher's data path.
+CPE_ECOSYSTEM = "cpe"
+
+
+def parse_cpe(cpe: str) -> Dict[str, str]:
+    """Split a CPE 2.3 formatted string into its fields.
+
+    Returns {} for anything that is not a well-formed cpe:2.3 string. Escaped
+    colons (``\\:``) inside a component are respected, because vendor and
+    product names legitimately contain them.
+    """
+    s = (cpe or "").strip()
+    if not s.lower().startswith("cpe:2.3:"):
+        return {}
+    parts, cur, esc = [], [], False
+    for ch in s[len("cpe:2.3:"):]:
+        if esc:
+            cur.append(ch)
+            esc = False
+        elif ch == "\\":
+            cur.append(ch)
+            esc = True
+        elif ch == ":":
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    if len(parts) < 5:
+        return {}
+    names = ["part", "vendor", "product", "version", "update", "edition",
+             "language", "sw_edition", "target_sw", "target_hw", "other"]
+    out = {}
+    for i, name in enumerate(names):
+        out[name] = parts[i] if i < len(parts) else "*"
+    return out
+
+
+def cpe_key(cpe: str) -> str:
+    """The (vendor, product) join key for a CPE, or "" if unusable.
+
+    Version is deliberately excluded: the key selects candidate advisories, and
+    the version comparison happens afterwards against the advisory's range.
+    """
+    p = parse_cpe(cpe)
+    vendor, product = p.get("vendor", ""), p.get("product", "")
+    if not vendor or not product or vendor == "*" or product == "*":
+        return ""
+    return f"{vendor.lower()}:{product.lower()}"
+
+
+def normalize_nvd(record: dict, feed_source: str = "nvd") -> Tuple[dict, List[dict], List[dict]]:
+    """Turn one NVD 2.0 vulnerability record into (advisory, ranges, notaffected).
+
+    NVD earns its place for two things OSV cannot provide: CPE-keyed ranges,
+    which are the only way to assess software that no package manager installed
+    (most of a Windows estate), and the CWE classification that the MITRE
+    ATT&CK mapping is derived from.
+    """
+    cve = record.get("cve") or record
+    cve_id = cve.get("id") or ""
+    if not cve_id:
+        raise FeedError("NVD record has no CVE id")
+
+    title = ""
+    for d in cve.get("descriptions") or []:
+        if d.get("lang") == "en":
+            title = (d.get("value") or "").strip()[:500]
+            break
+
+    severity, score, vector = "", None, ""
+    metrics = cve.get("metrics") or {}
+    for key in ("cvssMetricV31", "cvssMetricV40", "cvssMetricV30", "cvssMetricV2"):
+        entries = metrics.get(key) or []
+        if entries:
+            data = entries[0].get("cvssData") or {}
+            vector = data.get("vectorString") or ""
+            score = data.get("baseScore")
+            severity = (data.get("baseSeverity")
+                        or entries[0].get("baseSeverity") or "").lower()
+            break
+
+    cwes = []
+    for w in cve.get("weaknesses") or []:
+        for d in w.get("description") or []:
+            v = (d.get("value") or "").strip()
+            if v.upper().startswith("CWE-") and v not in cwes:
+                cwes.append(v.upper())
+
+    advisory = {
+        "advisory_id": cve_id,
+        "cve_id": cve_id,
+        "aliases": [],
+        "title": title,
+        "severity": severity,
+        "cvss_score": score,
+        "cvss_vector": vector,
+        "cwes": cwes,
+        "published": cve.get("published") or "",
+        "modified": cve.get("lastModified") or "",
+        "withdrawn": "",
+        "feed_source": feed_source,
+        "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+    }
+
+    ranges: List[dict] = []
+    seen = set()
+    for config in cve.get("configurations") or []:
+        for node in config.get("nodes") or []:
+            for m in node.get("cpeMatch") or []:
+                if not m.get("vulnerable"):
+                    continue
+                criteria = m.get("criteria") or ""
+                key = cpe_key(criteria)
+                if not key:
+                    continue
+                parsed = parse_cpe(criteria)
+                # An exact version in the CPE itself is a single-version range.
+                exact = parsed.get("version", "*")
+                introduced = m.get("versionStartIncluding") or ""
+                fixed = m.get("versionEndExcluding") or ""
+                last = m.get("versionEndIncluding") or ""
+                start_excl = m.get("versionStartExcluding") or ""
+                if not (introduced or fixed or last or start_excl):
+                    if exact in ("*", "-", ""):
+                        # "all versions of this product" carries no bound we can
+                        # compare; recording it would flag every install.
+                        continue
+                    introduced = last = exact
+                dedup = (key, introduced, fixed, last, start_excl)
+                if dedup in seen:
+                    continue
+                seen.add(dedup)
+                ranges.append({
+                    "ecosystem": CPE_ECOSYSTEM,
+                    "package": key,
+                    "package_display": f"{parsed.get('vendor')} {parsed.get('product')}",
+                    "advisory_id": cve_id,
+                    "cve_id": cve_id,
+                    "distro": "",
+                    "distro_release": "",
+                    "distro_variant": "",
+                    "source_package": "",
+                    "introduced": introduced,
+                    "fixed": fixed,
+                    "last_affected": last,
+                    "introduced_excluding": start_excl,
+                    "status": "affected",
+                    "range_type": "CPE",
+                    "target_sw": parsed.get("target_sw", "*"),
+                    "feed_source": feed_source,
+                })
+
+    return advisory, ranges, []
+
+
+# ---------------------------------------------------------------------------
+# MITRE: CWE -> CAPEC -> ATT&CK
+# ---------------------------------------------------------------------------
+
+ATTACK_NAME = "attack.jsonl"
+
+
+def parse_cwe_capec(csv_text: str) -> Dict[str, List[str]]:
+    """CWE id -> CAPEC ids, from MITRE's CWE catalogue CSV.
+
+    The catalogue writes related attack patterns as ``::21::59::``.
+    """
+    import csv as _csv
+    out: Dict[str, List[str]] = {}
+    reader = _csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        cwe = (row.get("CWE-ID") or "").strip()
+        if not cwe:
+            continue
+        raw = row.get("Related Attack Patterns") or ""
+        capecs = [c for c in raw.split("::") if c.strip().isdigit()]
+        if capecs:
+            out[f"CWE-{cwe}"] = capecs
+    return out
+
+
+_ATTACK_ENTRY_RE = re.compile(
+    r"TAXONOMY NAME:ATTACK:ENTRY ID:([^:]+):ENTRY NAME:([^:]*)", re.IGNORECASE)
+
+
+def parse_capec_attack(csv_text: str) -> Dict[str, List[dict]]:
+    """CAPEC id -> ATT&CK techniques, from MITRE's CAPEC catalogue CSV.
+
+    Taxonomy mappings are a flat string listing several taxonomies; only the
+    ATTACK ones are of interest here. Sub-technique ids arrive as ``1574.010``
+    and are normalised to ``T1574.010``.
+    """
+    import csv as _csv
+    out: Dict[str, List[dict]] = {}
+    reader = _csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        # MITRE exports the id column with a leading apostrophe.
+        capec = (row.get("'ID") or row.get("ID") or "").strip().lstrip("'")
+        if not capec:
+            continue
+        techniques = []
+        for tid, tname in _ATTACK_ENTRY_RE.findall(row.get("Taxonomy Mappings") or ""):
+            tid = tid.strip()
+            if not tid:
+                continue
+            technique = tid if tid.upper().startswith("T") else f"T{tid}"
+            techniques.append({"technique": technique, "name": tname.strip()})
+        if techniques:
+            out[capec] = techniques
+    return out
+
+
+def build_attack_rows(cwe_capec: Dict[str, List[str]],
+                      capec_attack: Dict[str, List[dict]]) -> List[dict]:
+    """Flatten CWE -> ATT&CK, keeping the CAPEC that justified each hop.
+
+    Each hop is a published MITRE mapping, but the chain is many-to-many and
+    lossy: a weakness class does not imply an adversary used that technique.
+    The justification is carried through so a finding can show its reasoning
+    rather than asserting an attack path.
+    """
+    rows = []
+    for cwe, capecs in cwe_capec.items():
+        seen = {}
+        for capec in capecs:
+            for t in capec_attack.get(capec, ()):
+                entry = seen.setdefault(t["technique"], {
+                    "cwe": cwe,
+                    "technique": t["technique"],
+                    "technique_name": t["name"],
+                    "via_capec": [],
+                })
+                if capec not in entry["via_capec"]:
+                    entry["via_capec"].append(capec)
+        rows.extend(seen.values())
+    return rows
