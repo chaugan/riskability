@@ -708,8 +708,15 @@ def parse_cwe_capec(csv_text: str) -> Dict[str, List[str]]:
     return out
 
 
+# The entry name runs to the "::" field terminator, NOT to the next colon:
+# MITRE writes names like "Hijack Execution Flow: Services File Permissions
+# Weakness", and stopping at the first colon silently truncates them. Worse,
+# the truncated forms collide, so one technique ends up displayed under several
+# different names -- T1027 appeared as "Hijack Execution Flow" in a dashboard
+# before this was fixed.
 _ATTACK_ENTRY_RE = re.compile(
-    r"TAXONOMY NAME:ATTACK:ENTRY ID:([^:]+):ENTRY NAME:([^:]*)", re.IGNORECASE)
+    r"TAXONOMY NAME:ATTACK:ENTRY ID:([^:]+):ENTRY NAME:(.*?)(?:::|$)",
+    re.IGNORECASE | re.DOTALL)
 
 
 def parse_capec_attack(csv_text: str) -> Dict[str, List[dict]]:

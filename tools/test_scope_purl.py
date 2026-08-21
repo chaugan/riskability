@@ -231,6 +231,40 @@ def main() -> int:
     check("an unrecognised product line is never assumed to apply",
           not match.match_component(esm_2004, [unknown_variant]))
 
+
+    print("MITRE ATT&CK mapping")
+
+    from riskability import feed as feedlib2
+    # MITRE writes technique names containing colons; stopping at the first one
+    # truncates them and makes distinct techniques collide under one label.
+    csv_text = ("'ID,Name,Taxonomy Mappings\n"
+                "1,Test,\"TAXONOMY NAME:ATTACK:ENTRY ID:1574.010:ENTRY NAME:"
+                "Hijack Execution Flow: ServicesFile Permissions Weakness::\"\n")
+    parsed = feedlib2.parse_capec_attack(csv_text)
+    check("an ATT&CK entry name containing a colon is not truncated",
+          parsed.get("1", [{}])[0].get("name")
+          == "Hijack Execution Flow: ServicesFile Permissions Weakness",
+          f"got {parsed}")
+    check("the technique id gains its T prefix",
+          parsed.get("1", [{}])[0].get("technique") == "T1574.010")
+
+    # Several taxonomies share the field; only ATT&CK entries are wanted.
+    multi = ("'ID,Name,Taxonomy Mappings\n"
+             "2,Test,\"TAXONOMY NAME:WASC:ENTRY ID:07:ENTRY NAME:Buffer Overflow::::"
+             "TAXONOMY NAME:ATTACK:ENTRY ID:1027:ENTRY NAME:Obfuscated Files or Information::\"\n")
+    parsed = feedlib2.parse_capec_attack(multi)
+    got = parsed.get("2", [])
+    check("non-ATT&CK taxonomies are ignored",
+          len(got) == 1 and got[0]["technique"] == "T1027"
+          and got[0]["name"] == "Obfuscated Files or Information",
+          f"got {got}")
+
+    # The CWE -> ATT&CK join keeps the CAPEC that justified it.
+    rows = feedlib2.build_attack_rows({"CWE-20": ["2"]}, parsed)
+    check("the justifying CAPEC is carried through",
+          rows and rows[0]["via_capec"] == ["2"] and rows[0]["cwe"] == "CWE-20",
+          f"got {rows}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

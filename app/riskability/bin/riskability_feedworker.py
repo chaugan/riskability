@@ -166,6 +166,13 @@ class FeedWorker(Script):
             return
 
         if not request or request.get("state") != "pending":
+            # Nothing queued: use the tick to finish any cleanup a previous run
+            # was interrupted during. A stale generation is not merely wasted
+            # space -- the advisory enrichment lookup matches on cve_id without
+            # a generation filter, so a leftover row can be returned in place of
+            # the live one.
+            if status.get("state") not in ("importing", "cleaning", "fetching"):
+                self._sweep_stale_generations(kv, ew)
             return
 
         action = request.get("action")
@@ -216,6 +223,24 @@ class FeedWorker(Script):
             ew.log("ERROR", f"riskability: feed operation failed: {exc}")
         finally:
             clear_request(kv)
+
+    def _sweep_stale_generations(self, kv, ew) -> None:
+        live = importer.live_generation(kv)
+        if live <= 0:
+            return
+        removed = []
+        for gen in range(0, live):
+            try:
+                rows = kv[importer.COLLECTIONS["advisories"]].data.query(
+                    query=json.dumps({"gen": gen}), limit=1)
+            except Exception:
+                continue
+            if rows:
+                importer._delete_generation(kv, gen)
+                removed.append(gen)
+        if removed:
+            ew.log("INFO", "riskability: removed stale feed generation(s) "
+                           + ",".join(str(g) for g in removed))
 
     def _staged_path(self, filename: str) -> str:
         name = os.path.basename(filename or "")
