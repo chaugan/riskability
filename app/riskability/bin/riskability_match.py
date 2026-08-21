@@ -1,0 +1,189 @@
+#!/usr/bin/env python
+"""``riskabilitymatch`` - match inventory rows against the imported feed.
+
+Usage in SPL::
+
+    `riskability_latest_inventory`
+    | riskabilitymatch
+    | where confidence="high"
+
+The command deliberately does **not** stream over raw inventory. Splunk cannot
+express dpkg or RPM version ordering in SPL, so the comparison has to happen in
+Python -- but running Python over ten million raw inventory events would be
+hopeless. Instead the caller reduces to latest state first (the
+``riskability_latest_inventory`` macro), and this command batches each chunk
+into a handful of KV Store queries keyed on (ecosystem, package), so the work
+is proportional to distinct packages rather than to hosts times packages.
+
+Configured ``local = true`` in commands.conf: the feed lives in the search
+head's KV Store, and shipping it to indexers would put a large collection into
+the knowledge bundle on every search.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Dict, Iterable, List, Sequence, Tuple
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
+
+from splunklib.searchcommands import Configuration, EventingCommand, Option, dispatch  # noqa: E402
+from splunklib.searchcommands.validators import Boolean  # noqa: E402
+
+from riskability import match as matchlib  # noqa: E402
+
+RANGES_COLLECTION = "riskability_ranges"
+NOTAFFECTED_COLLECTION = "riskability_notaffected"
+ADVISORIES_COLLECTION = "riskability_advisories"
+
+# KV Store refuses to return more than this per query (limits.conf
+# [kvstore] max_rows_per_query, default 50000), so paginate rather than
+# silently truncating a package with many advisories.
+KV_PAGE = 5000
+
+
+@Configuration()
+class RiskabilityMatchCommand(EventingCommand):
+    """Turn inventory rows into vulnerability findings."""
+
+    include_informational = Option(
+        doc="Also emit upstream claims about distro packages that a backport may "
+            "already have fixed. Default false.",
+        require=False, default=False, validate=Boolean(),
+    )
+
+    enrich = Option(
+        doc="Join advisory metadata (severity, CVSS, KEV, EPSS). Default true.",
+        require=False, default=True, validate=Boolean(),
+    )
+
+    def __init__(self):
+        super().__init__()
+        self._advisory_cache: Dict[str, dict] = {}
+
+    # -- KV Store access ---------------------------------------------------
+
+    def _kv(self, collection: str):
+        return self.service.kvstore[collection].data
+
+    def _query_all(self, collection: str, query: dict) -> List[dict]:
+        """Page through a KV Store query so a hot package is never truncated."""
+        out: List[dict] = []
+        skip = 0
+        while True:
+            page = self._kv(collection).query(
+                query=json.dumps(query), limit=KV_PAGE, skip=skip
+            )
+            if not page:
+                break
+            out.extend(page)
+            if len(page) < KV_PAGE:
+                break
+            skip += KV_PAGE
+        return out
+
+    def _candidates(self, wanted: Dict[str, set]) -> Tuple[Dict, Dict]:
+        """Fetch ranges and not-affected rows for the (ecosystem, packages) seen.
+
+        One query per ecosystem with an ``$in`` on the package names, rather
+        than one query per inventory row.
+        """
+        ranges: Dict[Tuple[str, str], List[dict]] = {}
+        notaffected: Dict[Tuple[str, str], List[dict]] = {}
+
+        for ecosystem, packages in wanted.items():
+            if not packages:
+                continue
+            names = sorted(packages)
+            for i in range(0, len(names), 1000):
+                batch = names[i:i + 1000]
+                q = {"ecosystem": ecosystem, "package": {"$in": batch}}
+                for row in self._query_all(RANGES_COLLECTION, q):
+                    ranges.setdefault((ecosystem, row.get("package", "")), []).append(row)
+                for row in self._query_all(NOTAFFECTED_COLLECTION, q):
+                    notaffected.setdefault((ecosystem, row.get("package", "")), []).append(row)
+        return ranges, notaffected
+
+    def _advisories(self, advisory_ids: Sequence[str]) -> Dict[str, dict]:
+        missing = [a for a in set(advisory_ids) if a not in self._advisory_cache]
+        for i in range(0, len(missing), 1000):
+            batch = missing[i:i + 1000]
+            q = {"advisory_id": {"$in": batch}}
+            for row in self._query_all(ADVISORIES_COLLECTION, q):
+                self._advisory_cache[row.get("advisory_id", "")] = row
+        for a in missing:
+            self._advisory_cache.setdefault(a, {})
+        return self._advisory_cache
+
+    # -- main --------------------------------------------------------------
+
+    def transform(self, records):
+        records = list(records)
+        if not records:
+            return
+
+        # Collect the distinct package identities in this chunk. Both the
+        # binary name and any source package are candidates, because distro
+        # advisories are keyed on the source package.
+        wanted: Dict[str, set] = {}
+        for r in records:
+            eco = (r.get("type") or "").strip().lower()
+            if not eco:
+                continue
+            for name in matchlib._candidate_names(r):
+                wanted.setdefault(eco, set()).add(name)
+
+        try:
+            ranges, notaffected = self._candidates(wanted)
+        except Exception as exc:
+            # A KV Store failure must be visible, not an empty result set that
+            # reads as "no vulnerabilities".
+            self.error_exit(exc, f"could not read the vulnerability feed: {exc}")
+            return
+
+        all_findings = []
+        for r in records:
+            eco = (r.get("type") or "").strip().lower()
+            if not eco:
+                continue
+            cand_ranges: List[dict] = []
+            cand_notaffected: List[dict] = []
+            for name in matchlib._candidate_names(r):
+                cand_ranges.extend(ranges.get((eco, name), ()))
+                cand_notaffected.extend(notaffected.get((eco, name), ()))
+            if not cand_ranges:
+                continue
+            for finding in matchlib.match_component(r, cand_ranges, cand_notaffected):
+                if finding["confidence"] == "informational" and not self.include_informational:
+                    continue
+                finding["hostname"] = r.get("hostname", "")
+                finding["os_id"] = r.get("os_id", "")
+                finding["os_version_id"] = r.get("os_version_id", "")
+                finding["purl"] = r.get("purl", "")
+                all_findings.append(finding)
+
+        if self.enrich and all_findings:
+            try:
+                meta = self._advisories([f["advisory_id"] for f in all_findings])
+            except Exception:
+                meta = {}
+            for f in all_findings:
+                a = meta.get(f["advisory_id"]) or {}
+                f["title"] = a.get("title", "")
+                f["severity"] = a.get("severity", "")
+                f["cvss_vector"] = a.get("cvss_vector", "")
+                f["published"] = a.get("published", "")
+                f["url"] = a.get("url", "")
+                f["epss"] = a.get("epss", "")
+                f["epss_percentile"] = a.get("epss_percentile", "")
+                f["kev_added"] = a.get("kev_added", "")
+                f["kev_due"] = a.get("kev_due", "")
+                f["kev_ransomware"] = a.get("kev_ransomware", "")
+
+        for f in all_findings:
+            yield f
+
+
+dispatch(RiskabilityMatchCommand, sys.argv, sys.stdin, sys.stdout, __name__)
