@@ -76,15 +76,31 @@
   <row>
     <panel>
       <title>Findings by confidence</title>
-      <chart>
+      <viz type="riskability.riskability_chart">
         <search>
           <query>`riskability_latest_inventory`
 | riskabilitymatch include_informational=true
-| stats count BY confidence</query>
+| stats count AS findings BY confidence
+| eval sev = confidence
+| sort confidence
+| fields confidence, sev, findings</query>
         </search>
-        <option name="charting.chart">pie</option>
-        <option name="charting.legend.placement">right</option>
-      </chart>
+        <option name="riskability.riskability_chart.chartType">stackedbar</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing matched. With no feed imported the matcher has nothing to compare against.</option>
+        <option name="height">300</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Confidence is ranked, not categorical.</b>
+          <span>
+            High means the package identity and version were both read from a package
+            record. Low means the identity was inferred — every Windows finding lands
+            here. Informational means the version could not be compared properly. Only
+            the high band should drive patching decisions.
+          </span>
+        </div>
+      </html>
     </panel>
     <panel>
       <title>Most affected hosts</title>

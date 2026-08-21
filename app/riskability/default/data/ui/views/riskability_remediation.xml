@@ -150,7 +150,7 @@
   <row>
     <panel>
       <title>Findings first seen over time</title>
-      <chart>
+      <viz type="riskability.riskability_chart">
         <search>
           <query>`riskability_finding_lifecycle`
 | search hostname=$host_tok|s$
@@ -158,10 +158,22 @@
 | stats dc(finding_key) AS findings BY day, status
 | sort day</query>
         </search>
-        <option name="charting.chart">column</option>
-        <option name="charting.chart.stackMode">stacked</option>
-        <option name="charting.legend.placement">right</option>
-      </chart>
+        <option name="riskability.riskability_chart.chartType">stackedcolumn</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.emptyText">No findings have been recorded yet. This chart fills in as scans accumulate.</option>
+        <option name="height">380</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>This is when Riskability first saw a finding, not when it appeared.</b>
+          <span>
+            Bars cluster around scan and feed-import times rather than around real
+            events, so the shape reflects the collection schedule as much as the fleet.
+            Read it for whether the open band is shrinking over time; do not read a
+            quiet day as a good day.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 </form>

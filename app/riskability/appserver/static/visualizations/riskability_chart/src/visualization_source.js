@@ -14,7 +14,8 @@
  * that. Anything added here has to earn its bytes.
  */
 import * as echarts from 'echarts/core';
-import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart } from 'echarts/charts';
+import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
+         PieChart, LineChart } from 'echarts/charts';
 import {
     TooltipComponent,
     GridComponent,
@@ -30,6 +31,7 @@ import vizUtils from 'api/SplunkVisualizationUtils';
 
 echarts.use([
     TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
+    PieChart, LineChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
     CalendarComponent, LegendComponent, CanvasRenderer,
 ]);
@@ -118,7 +120,27 @@ var CONTRACTS = {
     heatmap: ['x', 'y', 'value'],
     boxplot: ['category', 'min', 'q1', 'median', 'q3', 'max'],
     bar: ['label', 'value'],
+    stackedbar: ['category', 'series', 'value'],
+    stackedcolumn: ['category', 'series', 'value'],
+    line: ['x', 'value'],
+    donut: ['label', 'value'],
 };
+
+/* Fixed colours for the values that carry meaning rather than magnitude.
+ * Confidence and severity are ordered scales, and an ordered scale drawn in
+ * an arbitrary palette invites the reader to compare the wrong things. */
+var CATEGORY_COLOR = {
+    // critical and high must not share a colour: severity is an ordered scale,
+    // and two bands drawn identically read as one band twice the size.
+    critical: '#a4302a', high: '#dc4e41',
+    medium: '#f8be34', moderate: '#f8be34',
+    low: '#708794',
+    informational: '#5c6773', unrated: '#5c6773', unknown: '#5c6773',
+    open: '#dc4e41', mitigated: '#53a051', removed: '#708794',
+};
+function categoryColor(name, fallback) {
+    return CATEGORY_COLOR[String(name).toLowerCase()] || fallback;
+}
 
 function buildTreemap(rows, t, config) {
     var data = [];
@@ -347,8 +369,137 @@ function buildBar(rows, t, config) {
     };
 }
 
+/* A donut rather than a pie: the hole gives the total somewhere to live, and
+ * the eye compares arc length instead of trying to judge wedge area. Kept for
+ * small ordered category sets only -- anything with a long tail belongs in a
+ * bar or treemap. */
+function buildDonut(rows, t, config) {
+    var data = [], total = 0;
+    for (var i = 0; i < rows.length; i++) {
+        var v = num(rows[i][1]);
+        if (v === null || v <= 0) { continue; }
+        var name = String(rows[i][0]);
+        total += v;
+        data.push({
+            name: name, value: v,
+            itemStyle: { color: categoryColor(name, RAMP[i % RAMP.length]) },
+        });
+    }
+    if (!data.length) { return null; }
+    return {
+        tooltip: {
+            trigger: 'item', backgroundColor: t.tooltipBg, borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                return escapeHtml(p.name) + '<br/><b>' + p.value + '</b> ' +
+                    escapeHtml(config.valueLabel || 'findings') +
+                    ' (' + p.percent + '%)';
+            },
+        },
+        legend: { orient: 'vertical', right: 10, top: 'center',
+                  textStyle: { color: t.muted, fontSize: 11 } },
+        series: [{
+            type: 'pie', radius: ['45%', '72%'], center: ['38%', '50%'],
+            avoidLabelOverlap: true,
+            itemStyle: { borderColor: t.tooltipBg, borderWidth: 2 },
+            label: { color: t.text, fontSize: 11,
+                     formatter: function (p) { return p.name + '\n' + p.value; } },
+            labelLine: { lineStyle: { color: t.axis } },
+            data: data,
+        }],
+    };
+}
+
+function buildStackedColumn(rows, t, config) {
+    return stacked(rows, t, config, false);
+}
+
+function buildStackedBar(rows, t, config) {
+    return stacked(rows, t, config, true);
+}
+
+function stacked(rows, t, config, horizontal) {
+    var cats = [], seriesNames = [], byName = {};
+    for (var i = 0; i < rows.length; i++) {
+        var c = String(rows[i][0] || ''), sname = String(rows[i][1] || '');
+        var v = num(rows[i][2]);
+        if (!c || v === null) { continue; }
+        if (cats.indexOf(c) === -1) { cats.push(c); }
+        if (!(sname in byName)) { byName[sname] = {}; seriesNames.push(sname); }
+        byName[sname][c] = (byName[sname][c] || 0) + v;
+    }
+    if (!cats.length) { return null; }
+    var series = seriesNames.map(function (sname, i) {
+        return {
+            name: sname, type: 'bar', stack: 'total',
+            itemStyle: { color: categoryColor(sname, RAMP[i % RAMP.length]) },
+            emphasis: { focus: 'series' },
+            data: cats.map(function (c) { return byName[sname][c] || 0; }),
+        };
+    });
+    var catAxis = {
+        type: 'category', data: cats, inverse: horizontal,
+        axisLabel: {
+            color: t.muted, fontSize: 10,
+            rotate: horizontal ? 0 : 40,
+            formatter: function (v) { return shorten(v, 24); },
+        },
+        axisLine: { lineStyle: { color: t.axis } },
+    };
+    var valAxis = {
+        type: 'value', axisLabel: { color: t.muted, fontSize: 10 },
+        splitLine: { lineStyle: { color: t.axis } },
+    };
+    return {
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
+                   backgroundColor: t.tooltipBg, borderColor: t.axis,
+                   textStyle: { color: t.text } },
+        legend: { textStyle: { color: t.muted, fontSize: 11 }, top: 0 },
+        grid: horizontal
+            ? { left: 150, right: 24, top: 34, bottom: 30, containLabel: false }
+            : { left: 60, right: 24, top: 34, bottom: 92, containLabel: false },
+        xAxis: horizontal ? valAxis : catAxis,
+        yAxis: horizontal ? catAxis : valAxis,
+        series: series,
+    };
+}
+
+function buildLine(rows, t, config) {
+    var xs = [], vals = [];
+    for (var i = 0; i < rows.length; i++) {
+        var v = num(rows[i][1]);
+        if (v === null) { continue; }
+        xs.push(String(rows[i][0]));
+        vals.push(v);
+    }
+    if (!xs.length) { return null; }
+    return {
+        tooltip: { trigger: 'axis', backgroundColor: t.tooltipBg,
+                   borderColor: t.axis, textStyle: { color: t.text } },
+        grid: { left: 60, right: 20, top: 20, bottom: 70, containLabel: false },
+        xAxis: { type: 'category', data: xs, boundaryGap: false,
+                 axisLabel: { color: t.muted, fontSize: 10, rotate: 30 },
+                 axisLine: { lineStyle: { color: t.axis } } },
+        yAxis: { type: 'value', name: config.valueLabel || '',
+                 nameTextStyle: { color: t.muted },
+                 axisLabel: { color: t.muted, fontSize: 10 },
+                 splitLine: { lineStyle: { color: t.axis } } },
+        series: [{
+            type: 'line', data: vals, smooth: false, showSymbol: true,
+            symbolSize: 5,
+            itemStyle: { color: SEMANTIC.warn },
+            lineStyle: { color: SEMANTIC.warn, width: 2 },
+            areaStyle: { color: 'rgba(248,190,52,0.12)' },
+        }],
+    };
+}
+
 var BUILDERS = {
     treemap: buildTreemap,
+    donut: buildDonut,
+    stackedbar: buildStackedBar,
+    stackedcolumn: buildStackedColumn,
+    line: buildLine,
     sankey: buildSankey,
     heatmap: buildHeatmap,
     boxplot: buildBoxplot,

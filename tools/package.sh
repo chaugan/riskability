@@ -21,6 +21,11 @@ APPS=(riskability TA-riskability TA-riskability-indexes)
 # as two wrapper scripts around a tool that was never in the package at all.
 "$ROOT/tools/make-feedbuilder.sh"
 
+# Rebuilds the ECharts bundle and bumps the app build if it changed. The build
+# number is the cache key for a year-long Cache-Control, so this must happen
+# before the version is read below.
+"$ROOT/tools/build-viz.sh"
+
 rm -rf "$DIST"
 mkdir -p "$DIST"
 STAGE=$(mktemp -d)
