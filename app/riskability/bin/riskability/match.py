@@ -77,16 +77,30 @@ def _distro_matches(component: dict, row: dict) -> bool:
     if not (comp_set & row_set):
         return False
 
-    row_release = (row.get("distro_release") or "").strip()
+    row_release = _normalise_release(row.get("distro_release"))
     if not row_release:
         return True
-    comp_release = (component.get("os_version_id") or "").strip()
+    comp_release = _normalise_release(component.get("os_version_id"))
     if not comp_release:
         return False
     if comp_release == row_release:
         return True
     # Red Hat-family advisories are often keyed on the major version only.
     return comp_release.split(".")[0] == row_release.split(".")[0]
+
+
+def _normalise_release(release: Optional[str]) -> str:
+    """Put a distro release string into one form before comparing.
+
+    Feeds and hosts disagree on spelling: OSV publishes Alpine releases as
+    ``v3.20`` while ``/etc/os-release`` reports ``3.20``. Comparing those two
+    literally makes every Alpine advisory miss its own hosts, which looks
+    exactly like "no vulnerabilities found".
+    """
+    r = (release or "").strip().lower()
+    if r.startswith("v") and r[1:2].isdigit():
+        r = r[1:]
+    return r
 
 
 def _in_range(ecosystem: str, installed: str, row: dict) -> Optional[bool]:

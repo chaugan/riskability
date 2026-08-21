@@ -209,6 +209,29 @@ def main() -> int:
         match._candidate_names({"name": "libssl3"}) == ["libssl3"],
     )
 
+
+    print("feed/host spelling mismatches")
+
+    alpine_host = {
+        "hostname": "a-01", "name": "apache2", "version": "2.4.54-r0",
+        "type": "apk", "os_id": "alpine", "os_version_id": "3.20",
+    }
+    alpine_range = {
+        "advisory_id": "ALPINE-CVE-2006-20001", "cve_id": "CVE-2006-20001",
+        "ecosystem": "apk", "package": "apache2", "fixed": "2.4.55-r0",
+        "distro": "alpine", "distro_release": "v3.20", "feed_source": "osv:Alpine",
+    }
+    findings = match.match_component(alpine_host, [alpine_range])
+    check(
+        "OSV 'v3.20' matches a host reporting '3.20'",
+        len(findings) == 1 and findings[0]["confidence"] == "high",
+        f"got {findings}",
+    )
+
+    patched_alpine = dict(alpine_host, version="2.4.55-r0")
+    findings = match.match_component(patched_alpine, [alpine_range])
+    check("patched Alpine package is clear", not findings, f"got {findings}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

@@ -28,6 +28,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import tarfile
 import time
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
@@ -50,6 +51,26 @@ MAX_MEMBERS = 32
 
 class FeedError(Exception):
     """A bundle is malformed, unsafe, or of an unsupported schema version."""
+
+
+_CVE_RE = re.compile(r"CVE-\d{4}-\d{4,}", re.IGNORECASE)
+
+
+def extract_cve(advisory_id: str, aliases: Optional[List[str]] = None) -> str:
+    """Recover the plain CVE id for an advisory, or "" if there is none.
+
+    An alias is the reliable source, but several feeds embed the CVE in their
+    own identifier and carry no aliases at all -- Alpine publishes
+    ``ALPINE-CVE-2006-20001``. Without recovering it, the KEV and EPSS overlays
+    (which key strictly on ``CVE-...``) silently fail to join for that whole
+    ecosystem, and every Alpine finding loses its exploitation context.
+    """
+    for alias in aliases or []:
+        m = _CVE_RE.search(alias or "")
+        if m:
+            return m.group(0).upper()
+    m = _CVE_RE.search(advisory_id or "")
+    return m.group(0).upper() if m else ""
 
 
 # ---------------------------------------------------------------------------
@@ -146,9 +167,9 @@ def normalize_osv(record: dict, feed_source: str = "osv") -> Tuple[dict, List[di
     advisory = {
         "advisory_id": advisory_id,
         "aliases": aliases,
-        # Prefer a CVE alias as the display id: operators think in CVEs, and it
-        # is what KEV and EPSS key on.
-        "cve_id": next((a for a in aliases if a.upper().startswith("CVE-")), advisory_id),
+        # Operators think in CVEs, and KEV and EPSS key on them, so a CVE is the
+        # display id wherever one can be recovered.
+        "cve_id": extract_cve(advisory_id, aliases) or advisory_id,
         "title": (record.get("summary") or "").strip()[:500],
         "severity": severity,
         "cvss_score": cvss_score,
