@@ -1,0 +1,35 @@
+# Lean single-instance Splunk Enterprise for riskability app development.
+# Resource-capped deliberately: this box is shared and short on RAM/disk.
+services:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: riskability-splunk
+    hostname: riskability-splunk
+    restart: unless-stopped
+    environment:
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD}
+      SPLUNK_HOME_OWNERSHIP_ENFORCEMENT: "false"
+      # Trim the default app set we do not need, to save RAM and startup time.
+      SPLUNK_DISABLE_DISTRIBUTED_SEARCH: "true"
+    ports:
+      - "127.0.0.1:8000:8000"   # Splunk Web
+      - "127.0.0.1:8089:8089"   # management / REST
+      - "127.0.0.1:8088:8088"   # HTTP Event Collector
+      - "127.0.0.1:9997:9997"   # forwarder receiving
+    volumes:
+      - splunk-etc:/opt/splunk/etc
+      - splunk-var:/opt/splunk/var
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: "2"
+    mem_limit: 3g
+    memswap_limit: 5g
+    cpus: 2
+
+volumes:
+  splunk-etc:
+  splunk-var:

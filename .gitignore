@@ -1,0 +1,24 @@
+# MemStack skills index that predates this project — not ours
+vectors/
+
+# Secrets
+docker/.env
+
+# Build artefacts
+build/
+dist/
+*.tar.gz
+*.spl
+
+# Downloaded vulnerability feeds (large, not source)
+feeds/
+testdata/feeds/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Splunk runtime leakage
+local/
+local.meta
