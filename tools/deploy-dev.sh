@@ -7,7 +7,7 @@ CONTAINER=${CONTAINER:-riskability-splunk}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/docker/.env"
 
-for app in riskability TA-riskability; do
+for app in riskability TA-riskability TA-riskability-indexes; do
   [ -d "$ROOT/app/$app" ] || continue
   # Replace default/ and bin/ but never local/ or metadata/local.meta: Splunk
   # writes runtime state there (the is_configured flag, any UI edits), and an
@@ -21,6 +21,11 @@ for app in riskability TA-riskability; do
   docker exec -u splunk "$CONTAINER" mkdir -p "/opt/splunk/etc/apps/$app"
   docker cp "$ROOT/app/$app/." "$CONTAINER:/opt/splunk/etc/apps/$app/"
   docker exec -u root "$CONTAINER" chown -R splunk:splunk "/opt/splunk/etc/apps/$app"
+  # Splunk will not introspect a modular input script that is not executable,
+  # and the failure is silent: the input simply never appears under
+  # /services/data/inputs. docker cp preserves the source mode, so this only
+  # guards against a checkout that lost the bit.
+  docker exec -u splunk "$CONTAINER" sh -c "chmod +x /opt/splunk/etc/apps/$app/bin/*feedworker*.py 2>/dev/null || true"
   # Bytecode caches are build artefacts; AppInspect flags them and they can
   # shadow edited sources across a re-deploy.
   docker exec -u splunk "$CONTAINER" sh -c "find /opt/splunk/etc/apps/$app -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || true"

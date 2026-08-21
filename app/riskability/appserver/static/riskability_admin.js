@@ -102,14 +102,16 @@
         card.appendChild(el("h3", null, "Active vulnerability feed"));
 
         var st = state.status || {};
-        if (st.state === "importing" || st.state === "cleaning") {
+        if (["queued", "importing", "cleaning"].indexOf(st.state) >= 0) {
             var prog = el("div", "rk-status rk-warn");
             var loaded = st.loaded_ranges || 0, want = st.expected_ranges || 0;
             var pct = want ? Math.min(99, Math.round(loaded * 100 / want)) : 0;
             prog.appendChild(el("b", null,
-                st.state === "cleaning"
-                    ? "Import complete — removing the previous feed…"
-                    : "Importing " + (st.bundle_version || "") + " — " + pct + "%"));
+                st.state === "queued"
+                    ? "Queued — the feed worker starts within a minute"
+                    : st.state === "cleaning"
+                        ? "Import complete — removing the previous feed…"
+                        : "Importing " + (st.bundle_version || "") + " — " + pct + "%"));
             prog.appendChild(el("span", null,
                 " The feed below stays live and searchable until this finishes. " +
                 "The import continues on the server whether or not this page is open."));
@@ -476,7 +478,7 @@
         request("GET").then(function (state) {
             render(state);
             var st = state.status && state.status.state;
-            if (st === "importing" || st === "cleaning") poll();
+            if (["queued", "importing", "cleaning", "fetching"].indexOf(st) >= 0) poll();
         }).catch(function (err) {
             root.textContent = "";
             var box = el("div", "rk-status rk-bad");

@@ -91,13 +91,66 @@ advisory id, a single flaw is reported up to nine times.
   └──────────────┘
 ```
 
-Two packages ship:
+Three packages ship, because Splunk resolves these settings on different tiers
+and putting them in one app puts most of them in the wrong place:
 
-- **`riskability`** — the search-head app: dashboards, the matcher, the admin
-  backend, the KV Store collections.
-- **`TA-riskability`** — the add-on for forwarders (inputs) and indexers
-  (index-time parsing). Index-time and search-time settings live on different
-  tiers; shipping them as one app puts them in the wrong place.
+| Package | Deploy to | Contains |
+|---|---|---|
+| **`riskability`** | search heads | dashboards, matcher, admin backend, KV Store collections, search-time field extraction |
+| **`TA-riskability`** | **forwarders and indexers** | the file input (forwarders) and index-time parsing (indexers) |
+| **`TA-riskability-indexes`** | **indexers only** | the index definitions |
+
+`indexes.conf` is a separate package deliberately. A universal forwarder does
+not index, and loading index definitions there makes it log
+`Required parameter=tstatsHomePath not configured` on every start.
+
+### Configuring the universal forwarder
+
+`TA-riskability` already contains the input; it ships **disabled**, because
+installing an add-on must not silently start reading a customer's filesystem.
+Enable it the way you enable anything else — a deployment server, or a
+`local/inputs.conf` on the forwarder:
+
+```ini
+# TA-riskability/local/inputs.conf on the forwarder
+[monitor:///var/lib/swinv/*.ndjson]
+disabled = 0
+index = riskability_inventory
+sourcetype = riskability:swinv
+crcSalt = <SOURCE>
+```
+
+and point the forwarder at your indexers as usual:
+
+```ini
+# outputs.conf
+[tcpout]
+defaultGroup = riskability_indexers
+
+[tcpout:riskability_indexers]
+server = idx1.example.net:9997, idx2.example.net:9997
+```
+
+Two details in that input are not decoration:
+
+- **`crcSalt = <SOURCE>`** — swinv's output is deterministic apart from the
+  timestamps, so two scans of an unchanged host share a long identical prefix.
+  Without a source-based CRC salt Splunk recognises the new file as one it has
+  already read and skips it entirely.
+- **`blacklist = -latest\.ndjson$`** (in the shipped default) — swinv writes a
+  `<host>-latest.ndjson` symlink beside each scan. Monitoring it as well would
+  re-read the whole inventory every run.
+
+Have swinv write NDJSON, which is the format the input expects:
+
+```sh
+swinv --format ndjson --out /var/lib/swinv
+```
+
+Index-time parsing (line breaking and the timestamp) lives in the same add-on
+and takes effect on the **indexer**, because a universal forwarder does not
+parse. Both tiers get `TA-riskability`; only the indexers also get
+`TA-riskability-indexes`.
 
 Matching runs in Python because Splunk cannot express dpkg or RPM version
 ordering in SPL. It never streams over raw inventory: the caller reduces to

@@ -1374,6 +1374,22 @@ def _spliturl(url):
 
 # Given an HTTP request handler, this wrapper objects provides a related
 # family of convenience methods built using that handler.
+
+# PATCHED FOR RISKABILITY: see the call site in _spliturl's caller below.
+_RISKABILITY_SDK_VERSION = None
+
+
+def _riskability_sdk_version():
+    """The SDK version for the User-Agent, resolved once and never fatal."""
+    global _RISKABILITY_SDK_VERSION
+    if _RISKABILITY_SDK_VERSION is None:
+        try:
+            _RISKABILITY_SDK_VERSION = importlib.metadata.version("splunk-sdk")
+        except Exception:
+            _RISKABILITY_SDK_VERSION = "vendored"
+    return _RISKABILITY_SDK_VERSION
+
+
 class HttpLib:
     """A set of convenient methods for making HTTP calls.
 
@@ -1768,7 +1784,15 @@ def handler(key_file=None, cert_file=None, timeout=None, verify=False, context=N
         scheme, host, port, path = _spliturl(url)
         body = message.get("body", "")
 
-        sdk_version = importlib.metadata.version("splunk-sdk")
+        # PATCHED FOR RISKABILITY (re-apply when upgrading splunk-sdk).
+        # Upstream calls importlib.metadata.version("splunk-sdk") here purely to
+        # build a User-Agent string. That raises PackageNotFoundError whenever
+        # the library is vendored into an app's bin/ directory rather than
+        # pip-installed, and it has failed in two different Splunk execution
+        # contexts -- once outright, once intermittently while the app
+        # directory was being replaced. A User-Agent is not worth failing a
+        # KV Store write for.
+        sdk_version = _riskability_sdk_version()
         head = {
             "Content-Length": str(len(body)),
             "User-Agent": f"splunk-sdk-python/{sdk_version}",

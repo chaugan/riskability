@@ -30,7 +30,6 @@ import json
 import os
 import re
 import sys
-import threading
 import time
 import traceback
 
@@ -226,9 +225,7 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         service = self._service(request)
         user = request.get("session", {}).get("user") or ""
 
-        running = importer.import_status(service.kvstore) or {}
-        if running.get("state") in ("importing", "cleaning", "fetching"):
-            raise ValueError("a feed operation is already running")
+        self._refuse_if_busy(service)
 
         ecosystems = [e for e in (body.get("ecosystems") or []) if e in buildlib.ECOSYSTEMS]
         nvd = str(body.get("nvd") or "").strip()
@@ -238,33 +235,20 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         if not (ecosystems or nvd or mitre or kev or epss):
             raise ValueError("select at least one source to fetch")
 
-        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
-        name = f"riskability-feed-online-{stamp}.tar.gz"
-        path = _safe_incoming_path(name)
-
-        def run():
-            try:
-                importer._write_status(
-                    service.kvstore, state="fetching", bundle_version=name,
-                    started_at=int(time.time()), message="contacting upstream feeds")
-
-                def say(msg):
-                    importer._write_status(service.kvstore, state="fetching",
-                                           message=msg)
-
-                buildlib.build_bundle(
-                    path, ecosystems=ecosystems, nvd=nvd, mitre=mitre,
-                    kev=kev, epss=epss, version=f"online-{stamp}", log=say)
-                # Building and importing are one operation from the operator's
-                # point of view, so the fetch continues straight into an import.
-                importer.import_bundle(path, service.kvstore, imported_by=user)
-                self._mark_configured(service)
-            except Exception as exc:
-                importer._write_status(service.kvstore, state="failed",
-                                       error=f"online fetch failed: {exc}")
-
-        threading.Thread(target=run, name="riskability-fetch", daemon=True).start()
-        return _reply(202, {"ok": True, "started": True, "filename": name})
+        self._queue(service, {
+            "action": "fetch",
+            "ecosystems": ecosystems,
+            "nvd": nvd,
+            "mitre": mitre,
+            "kev": kev,
+            "epss": epss,
+            "requested_by": user,
+            "requested_at": int(time.time()),
+            "state": "pending",
+        })
+        importer._write_status(service.kvstore, state="queued",
+                               message="waiting for the feed worker to start the download")
+        return _reply(202, {"ok": True, "queued": True})
 
     def _upload(self, request, body):
         path = _safe_incoming_path(body.get("filename", ""))
@@ -296,13 +280,14 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
                             "size_bytes": len(raw)})
 
     def _import(self, request, body):
-        """Start an import and return immediately.
+        """Queue an import for the feed worker and return immediately.
 
-        A full bundle takes minutes to load. Running that inside the HTTP
-        request ties it to the admin's browser: closing the tab, a proxy
-        timeout or a dropped session aborts the handler mid-import. Running it
-        on a background thread means the only thing the browser controls is
-        whether it watches the progress.
+        The work deliberately does not happen here. Importing a full bundle
+        takes minutes, and splunkd recycles the persistent-script process this
+        handler runs in when it goes idle -- an early version ran the import on
+        a thread here and it died at 804,000 of 3,323,891 rows, silently. The
+        riskability_feedworker modular input does the work instead; splunkd
+        keeps that alive.
         """
         path = _safe_incoming_path(body.get("filename", ""))
         if not os.path.isfile(path):
@@ -310,29 +295,76 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         service = self._service(request)
         user = request.get("session", {}).get("user") or ""
 
-        running = importer.import_status(service.kvstore) or {}
-        if running.get("state") in ("importing", "cleaning"):
-            raise ValueError(
-                "an import is already running; wait for it to finish before "
-                "starting another")
+        self._refuse_if_busy(service)
 
-        # Validate here, in the request, so a bad bundle is an immediate error
-        # to the operator rather than a background failure they must go looking
-        # for.
+        # Validate in the request, so a bad bundle is an immediate error to the
+        # operator rather than a background failure they must go looking for.
         feedlib.read_manifest(path)
 
-        def run():
-            try:
-                importer.import_bundle(path, service.kvstore, imported_by=user)
-                self._mark_configured(service)
-            except Exception:
-                # import_bundle already recorded the failure in the status row,
-                # which is what the admin page reads.
-                pass
-
-        threading.Thread(target=run, name="riskability-import", daemon=True).start()
-        return _reply(202, {"ok": True, "started": True,
+        self._queue(service, {
+            "action": "import",
+            "filename": os.path.basename(path),
+            "requested_by": user,
+            "requested_at": int(time.time()),
+            "state": "pending",
+        })
+        importer._write_status(service.kvstore, state="queued",
+                               message="waiting for the feed worker",
+                               bundle_version=os.path.basename(path))
+        return _reply(202, {"ok": True, "queued": True,
                             "filename": os.path.basename(path)})
+
+    # -- queueing ----------------------------------------------------------
+
+    # A feed operation that stops reporting for this long is treated as dead.
+    # Generously above the worst observed gap between progress writes on a
+    # 3.3M-row import, so a slow import is never mistaken for a stalled one.
+    STALE_AFTER_SECONDS = 900
+
+    def _refuse_if_busy(self, service):
+        """Refuse a second concurrent operation -- but not because of a corpse.
+
+        A worker can die without clearing its status: splunkd restarts, the
+        machine reboots, the process is killed. Left alone, the stale row makes
+        the app permanently refuse every future import with "already running",
+        and the only fix is editing the KV Store by hand. So a status that has
+        not been updated for a long time is declared failed and stepped over.
+        """
+        running = importer.import_status(service.kvstore) or {}
+        state = running.get("state")
+        if state not in ("queued", "importing", "cleaning", "fetching"):
+            return
+
+        try:
+            age = int(time.time()) - int(running.get("updated_at") or 0)
+        except (TypeError, ValueError):
+            age = 0
+        if age > self.STALE_AFTER_SECONDS:
+            importer._write_status(
+                service.kvstore, state="failed",
+                error=(f"the previous {state} operation stopped reporting "
+                       f"{age // 60} minutes ago and was assumed dead. The live "
+                       f"feed was not affected."))
+            try:
+                service.kvstore["riskability_feedstate"].data.delete(
+                    json.dumps({"_key": "import_request"}))
+            except Exception:
+                pass
+            return
+
+        raise ValueError(
+            "a feed operation is already running or queued; wait for it to "
+            "finish before starting another")
+
+    def _queue(self, service, row):
+        """Record a request for the feed worker to pick up on its next tick."""
+        data = service.kvstore["riskability_feedstate"].data
+        try:
+            data.delete(json.dumps({"_key": "import_request"}))
+        except Exception:
+            pass
+        row["_key"] = "import_request"
+        data.insert(json.dumps(row))
 
     def _mark_configured(self, service):
         """Clear Splunk's first-run setup gate once a feed actually exists.

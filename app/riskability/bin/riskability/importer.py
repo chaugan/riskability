@@ -39,6 +39,9 @@ from . import feed as feedlib
 MAX_DOCS_PER_BATCH = 1000
 MAX_BATCH_BYTES = 40 * 1024 * 1024   # 50 MB limit, with headroom for framing
 
+# How often to publish progress, in rows.
+PROGRESS_EVERY = 25000
+
 COLLECTIONS = {
     "ranges": "riskability_ranges",
     "advisories": "riskability_advisories",
@@ -127,6 +130,10 @@ def _write_status(kvstore, **fields) -> None:
     for k, v in existing.items():
         if k not in ("_key", "_user", "updated_at"):
             row[k] = v
+    # Starting a new operation clears the previous one's failure text, which
+    # would otherwise be merged forward and shown against a healthy import.
+    if fields.get("state") in ("importing", "fetching", "queued"):
+        row.pop("error", None)
     row.update(fields)
     try:
         data = kvstore[STATE_COLLECTION].data
@@ -158,6 +165,13 @@ def import_bundle(
     old_gen = live_generation(kvstore)
     new_gen = old_gen + 1
 
+    # A previous import that died before flipping leaves rows at exactly this
+    # generation number, and the next attempt reuses that number -- so without
+    # clearing first, the orphans merge into the new feed and every duplicated
+    # advisory is reported twice. Those rows are unreachable (nothing points at
+    # this generation yet), so removing them is safe at any time.
+    _delete_generation(kvstore, new_gen)
+
     expected = manifest.get("counts", {})
     _write_status(kvstore, state="importing", generation=new_gen,
                   bundle_version=manifest.get("bundle_version", ""),
@@ -172,6 +186,7 @@ def import_bundle(
             member = MEMBER_FOR[kind]
             data = kvstore[collection].data
             n = 0
+            next_report = PROGRESS_EVERY
             # Note: no delete first. The previous generation stays readable for
             # the whole of this loop, which is what makes an interruption
             # harmless rather than destructive.
@@ -180,9 +195,15 @@ def import_bundle(
                 n += len(batch)
                 if progress:
                     progress(kind, n)
-                if n % 50000 == 0:
+                # A threshold, not "n % PROGRESS_EVERY == 0": batches are sized
+                # by bytes as well as count, so n steps by varying amounts and
+                # sails straight past exact multiples. That is why an earlier
+                # run appeared frozen at 800,000 rows for twenty minutes while
+                # it was in fact still importing.
+                if n >= next_report:
                     _write_status(kvstore, state="importing", generation=new_gen,
                                   **{f"loaded_{kind}": n})
+                    next_report = n + PROGRESS_EVERY
             counts[kind] = n
     except Exception as exc:
         _write_status(kvstore, state="failed", generation=new_gen, error=str(exc))

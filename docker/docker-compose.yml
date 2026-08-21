@@ -30,6 +30,35 @@ services:
     memswap_limit: 5g
     cpus: 2
 
+  # A real Universal Forwarder, so the add-on's inputs.conf and the indexer's
+  # parsing are exercised the way a customer would run them -- rather than
+  # oneshot-loading files on the indexer, which tests neither.
+  forwarder:
+    # Pinned to 9.4 deliberately. In the 10.x forwarder image the CLI moves to
+    # a Unix domain socket, but the provisioning playbook's
+    # "Check for required restarts" task still calls the TCP management port and
+    # fails with "Connection refused", so the container never starts splunkd and
+    # restart-loops. A 9.x forwarder to a 10.x indexer is a supported pairing.
+    image: splunk/universalforwarder:9.4
+    container_name: riskability-uf
+    hostname: riskability-uf
+    restart: unless-stopped
+    depends_on:
+      - splunk
+    environment:
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD}
+      SPLUNK_HOME_OWNERSHIP_ENFORCEMENT: "false"
+    volumes:
+      # Only the data directory is bind-mounted. The apps are copied in by
+      # tools/deploy-uf.sh AFTER provisioning: the image's entrypoint runs
+      # /sbin/updateetc.sh, which rewrites etc/apps, and a read-only mount
+      # there makes that fail and the container restart-loop.
+      - ./uf/swinv-data:/var/lib/swinv
+    mem_limit: 512m
+    cpus: 0.5
+
 volumes:
   splunk-etc:
   splunk-var:
