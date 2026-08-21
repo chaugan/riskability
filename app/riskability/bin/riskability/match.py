@@ -174,6 +174,7 @@ def match_component(
         have_comparator = True
     except vercmp.UnknownEcosystem:
         have_comparator = False
+    installed_parses = vercmp.parses(ecosystem, installed)
 
     best: Dict[str, dict] = {}
 
@@ -201,6 +202,15 @@ def match_component(
         if advisory_id in cleared:
             continue
 
+        # Did the ecosystem's own rules actually parse both sides, or did the
+        # comparator quietly fall back to the generic heuristic? A guess that
+        # is reported as fact is worse than no finding at all.
+        bounds = [b for b in (row.get("introduced"), row.get("fixed"),
+                              row.get("last_affected")) if b and b != "0"]
+        compared_properly = (
+            installed_parses and all(vercmp.parses(ecosystem, b) for b in bounds)
+        )
+
         confidence = "high"
         reason = ""
         if upstream_claim_about_distro_pkg:
@@ -212,6 +222,12 @@ def match_component(
         elif not have_comparator:
             confidence = "low"
             reason = f"no version comparator for ecosystem {ecosystem!r}"
+        elif not compared_properly:
+            confidence = "low"
+            reason = (
+                f"version strings are not valid {ecosystem} versions, so the "
+                f"comparison fell back to a heuristic"
+            )
         elif ecosystem in vercmp.HEURISTIC_TYPES:
             confidence = "low"
             reason = "component identity is inferred from a binary, not a package record"

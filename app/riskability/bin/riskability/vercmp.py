@@ -23,6 +23,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 __all__ = [
     "compare",
+    "parses",
     "comparator_for",
     "UnknownEcosystem",
     "dpkg_compare",
@@ -506,18 +507,32 @@ def maven_compare(a: str, b: str) -> int:
 # Go modules
 # ---------------------------------------------------------------------------
 
-def go_compare(a: str, b: str) -> int:
-    """Compare two Go module versions.
+def _go_normalise(v: str) -> str:
+    """Strip the Go toolchain prefix and build metadata.
 
-    Go versions are SemVer with a leading ``v``. ``+incompatible`` is build
-    metadata and is ignored; pseudo-versions sort correctly under plain SemVer
-    prerelease rules because their timestamp is the prerelease component.
+    Syft reports the Go standard library's version as the toolchain string
+    ``go1.26.6``, while advisories name it ``1.4.3``. Left alone, the ``go``
+    prefix makes the SemVer parse fail, the generic fallback then orders
+    ``go1.26.6`` *below* ``1.4.3``, and every host reports a decade of fixed
+    stdlib CVEs. This is the single largest false-positive source seen on a
+    real Go-heavy host.
     """
-    a = (a or "").strip()
-    b = (b or "").strip()
-    a = a.replace("+incompatible", "")
-    b = b.replace("+incompatible", "")
-    return semver_compare(a, b)
+    v = (v or "").strip()
+    v = v.replace("+incompatible", "")
+    if v[:2].lower() == "go" and v[2:3].isdigit():
+        v = v[2:]
+    return v
+
+
+def go_compare(a: str, b: str) -> int:
+    """Compare two Go module or toolchain versions.
+
+    Go module versions are SemVer with a leading ``v``; toolchain versions look
+    like ``go1.26.6``. ``+incompatible`` is build metadata and is ignored, and
+    pseudo-versions sort correctly under plain SemVer prerelease rules because
+    their timestamp is the prerelease component.
+    """
+    return semver_compare(_go_normalise(a), _go_normalise(b))
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +620,42 @@ _COMPARATORS = {
 # Types that have a comparator but whose results should still be treated as
 # heuristic, because the identifier itself is unreliable.
 HEURISTIC_TYPES = {"binary", "unknown", "generic"}
+
+
+# Whether a version string is actually parseable by its ecosystem's rules.
+# A comparator that quietly falls back to generic_compare still returns an
+# ordering, and that ordering is frequently wrong -- "go1.26.6" sorting below
+# "1.4.3" is the worked example. The matcher uses this to tell a real
+# comparison from a guess, and marks the guess as low confidence instead of
+# reporting it as fact.
+_PARSE_CHECKS = {
+    dpkg_compare: lambda v: bool((v or "").strip()),
+    rpm_compare: lambda v: bool((v or "").strip()),
+    apk_compare: lambda v: _apk_parse(v) is not None,
+    semver_compare: lambda v: _SEMVER_RE.match((v or "").strip()) is not None,
+    pep440_compare: lambda v: _pep440_parse(v) is not None,
+    go_compare: lambda v: _SEMVER_RE.match(_go_normalise(v)) is not None,
+    maven_compare: lambda v: bool((v or "").strip()),
+    generic_compare: lambda v: False,
+}
+
+
+def parses(ecosystem: str, version: str) -> bool:
+    """Can this ecosystem's rules actually parse this version string?
+
+    False means any comparison involving it is a heuristic guess.
+    """
+    try:
+        fn = comparator_for(ecosystem)
+    except UnknownEcosystem:
+        return False
+    check = _PARSE_CHECKS.get(fn)
+    if check is None:
+        return True
+    try:
+        return bool(check(version))
+    except Exception:
+        return False
 
 
 def comparator_for(ecosystem: str) -> Callable[[str, str], int]:

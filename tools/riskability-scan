@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+"""riskability-scan - match a swinv inventory against a feed bundle, offline.
+
+    riskability-scan INVENTORY.json BUNDLE.tar.gz [--all] [--json]
+
+Runs exactly the matching logic the Splunk app runs, with no Splunk involved.
+Two uses: verifying the matcher against real inventory during development, and
+giving an operator a way to sanity-check what the app should be reporting for
+a given host.
+
+It also prints a coverage report -- how many components the feed could even
+have an opinion about -- because a scanner that silently has no data for 70%
+of a host is far more dangerous than one that says so.
+"""
+
+from __future__ import annotations
+
+import argparse
+import collections
+import json
+import os
+import sys
+from typing import Dict, List, Tuple
+
+sys.path.insert(
+    0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "riskability", "bin")
+)
+
+from riskability import feed as feedlib  # noqa: E402
+from riskability import match as matchlib  # noqa: E402
+from riskability import vercmp  # noqa: E402
+
+
+def load_inventory(path: str) -> Tuple[dict, List[dict]]:
+    with open(path, "r", encoding="utf-8") as f:
+        first = f.read(1)
+        f.seek(0)
+        if first == "{":
+            doc = json.load(f)
+            host = doc.get("host", {})
+            comps = doc.get("components", [])
+            for c in comps:
+                c.setdefault("hostname", host.get("hostname", ""))
+                c.setdefault("os_id", host.get("os_id", ""))
+                c.setdefault("os_version_id", host.get("os_version_id", ""))
+            return host, comps
+        # NDJSON: each line already carries host identity.
+        comps = [json.loads(line) for line in f if line.strip()]
+        host = {
+            "hostname": comps[0].get("hostname", "") if comps else "",
+            "os_id": comps[0].get("os_id", "") if comps else "",
+            "os_version_id": comps[0].get("os_version_id", "") if comps else "",
+        }
+        return host, comps
+
+
+def main() -> int:
+    p = argparse.ArgumentParser(prog="riskability-scan")
+    p.add_argument("inventory")
+    p.add_argument("bundle")
+    p.add_argument("--all", action="store_true",
+                   help="include informational and low-confidence findings")
+    p.add_argument("--json", action="store_true", help="emit findings as JSON")
+    p.add_argument("--limit", type=int, default=25)
+    args = p.parse_args()
+
+    host, components = load_inventory(args.inventory)
+
+    # Index the feed by (ecosystem, package) so each component is a dict hit
+    # rather than a scan of every range.
+    ranges: Dict[Tuple[str, str], List[dict]] = collections.defaultdict(list)
+    notaffected: Dict[Tuple[str, str], List[dict]] = collections.defaultdict(list)
+    feed_ecosystems: collections.Counter = collections.Counter()
+
+    for row in feedlib.iter_member(args.bundle, feedlib.RANGES_NAME):
+        ranges[(row["ecosystem"], row["package"])].append(row)
+        feed_ecosystems[row["ecosystem"]] += 1
+    for row in feedlib.iter_member(args.bundle, feedlib.NOTAFFECTED_NAME):
+        notaffected[(row["ecosystem"], row["package"])].append(row)
+
+    advisories = {}
+    for a in feedlib.iter_member(args.bundle, feedlib.ADVISORIES_NAME):
+        advisories[a["advisory_id"]] = a
+
+    findings = []
+    by_type: collections.Counter = collections.Counter()
+    covered_by_type: collections.Counter = collections.Counter()
+    no_identifier: collections.Counter = collections.Counter()
+
+    for comp in components:
+        eco = (comp.get("type") or "").lower()
+        by_type[eco] += 1
+        if not comp.get("purl") and not comp.get("cpes"):
+            no_identifier[eco] += 1
+
+        cand_r: List[dict] = []
+        cand_n: List[dict] = []
+        for name in matchlib._candidate_names(comp):
+            cand_r.extend(ranges.get((eco, name), ()))
+            cand_n.extend(notaffected.get((eco, name), ()))
+        if cand_r:
+            covered_by_type[eco] += 1
+        for f in matchlib.match_component(comp, cand_r, cand_n):
+            a = advisories.get(f["advisory_id"], {})
+            f["severity"] = a.get("severity", "")
+            f["epss"] = a.get("epss")
+            f["title"] = a.get("title", "")
+            f["hostname"] = comp.get("hostname", "")
+            findings.append(f)
+
+    shown = findings if args.all else [f for f in findings if f["confidence"] == "high"]
+    shown.sort(key=lambda f: (-(f.get("epss") or 0), f["cve_id"]))
+
+    if args.json:
+        json.dump(shown, sys.stdout, indent=2)
+        print()
+        return 0
+
+    print(f"host        {host.get('hostname','?')}  "
+          f"{host.get('os_id','?')} {host.get('os_version_id','')}")
+    print(f"components  {len(components)}")
+    print(f"feed        {os.path.basename(args.bundle)}  "
+          f"({sum(feed_ecosystems.values())} ranges over "
+          f"{len(feed_ecosystems)} ecosystems)")
+    print()
+
+    print("coverage by component type")
+    print(f"  {'TYPE':<24}{'COMPONENTS':>11}{'IN FEED':>9}{'NO PURL/CPE':>13}  COMPARATOR")
+    for eco, n in by_type.most_common():
+        try:
+            vercmp.comparator_for(eco)
+            cmpname = vercmp.comparator_for(eco).__name__.replace("_compare", "")
+        except vercmp.UnknownEcosystem:
+            cmpname = "-- none --"
+        feed_n = covered_by_type.get(eco, 0)
+        print(f"  {eco:<24}{n:>11}{feed_n:>9}{no_identifier.get(eco,0):>13}  {cmpname}")
+    print()
+
+    high = [f for f in findings if f["confidence"] == "high"]
+    info = [f for f in findings if f["confidence"] == "informational"]
+    low = [f for f in findings if f["confidence"] == "low"]
+    print(f"findings    {len(high)} high, {len(info)} informational, {len(low)} low")
+    print()
+
+    if shown:
+        print(f"{'CVE':<20}{'PACKAGE':<28}{'INSTALLED':<24}{'FIXED':<22}{'EPSS':>7}")
+        for f in shown[:args.limit]:
+            epss = f.get("epss")
+            print(f"{f['cve_id']:<20}{f['package'][:27]:<28}"
+                  f"{f['installed_version'][:23]:<24}{(f['fixed_version'] or '-')[:21]:<22}"
+                  f"{(f'{epss:.4f}' if epss is not None else '-'):>7}")
+        if len(shown) > args.limit:
+            print(f"... and {len(shown) - args.limit} more")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
