@@ -232,6 +232,51 @@ def main() -> int:
     findings = match.match_component(patched_alpine, [alpine_range])
     check("patched Alpine package is clear", not findings, f"got {findings}")
 
+
+    print("one vulnerability, one finding")
+
+    pyyaml = {"hostname": "h", "name": "pyyaml", "type": "python", "version": "3.12",
+              "locations": ["/x/PyYAML-3.12.egg-info"]}
+    two_advisories = [
+        {"advisory_id": "GHSA-abc", "cve_id": "CVE-2020-14343", "ecosystem": "python",
+         "package": "pyyaml", "fixed": "5.4", "feed_source": "osv:PyPI"},
+        {"advisory_id": "PYSEC-2021-1", "cve_id": "CVE-2020-14343", "ecosystem": "python",
+         "package": "pyyaml", "fixed": "5.4", "feed_source": "osv:PyPI"},
+    ]
+    found = match.match_component(pyyaml, two_advisories)
+    check("two advisories for one CVE produce one finding",
+          len(found) == 1, f"got {len(found)}")
+    check("the other advisory id is kept as evidence",
+          found and "PYSEC-2021-1" in (found[0].get("also_reported_as") or []),
+          f"got {found[0].get('also_reported_as') if found else None}")
+
+    # Identity must not shift when a higher-authority advisory shows up later.
+    distro_advisory = {
+        "advisory_id": "USN-1234-1", "cve_id": "CVE-2020-14343", "ecosystem": "python",
+        "package": "pyyaml", "fixed": "5.4", "distro": "ubuntu",
+        "distro_release": "22.04", "feed_source": "osv:Ubuntu",
+    }
+    host_pkg = dict(pyyaml, os_id="ubuntu", os_version_id="22.04")
+    before = match.match_component(host_pkg, two_advisories)
+    after = match.match_component(host_pkg, two_advisories + [distro_advisory])
+    check("finding identity survives a new advisory winning on authority",
+          before and after and before[0]["finding_key"] == after[0]["finding_key"],
+          "finding_key changed when the winning advisory changed")
+    check("the distro advisory does win",
+          after and after[0]["match_authority"] == "distro",
+          f"got {after[0]['match_authority'] if after else None}")
+
+    print("finding identity across upgrades")
+
+    v1 = {"hostname": "h", "name": "lodash", "type": "npm", "version": "4.17.20",
+          "locations": ["/srv/app/node_modules/lodash/package.json"]}
+    v2 = dict(v1, version="4.17.21")
+    check("the key is stable when only the version changes",
+          match.finding_key(v1, "CVE-2021-23337") == match.finding_key(v2, "CVE-2021-23337"))
+    other_path = dict(v1, locations=["/other/node_modules/lodash/package.json"])
+    check("a different install path is a different finding",
+          match.finding_key(v1, "CVE-2021-23337") != match.finding_key(other_path, "CVE-2021-23337"))
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

@@ -240,7 +240,7 @@ def primary_path(component: dict) -> str:
     return locations[0] if locations else ""
 
 
-def finding_key(component: dict, advisory_id: str) -> str:
+def finding_key(component: dict, vulnerability_id: str) -> str:
     """A stable identity for one finding, across scans.
 
     Deliberately excludes the installed version. The point of a finding's
@@ -248,6 +248,11 @@ def finding_key(component: dict, advisory_id: str) -> str:
     the transition worth reporting: same key, higher version, no longer
     matching means *mitigated*. Including the version would make every upgrade
     look like one finding vanishing and an unrelated one appearing.
+
+    ``vulnerability_id`` is the CVE where one exists, not the advisory id, for
+    the same reason: which advisory happens to win the authority contest can
+    change between runs as feeds are added, and the identity of "this package
+    is exposed to this CVE" must not change with it.
     """
     parts = [
         (component.get("hostname") or "").lower(),
@@ -255,7 +260,7 @@ def finding_key(component: dict, advisory_id: str) -> str:
         (component.get("type") or "").lower(),
         (component.get("name") or "").lower(),
         primary_path(component),
-        advisory_id,
+        vulnerability_id,
     ]
     return hashlib.sha1("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
 
@@ -345,8 +350,9 @@ def match_component(
             confidence = "low"
             reason = "component identity is inferred from a binary, not a package record"
 
+        vulnerability_id = row.get("cve_id") or advisory_id
         finding = {
-            "finding_key": finding_key(component, advisory_id),
+            "finding_key": finding_key(component, vulnerability_id),
             "path": primary_path(component),
             "advisory_id": advisory_id,
             "cve_id": row.get("cve_id") or advisory_id,
@@ -367,11 +373,29 @@ def match_component(
             "_authority_rank": authority,
         }
 
-        # Keep only the highest-authority claim per advisory. A distro "fixed in
-        # 3.0.13-0ubuntu3.4" must silence the upstream "< 3.0.14".
-        prev = best.get(advisory_id)
+        # Collapse to one finding per vulnerability, not per advisory record.
+        # OSV routinely carries several advisories describing the same CVE -- a
+        # GHSA record and a PYSEC record for one PyPI flaw, for instance -- and
+        # a distro will publish its own alongside them. They are one thing to
+        # fix, so they are one finding; reporting three is how a fleet appears
+        # to have three times the vulnerabilities it has.
+        dedup_key = vulnerability_id
+
+        prev = best.get(dedup_key)
         if prev is None or authority > prev["_authority_rank"]:
-            best[advisory_id] = finding
+            if prev is not None:
+                # Preserve the losing advisory's id so the evidence trail is
+                # not lost when a higher authority wins.
+                finding["also_reported_as"] = sorted(
+                    set(prev.get("also_reported_as", []))
+                    | {prev["advisory_id"]}
+                    - {finding["advisory_id"]}
+                )
+            best[dedup_key] = finding
+        elif prev["advisory_id"] != advisory_id:
+            prev["also_reported_as"] = sorted(
+                set(prev.get("also_reported_as", [])) | {advisory_id}
+            )
 
     out = []
     for finding in best.values():
