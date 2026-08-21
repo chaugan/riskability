@@ -165,6 +165,70 @@ def main() -> int:
     check("a component with an unknown version is never high confidence",
           all(f["confidence"] != "high" for f in found), f"got {found}")
 
+
+    print("OSV Ubuntu release and product-line parsing")
+
+    from riskability import feed as feedlib
+    for eco, want in [
+        ("Ubuntu:24.04:LTS", ("deb", "ubuntu", "24.04", "")),
+        ("Ubuntu:Pro:18.04:LTS", ("deb", "ubuntu", "18.04", "pro")),
+        ("Ubuntu:Pro:FIPS-updates:20.04:LTS", ("deb", "ubuntu", "20.04", "pro:fips-updates")),
+        ("Ubuntu:25.10", ("deb", "ubuntu", "25.10", "")),
+        ("Debian:12", ("deb", "debian", "12", "")),
+        ("Alpine:v3.20", ("apk", "alpine", "3.20", "")),
+        ("npm", ("npm", "", "", "")),
+    ]:
+        got = feedlib.split_osv_ecosystem(eco)
+        check(f"{eco} parses to {want}", got == want, f"got {got}")
+
+    # A 24.04 host must not match a 24.10 advisory just because both start "24".
+    host_2404 = {"name": "curl", "version": "8.5.0-2ubuntu10", "type": "deb",
+                 "os_id": "ubuntu", "os_version_id": "24.04"}
+    adv_2410 = {"advisory_id": "CVE-X", "cve_id": "CVE-X", "ecosystem": "deb",
+                "package": "curl", "fixed": "8.9.1-2", "distro": "ubuntu",
+                "distro_release": "24.10", "feed_source": "osv:Ubuntu"}
+    check("Ubuntu 24.04 host is not matched by a 24.10 advisory",
+          not match.match_component(host_2404, [adv_2410]),
+          f"got {match.match_component(host_2404, [adv_2410])}")
+
+    adv_2404 = dict(adv_2410, distro_release="24.04")
+    check("Ubuntu 24.04 host IS matched by a 24.04 advisory",
+          len(match.match_component(host_2404, [adv_2404])) == 1)
+
+    # RHEL advisories legitimately key on the major version.
+    rhel = {"name": "openssl", "version": "1:3.0.7-27.el9", "type": "rpm",
+            "os_id": "rhel", "os_version_id": "9.4"}
+    rhel_adv = {"advisory_id": "CVE-Y", "cve_id": "CVE-Y", "ecosystem": "rpm",
+                "package": "openssl", "fixed": "1:3.0.7-28.el9", "distro": "red hat",
+                "distro_release": "9", "feed_source": "osv:Red Hat"}
+    check("RHEL 9.4 host is still matched by a major-version 9 advisory",
+          len(match.match_component(rhel, [rhel_adv])) == 1)
+
+    print("Ubuntu product lines")
+
+    pro_adv = {"advisory_id": "CVE-Z", "cve_id": "CVE-Z", "ecosystem": "deb",
+               "package": "openssl", "fixed": "1.1.1f-1ubuntu2.24+esm5",
+               "distro": "ubuntu", "distro_release": "20.04",
+               "distro_variant": "pro", "feed_source": "osv:Ubuntu"}
+    plain_2004 = {"name": "openssl", "version": "1.1.1f-1ubuntu2.20", "type": "deb",
+                  "os_id": "ubuntu", "os_version_id": "20.04"}
+    esm_2004 = {"name": "openssl", "version": "1.1.1f-1ubuntu2.24+esm3", "type": "deb",
+                "os_id": "ubuntu", "os_version_id": "20.04"}
+    check("a Pro/ESM advisory does not apply to a non-ESM package",
+          not match.match_component(plain_2004, [pro_adv]),
+          f"got {match.match_component(plain_2004, [pro_adv])}")
+    check("a Pro/ESM advisory DOES apply to a +esm package",
+          len(match.match_component(esm_2004, [pro_adv])) == 1,
+          f"got {match.match_component(esm_2004, [pro_adv])}")
+
+    fips_adv = dict(pro_adv, distro_variant="pro:fips-updates")
+    check("a FIPS advisory does not apply to an ordinary ESM package",
+          not match.match_component(esm_2004, [fips_adv]))
+
+    unknown_variant = dict(pro_adv, distro_variant="nvidia-bluefield")
+    check("an unrecognised product line is never assumed to apply",
+          not match.match_component(esm_2004, [unknown_variant]))
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

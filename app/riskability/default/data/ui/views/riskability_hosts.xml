@@ -1,0 +1,74 @@
+<form version="1.1" theme="dark">
+  <label>Hosts</label>
+  <description>Per-host inventory and findings, split by the filesystem root each component came from.</description>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" token="hostname" searchWhenChanged="true">
+      <label>Host</label>
+      <fieldForLabel>hostname</fieldForLabel>
+      <fieldForValue>hostname</fieldForValue>
+      <search>
+        <query>index=riskability_inventory sourcetype=riskability:swinv | stats count BY hostname | fields hostname</query>
+      </search>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Host</title>
+      <table>
+        <search>
+          <query>index=riskability_inventory sourcetype=riskability:swinv hostname=$hostname|s$
+| stats latest(os_id) AS os, latest(os_version_id) AS release, latest(architecture) AS arch,
+        latest(machine_id) AS machine_id, count AS components, latest(_time) AS last_scan BY hostname
+| eval last_scan = strftime(last_scan, "%Y-%m-%d %H:%M:%S")</query>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Components by ecosystem</title>
+      <chart>
+        <search>
+          <query>index=riskability_inventory sourcetype=riskability:swinv hostname=$hostname|s$
+| stats dc(name) AS components BY type | sort - components</query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Findings by root</title>
+      <chart>
+        <search>
+          <query>`riskability_latest_inventory`
+| search hostname=$hostname|s$
+| riskabilitymatch
+| eval root = if(scope_id!="", scope_id, "host")
+| stats dc(cve_id) AS cves BY root | sort - cves</query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Findings on this host</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| search hostname=$hostname|s$
+| riskabilitymatch
+| eval root = if(scope_id!="", scope_id, "host")
+| table cve_id, package, ecosystem, installed_version, fixed_version, root, confidence, epss, title
+| sort - epss</query>
+        </search>
+        <option name="count">30</option>
+      </table>
+    </panel>
+  </row>
+</form>

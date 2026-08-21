@@ -124,11 +124,19 @@ class RiskabilityMatchCommand(EventingCommand):
         if not records:
             return
 
+        # Resolve every row before doing anything else: recover the source
+        # package from the PURL, and work out which filesystem root the
+        # component lives in. Skipping this is not a partial result, it is a
+        # wrong one -- packages inside a snap base get matched against the
+        # host's distro release, and binary packages never find the advisories
+        # filed against their source package.
+        prepared = [matchlib.prepare_component(r) for r in records]
+
         # Collect the distinct package identities in this chunk. Both the
         # binary name and any source package are candidates, because distro
         # advisories are keyed on the source package.
         wanted: Dict[str, set] = {}
-        for r in records:
+        for r in prepared:
             eco = (r.get("type") or "").strip().lower()
             if not eco:
                 continue
@@ -144,7 +152,7 @@ class RiskabilityMatchCommand(EventingCommand):
             return
 
         all_findings = []
-        for r in records:
+        for r in prepared:
             eco = (r.get("type") or "").strip().lower()
             if not eco:
                 continue
@@ -159,6 +167,11 @@ class RiskabilityMatchCommand(EventingCommand):
                 if finding["confidence"] == "informational" and not self.include_informational:
                     continue
                 finding["hostname"] = r.get("hostname", "")
+                # The resolved root, not the host's: an operator needs to see
+                # that a finding is about /snap/core18 rather than the machine.
+                finding["scope"] = r.get("scope", "host")
+                finding["scope_id"] = r.get("scope_id", "")
+                finding["source_package"] = r.get("source_package", "")
                 finding["os_id"] = r.get("os_id", "")
                 finding["os_version_id"] = r.get("os_version_id", "")
                 finding["purl"] = r.get("purl", "")

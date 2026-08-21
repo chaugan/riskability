@@ -1,0 +1,64 @@
+<dashboard version="1.1" theme="dark" script="riskability_admin.js" stylesheet="riskability_admin.css">
+  <label>Feed administration</label>
+  <description>Upload and import offline vulnerability databases. This app never reaches the network itself.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div id="riskability-admin">
+          <div class="rk-loading">Loading feed state&#8230;</div>
+        </div>
+
+        <div class="rk-help">
+          <h3>How the offline feed works</h3>
+          <p>
+            This app makes no outbound network requests, by design: it is built to run on a
+            search head with no route to the internet. Vulnerability data gets in exactly one
+            way &#8212; you build a bundle on a machine that does have access, carry it across,
+            and import it here.
+          </p>
+
+          <h4>1. Build a bundle (on a connected machine)</h4>
+          <pre>riskability-feed sources                      # what can be fetched
+
+riskability-feed build --out riskability-feed.tar.gz \
+    --ecosystem Ubuntu --ecosystem Debian --ecosystem Alpine \
+    --ecosystem npm --ecosystem PyPI --ecosystem Go --ecosystem Maven \
+    --kev --epss</pre>
+          <p>
+            Only the sources you name are downloaded. Pick the distributions and language
+            ecosystems your fleet actually runs; the <b>Coverage</b> dashboard shows which
+            component types are going unmatched, which is the fastest way to work out what to
+            add next.
+          </p>
+
+          <h4>2. Get it onto this search head</h4>
+          <p>
+            Either drop the file straight into the staging directory shown above &#8212; the
+            right choice for anything large, since nothing has to fit in memory &#8212; or use
+            the upload control, which is capped at 64&#160;MB because a REST upload is held
+            whole in the search head's memory.
+          </p>
+
+          <h4>3. Import it</h4>
+          <p>
+            Import replaces the active feed rather than merging into it, so withdrawn
+            advisories and corrected ranges cannot survive as ghosts. Searches keep seeing the
+            previous feed until the import finishes.
+          </p>
+
+          <h4>A note on redistribution</h4>
+          <p>
+            The feeds carry different licences: OSV aggregates sources that are individually
+            CC&#8209;BY&#8209;4.0 (GitHub, Red&#160;Hat), CC&#8209;BY&#8209;SA&#8209;4.0
+            (Ubuntu), MIT (AlmaLinux) and BSD (Rocky); CISA KEV is US&#8209;government public
+            domain; EPSS is published by FIRST and expects attribution. Each record keeps the
+            source it came from, so attribution survives into Splunk. Building a bundle for
+            your own organisation is uncontroversial; redistributing one is a decision for you
+            rather than for this app, which is exactly why nothing is shipped pre-loaded.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

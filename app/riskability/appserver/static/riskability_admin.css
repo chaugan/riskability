@@ -1,0 +1,129 @@
+/* Feed administration page.
+   Colours are taken from Splunk's own dark palette so the page does not read
+   as a bolted-on foreign UI, and status colours match the severity semantics
+   used on the dashboards (red = act, amber = check, green = fine). */
+
+#riskability-admin { margin-bottom: 24px; }
+
+.rk-card {
+    background: #23272e;
+    border: 1px solid #33383f;
+    border-radius: 4px;
+    padding: 18px 20px;
+    margin-bottom: 18px;
+}
+
+.rk-card h3 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    font-weight: 600;
+    color: #f2f4f5;
+}
+
+.rk-card h4 {
+    margin: 20px 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #9aa4ae;
+}
+
+.rk-status {
+    border-left: 3px solid #708794;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: #1a1d21;
+    line-height: 1.5;
+}
+.rk-status b { display: block; margin-bottom: 2px; }
+.rk-good { border-left-color: #53a051; }
+.rk-good b { color: #6db56b; }
+.rk-warn { border-left-color: #f8be34; }
+.rk-warn b { color: #f8be34; }
+.rk-bad  { border-left-color: #dc4e41; }
+.rk-bad b { color: #e26d63; }
+.rk-bad-text { color: #e26d63; }
+
+/* Two-column facts list: label left, value right, so numbers line up. */
+.rk-facts {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 4px 20px;
+    margin: 0 0 4px;
+}
+.rk-facts dt { color: #9aa4ae; }
+.rk-facts dd { margin: 0; color: #f2f4f5; font-variant-numeric: tabular-nums; }
+
+.rk-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.rk-table th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #9aa4ae;
+    border-bottom: 1px solid #33383f;
+    padding: 6px 10px 6px 0;
+    font-weight: 600;
+}
+.rk-table td {
+    padding: 6px 10px 6px 0;
+    border-bottom: 1px solid #2a2e34;
+    vertical-align: top;
+}
+.rk-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rk-licence { color: #9aa4ae; font-size: 12px; }
+
+.rk-staged {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 0;
+    border-bottom: 1px solid #2a2e34;
+}
+.rk-staged-info { min-width: 0; }
+.rk-staged-name { font-weight: 600; color: #f2f4f5; word-break: break-all; }
+.rk-staged-actions { display: flex; gap: 8px; flex-shrink: 0; }
+
+.rk-btn {
+    background: #2f343b;
+    border: 1px solid #454b53;
+    color: #e8eaec;
+    padding: 5px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 13px;
+}
+.rk-btn:hover { background: #3a4048; }
+.rk-btn-primary { background: #1a7f5a; border-color: #1a7f5a; color: #fff; }
+.rk-btn-primary:hover { background: #22996d; }
+
+.rk-upload { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.rk-upload input[type=file] { color: #9aa4ae; }
+
+.rk-dim { color: #9aa4ae; font-size: 12px; line-height: 1.5; }
+.rk-loading { color: #9aa4ae; padding: 12px 0; }
+
+.rk-help {
+    background: #1a1d21;
+    border: 1px solid #2a2e34;
+    border-radius: 4px;
+    padding: 18px 20px;
+    line-height: 1.6;
+}
+.rk-help h3 { margin: 0 0 10px; font-size: 15px; color: #f2f4f5; }
+.rk-help h4 { margin: 18px 0 6px; font-size: 13px; color: #c3cad1; }
+.rk-help p { margin: 0 0 8px; color: #b6bec6; max-width: 76ch; }
+.rk-help ul { color: #b6bec6; max-width: 76ch; }
+.rk-help code { background: #23272e; padding: 1px 5px; border-radius: 3px; color: #d9e0e6; }
+.rk-help pre {
+    background: #14171a;
+    border: 1px solid #2a2e34;
+    border-radius: 4px;
+    padding: 12px 14px;
+    overflow-x: auto;
+    color: #cfd6dd;
+    font-size: 12px;
+    line-height: 1.5;
+}

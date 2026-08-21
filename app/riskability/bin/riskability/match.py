@@ -14,6 +14,7 @@ vulnerability tools get switched off.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Dict, Iterable, List, Optional, Sequence
 
 from . import purl as purllib
@@ -106,6 +107,13 @@ def _distro_matches(component: dict, row: dict) -> bool:
     if not (comp_set & row_set):
         return False
 
+    # A variant names a separate product line (Ubuntu Pro, FIPS, Realtime),
+    # not the ordinary distribution. Applying those advisories to a plain host
+    # reports package sets it does not have.
+    variant = (row.get("distro_variant") or "").strip().lower()
+    if variant and not _variant_applies(component, variant):
+        return False
+
     row_release = _normalise_release(row.get("distro_release"))
     if not row_release:
         return True
@@ -114,8 +122,47 @@ def _distro_matches(component: dict, row: dict) -> bool:
         return False
     if comp_release == row_release:
         return True
-    # Red Hat-family advisories are often keyed on the major version only.
+
+    # Only Red Hat-family advisories are legitimately keyed on the major
+    # version. Debian-family releases are dotted minor versions in their own
+    # right, so a major-only fallback there matches 24.04 against 24.10 and
+    # 25.04 against 25.10 -- different releases with different package sets.
+    if (component.get("type") or "").lower() != "rpm":
+        return False
     return comp_release.split(".")[0] == row_release.split(".")[0]
+
+
+# Markers that show an installed package really does come from a given Ubuntu
+# product line. An ESM package is stamped "+esm"; FIPS builds say so.
+_VARIANT_EVIDENCE = {
+    "pro": ("esm",),
+    "fips": ("fips",),
+    "fips-updates": ("fips",),
+    "fips-preview": ("fips",),
+    "realtime": ("realtime",),
+}
+
+
+def _variant_applies(component: dict, variant: str) -> bool:
+    """Does this component actually belong to the advisory's product line?
+
+    Ubuntu Pro/ESM advisories cover releases past standard support, so they are
+    the *only* source for an 18.04 or 20.04 host and must not be discarded
+    wholesale. The version string is the evidence: ESM packages carry "+esm",
+    FIPS builds carry "fips". Where the marker is absent, the advisory is about
+    a product the host is not running.
+    """
+    version = (component.get("version") or "").lower()
+    tokens = [t for t in variant.split(":") if t]
+    for token in tokens:
+        markers = _VARIANT_EVIDENCE.get(token)
+        if markers is None:
+            # An unrecognised product line (Nvidia BlueField and similar):
+            # nothing in the inventory identifies it, so do not assume it.
+            return False
+        if not any(m in version for m in markers):
+            return False
+    return bool(tokens)
 
 
 def _normalise_release(release: Optional[str]) -> str:
@@ -174,6 +221,43 @@ def _candidate_names(component: dict) -> List[str]:
         if v and v not in names:
             names.append(v)
     return names
+
+
+def primary_path(component: dict) -> str:
+    """The install path this finding is about.
+
+    swinv sorts and unions locations, so the first entry is stable across runs
+    for a given install. Including it in a finding's identity is what makes it
+    possible to say "the copy of lodash under /srv/app was upgraded" rather
+    than collapsing every copy on the host into one row.
+    """
+    path = component.get("path")
+    if path:
+        return path if isinstance(path, str) else str(path)
+    locations = component.get("locations") or ()
+    if isinstance(locations, str):
+        return locations
+    return locations[0] if locations else ""
+
+
+def finding_key(component: dict, advisory_id: str) -> str:
+    """A stable identity for one finding, across scans.
+
+    Deliberately excludes the installed version. The point of a finding's
+    identity is to survive the package being upgraded, because that is exactly
+    the transition worth reporting: same key, higher version, no longer
+    matching means *mitigated*. Including the version would make every upgrade
+    look like one finding vanishing and an unrelated one appearing.
+    """
+    parts = [
+        (component.get("hostname") or "").lower(),
+        component.get("scope_id") or "",
+        (component.get("type") or "").lower(),
+        (component.get("name") or "").lower(),
+        primary_path(component),
+        advisory_id,
+    ]
+    return hashlib.sha1("\x1f".join(parts).encode("utf-8")).hexdigest()[:20]
 
 
 def match_component(
@@ -262,6 +346,8 @@ def match_component(
             reason = "component identity is inferred from a binary, not a package record"
 
         finding = {
+            "finding_key": finding_key(component, advisory_id),
+            "path": primary_path(component),
             "advisory_id": advisory_id,
             "cve_id": row.get("cve_id") or advisory_id,
             "package": component.get("name"),

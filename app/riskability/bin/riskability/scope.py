@@ -108,14 +108,26 @@ def classify(location: str) -> Tuple[str, str, str]:
 def component_scope(component: dict) -> Dict[str, str]:
     """Assign a scope to a component from where it was found on disk.
 
-    Uses the first location; swinv sorts them, and a component backed by
-    several files inside one root has all of them in that root.
+    Prefers an explicit scalar ``path``, falling back to the first entry of
+    ``locations``. The distinction matters inside Splunk: a JSON array becomes a
+    multivalue field, and a multivalue field does not survive the search-command
+    protocol as a Python list, so reading ``locations`` there yields nothing and
+    every component silently looks like a host package. The caller therefore
+    passes a pre-flattened ``path``.
+
+    swinv sorts locations, so the first entry is stable across scans, and a
+    component backed by several files inside one root has all of them in it.
     """
-    locations: Sequence[str] = component.get("locations") or ()
-    if not locations:
+    path = component.get("path")
+    if not path:
+        locations = component.get("locations") or ()
+        if isinstance(locations, str):
+            locations = [locations]
+        path = locations[0] if locations else ""
+    if not path:
         return {"scope": SCOPE_HOST, "scope_id": "", "scope_release": ""}
 
-    kind, scope_id, release = classify(locations[0])
+    kind, scope_id, release = classify(path)
     return {"scope": kind, "scope_id": scope_id, "scope_release": release}
 
 

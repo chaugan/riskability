@@ -1,0 +1,77 @@
+<form version="1.1" theme="dark">
+  <label>Findings</label>
+  <description>Every vulnerability the current feed can attribute to installed software.</description>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" token="confidence_tok" searchWhenChanged="true">
+      <label>Confidence</label>
+      <choice value="confidence=&quot;high&quot;">High only</choice>
+      <choice value="confidence!=&quot;nothing&quot;">All</choice>
+      <choice value="confidence=&quot;low&quot;">Low only</choice>
+      <default>confidence="high"</default>
+      <initialValue>confidence="high"</initialValue>
+    </input>
+    <input type="dropdown" token="scope_tok" searchWhenChanged="true">
+      <label>Filesystem root</label>
+      <choice value="*">Every root</choice>
+      <choice value="host">Host packages only</choice>
+      <choice value="snap">Snap bases only</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="text" token="host_tok" searchWhenChanged="true">
+      <label>Host (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>Findings, ranked by exploitation likelihood (EPSS) rather than CVSS</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| search hostname=$host_tok|s$
+| riskabilitymatch include_informational=true
+| search $confidence_tok|s$ scope=$scope_tok|s$
+| eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
+| eval kev = if(kev_added!="", "yes", "")
+| table cve_id, package, installed_version, fixed_version, hostname, scope_id, ecosystem, match_authority, confidence, epss_pct, kev, title
+| rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
+         fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root",
+         ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
+         epss_pct AS "EPSS %", kev AS "KEV", title AS "Summary"
+| sort - "EPSS %"</query>
+        </search>
+        <option name="count">50</option>
+        <option name="drilldown">cell</option>
+        <format type="color" field="Confidence">
+          <colorPalette type="map">{"high":#DC4E41,"low":#F8BE34,"informational":#708794}</colorPalette>
+        </format>
+        <format type="color" field="KEV">
+          <colorPalette type="map">{"yes":#DC4E41}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Why a finding is only "informational"</title>
+      <html>
+        <p>Confidence is about the strength of the evidence, not the severity of the vulnerability.</p>
+        <ul>
+          <li><b>high</b> &#8212; a distro or ecosystem advisory names this package and release, and both
+              versions parsed cleanly under that ecosystem's rules.</li>
+          <li><b>informational</b> &#8212; an upstream version range covers a distribution package.
+              Ubuntu and Red Hat backport fixes without changing the upstream version, so
+              <code>openssl 3.0.13-0ubuntu3.4</code> may well already be patched against a CVE that
+              upstream fixed in 3.0.14. Shown so it is not hidden; not asserted, because it is not known.</li>
+          <li><b>low</b> &#8212; the comparison could not be made properly: no comparator for the
+              ecosystem, an unparseable version such as <code>UNKNOWN</code>, or an identity inferred
+              from a binary rather than a package record.</li>
+        </ul>
+      </html>
+    </panel>
+  </row>
+</form>

@@ -1,0 +1,79 @@
+<dashboard version="1.1" theme="dark">
+  <label>Coverage</label>
+  <description>What the feed can and cannot say anything about. Read this before trusting a low finding count.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px;">
+          <b>A low finding count is not the same as a secure fleet.</b>
+          <span>Components below with no feed coverage are not "clean" &#8212; they are unassessed.
+          Kernel modules, GitHub Actions and unmanaged binaries have no vulnerability feed at all;
+          other gaps usually mean the relevant ecosystem was not included when the bundle was built.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Assessable components by ecosystem</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| eval has_identifier = if(isnotnull(purl) OR isnotnull(cpes), 1, 0)
+| stats count AS components, sum(has_identifier) AS with_identifier BY type
+| eval without_identifier = components - with_identifier
+| eval identifier_pct = round(with_identifier * 100 / components, 1)
+| sort - components
+| rename type AS "Ecosystem", components AS "Components",
+         with_identifier AS "With purl/cpe", without_identifier AS "No identifier",
+         identifier_pct AS "Identifiable %"</query>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+    <panel>
+      <title>Components by filesystem root</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| riskabilitymatch include_informational=true
+| eval root = if(scope_id!="", scope_id, "host")
+| stats dc(package) AS packages, dc(cve_id) AS cves BY root, hostname
+| sort - packages
+| rename root AS "Root", hostname AS "Host", packages AS "Packages", cves AS "CVEs"</query>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Ecosystems present in the fleet but absent from the feed</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| stats count AS components BY type
+| join type=left type
+    [| inputlookup riskability_ranges_lookup | stats dc(package) AS feed_packages BY ecosystem | rename ecosystem AS type]
+| eval feed_packages = coalesce(feed_packages, 0)
+| eval status = case(feed_packages > 0, "covered",
+                     type IN ("linux-kernel-module","linux-kernel","github-action","github-action-workflow","binary"), "no feed exists for this type",
+                     1=1, "add this ecosystem to the bundle")
+| sort - components
+| rename type AS "Ecosystem", components AS "Components in fleet",
+         feed_packages AS "Packages in feed", status AS "Status"</query>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <format type="color" field="Status">
+          <colorPalette type="map">{"covered":#53a051,"add this ecosystem to the bundle":#F8BE34,"no feed exists for this type":#708794}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+</dashboard>

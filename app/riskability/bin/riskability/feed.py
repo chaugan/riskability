@@ -122,14 +122,55 @@ _NOT_AFFECTED_STATUSES = {
 }
 
 
-def split_osv_ecosystem(ecosystem: str) -> Tuple[str, str, str]:
-    """Split an OSV ecosystem into (package_type, distro, distro_release).
+_RELEASE_TOKEN_RE = re.compile(r"^v?\d+(?:\.\d+)*$")
 
-    ``"Ubuntu:24.04"`` -> ``("deb", "ubuntu", "24.04")``
-    ``"npm"``          -> ``("npm", "", "")``
+# Tokens that qualify a release without being part of it. "LTS" is pure noise;
+# the rest name genuinely different product lines whose advisories do not apply
+# to a plain installation.
+_RELEASE_NOISE = {"lts", "kernel"}
+
+
+def split_release(raw_release: str) -> Tuple[str, str]:
+    """Split an OSV distro release into (release, variant).
+
+    OSV does not spell a release the way ``/etc/os-release`` does, and it uses
+    the same field to distinguish separate product lines::
+
+        "24.04:LTS"                 -> ("24.04", "")
+        "Pro:18.04:LTS"             -> ("18.04", "pro")
+        "Pro:FIPS-updates:20.04:LTS"-> ("20.04", "pro:fips-updates")
+        "Nvidia-BlueField:22.04:LTS"-> ("22.04", "nvidia-bluefield")
+        "25.10"                     -> ("25.10", "")
+
+    Splitting these matters twice over. Without stripping ``:LTS`` a release
+    never compares equal to the host's, so either nothing matches or -- worse --
+    a major-version fallback rescues it and quietly matches 24.04 against 24.10.
+    And the variants are not the same product: Ubuntu Pro, FIPS and Realtime
+    advisories describe package sets a plain host does not have.
+    """
+    tokens = [t for t in (raw_release or "").split(":") if t.strip()]
+    release = ""
+    variant_parts = []
+    for token in tokens:
+        t = token.strip()
+        if not release and _RELEASE_TOKEN_RE.match(t):
+            release = t.lstrip("vV")
+            continue
+        if t.lower() in _RELEASE_NOISE:
+            continue
+        variant_parts.append(t.lower())
+    return release, ":".join(variant_parts)
+
+
+def split_osv_ecosystem(ecosystem: str) -> Tuple[str, str, str, str]:
+    """Split an OSV ecosystem into (package_type, distro, release, variant).
+
+    ``"Ubuntu:24.04:LTS"``  -> ``("deb", "ubuntu", "24.04", "")``
+    ``"Ubuntu:Pro:18.04:LTS"`` -> ``("deb", "ubuntu", "18.04", "pro")``
+    ``"npm"``               -> ``("npm", "", "", "")``
     """
     raw = (ecosystem or "").strip()
-    base, _, release = raw.partition(":")
+    base, _, rest = raw.partition(":")
     base_l = base.strip().lower()
     pkg_type = _OSV_ECOSYSTEM_TO_TYPE.get(base_l, base_l)
     is_distro = base_l in {
@@ -137,7 +178,8 @@ def split_osv_ecosystem(ecosystem: str) -> Tuple[str, str, str]:
         "suse", "opensuse", "amazon linux",
     }
     distro = base_l if is_distro else ""
-    return pkg_type, distro, release.strip()
+    release, variant = split_release(rest)
+    return pkg_type, distro, release, variant
 
 
 def normalize_osv(record: dict, feed_source: str = "osv") -> Tuple[dict, List[dict], List[dict]]:
@@ -192,7 +234,9 @@ def normalize_osv(record: dict, feed_source: str = "osv") -> Tuple[dict, List[di
         name = (pkg.get("name") or "").strip()
         if not name:
             continue
-        pkg_type, distro, distro_release = split_osv_ecosystem(pkg.get("ecosystem", ""))
+        pkg_type, distro, distro_release, distro_variant = split_osv_ecosystem(
+            pkg.get("ecosystem", "")
+        )
 
         eco_specific = affected.get("ecosystem_specific") or {}
         db_specific = affected.get("database_specific") or {}
@@ -208,6 +252,7 @@ def normalize_osv(record: dict, feed_source: str = "osv") -> Tuple[dict, List[di
             "cve_id": advisory["cve_id"],
             "distro": distro,
             "distro_release": distro_release,
+            "distro_variant": distro_variant,
             # OSV keys distro records on the SOURCE package. Keeping it explicit
             # lets the matcher map a binary package to it rather than guessing.
             "source_package": name.lower() if distro else "",
