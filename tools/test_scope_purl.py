@@ -265,6 +265,27 @@ def main() -> int:
           rows and rows[0]["via_capec"] == ["2"] and rows[0]["cwe"] == "CWE-20",
           f"got {rows}")
 
+
+    # MITRE's own CAPEC records disagree about technique names; one technique
+    # must still render as one row.
+    inconsistent = {
+        "1": [{"technique": "T1552.004", "name": "Unsecure Credentials: Private Keys"}],
+        "2": [{"technique": "T1552.004", "name": "Unsecured Credentials: Private Keys"}],
+        "3": [{"technique": "T1552.004", "name": "Unsecured Credentials: Private Keys"}],
+        "4": [{"technique": "T1036.006", "name": "Masquerading:Space after Filename"}],
+        "5": [{"technique": "T1036.006", "name": "Masquerading: Space after Filename"}],
+    }
+    rows = feedlib2.build_attack_rows({"CWE-1": list(inconsistent)}, inconsistent)
+    names = {r["technique"]: r["technique_name"] for r in rows}
+    check("a typo'd variant loses to the majority spelling",
+          names.get("T1552.004") == "Unsecured Credentials: Private Keys",
+          f"got {names.get('T1552.004')!r}")
+    check("colon spacing is normalised so variants collapse",
+          names.get("T1036.006") == "Masquerading: Space after Filename",
+          f"got {names.get('T1036.006')!r}")
+    check("one technique yields exactly one row per CWE",
+          len(rows) == 2, f"got {len(rows)}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

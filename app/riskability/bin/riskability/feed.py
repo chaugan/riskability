@@ -746,6 +746,36 @@ def parse_capec_attack(csv_text: str) -> Dict[str, List[dict]]:
     return out
 
 
+def _canonical_technique_names(capec_attack: Dict[str, List[dict]]) -> Dict[str, str]:
+    """One name per ATT&CK technique.
+
+    CAPEC records disagree with each other about what a technique is called.
+    Real examples from one catalogue: "Unsecure Credentials: Private Keys" vs
+    "Unsecured Credentials: Private Keys" (a typo), "Man in the Browser" vs
+    "Browser Session Hijacking" (MITRE renamed it), and
+    "Masquerading:Space after Filename" vs the same with a space. Left alone,
+    a dashboard grouping by (technique, name) splits one technique across
+    several rows and it reads as several different problems.
+
+    Whitespace around the sub-technique colon is normalised first, then the
+    most frequent spelling wins, ties broken by the longer name -- which
+    favours the fuller "Supply Chain Compromise: Compromise Software
+    Dependencies..." over a truncated variant.
+    """
+    counts: Dict[str, Dict[str, int]] = {}
+    for entries in capec_attack.values():
+        for e in entries:
+            name = re.sub(r"\s*:\s*", ": ", (e.get("name") or "").strip())
+            if not name:
+                continue
+            counts.setdefault(e["technique"], {})
+            counts[e["technique"]][name] = counts[e["technique"]].get(name, 0) + 1
+    canonical = {}
+    for technique, names in counts.items():
+        canonical[technique] = max(names.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
+    return canonical
+
+
 def build_attack_rows(cwe_capec: Dict[str, List[str]],
                       capec_attack: Dict[str, List[dict]]) -> List[dict]:
     """Flatten CWE -> ATT&CK, keeping the CAPEC that justified each hop.
@@ -755,6 +785,7 @@ def build_attack_rows(cwe_capec: Dict[str, List[str]],
     The justification is carried through so a finding can show its reasoning
     rather than asserting an attack path.
     """
+    canonical = _canonical_technique_names(capec_attack)
     rows = []
     for cwe, capecs in cwe_capec.items():
         seen = {}
@@ -763,7 +794,7 @@ def build_attack_rows(cwe_capec: Dict[str, List[str]],
                 entry = seen.setdefault(t["technique"], {
                     "cwe": cwe,
                     "technique": t["technique"],
-                    "technique_name": t["name"],
+                    "technique_name": canonical.get(t["technique"], t["name"]),
                     "via_capec": [],
                 })
                 if capec not in entry["via_capec"]:

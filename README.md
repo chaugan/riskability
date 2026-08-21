@@ -104,6 +104,36 @@ and putting them in one app puts most of them in the wrong place:
 not index, and loading index definitions there makes it log
 `Required parameter=tstatsHomePath not configured` on every start.
 
+### Installing
+
+```sh
+tools/package.sh --verify        # builds dist/*.spl and checks each is complete
+```
+
+Install `riskability-<version>.spl` on the search heads,
+`TA-riskability-<version>.spl` on **both** forwarders and indexers, and
+`TA-riskability-indexes-<version>.spl` on indexers only.
+
+Everything the app needs at runtime is inside those archives — the KV Store
+collections and their indexes, the search commands, the modular input and its
+spec file, the admin endpoint and its Splunk Web exposure, the dashboards, and
+the vendored SDK. `--verify` exists because a fix that only lives on a
+developer's instance is not a fix; it is a difference between what was tested
+and what a user installs.
+
+Three things are **not** app configuration and must be done on the deployment:
+
+1. **Enable receiving on the indexers**, if it is not already on:
+   `splunk enable listen 9997`. Shipping this in an app would silently open a
+   port on someone's instance.
+2. **Enable the file input on the forwarders** — see below. It ships disabled
+   deliberately.
+3. **Import a feed.** The app has no vulnerability data until you give it some,
+   and says so on every dashboard rather than showing zeroes that look like
+   good news.
+
+The KV Store must be running on the search head; the feed lives there.
+
 ### Configuring the universal forwarder
 
 `TA-riskability` already contains the input; it ships **disabled**, because
