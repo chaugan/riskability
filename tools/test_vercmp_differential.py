@@ -60,6 +60,13 @@ DPKG_CORPUS = [
     "1.0~beta1", "1.0~beta2", "1.0~~", "1.0~", "1.0",
     "3.0.11-1~deb12u2", "3.0.14-1~deb12u3",
     "1.21.6-1~bpo11+1", "1.21.6-1",
+    # Non-numeric versions. dpkg orders a digit as 0 and a letter as its code
+    # point, so these sort ABOVE a plain version but BELOW an epoch-bearing
+    # one. Only a corpus that compares a letter against a digit at the same
+    # position exercises that, and getting it wrong silently mis-sorts every
+    # component whose version could not be determined.
+    "unknown", "UNKNOWN", "none", "3.12", "2.0", "0.0.1",
+    "1:2.17.1-1ubuntu0.3", "a", "z", "1a", "a1",
 ]
 
 RPM_CORPUS = [
@@ -73,6 +80,7 @@ RPM_CORPUS = [
     "1.0-1.20240101git", "1.0-1.20231231git",
     "4.18.0-513.24.1.el8_9", "4.18.0-513.5.1.el8_9",
     "1.0", "1.0-1", "1.0.1",
+    "unknown", "UNKNOWN", "none", "2.0", "1:2.17.1-1", "a", "1a", "a1",
 ]
 
 

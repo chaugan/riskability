@@ -54,14 +54,25 @@ _DPKG_RE = re.compile(r"^(?:(\d+):)?([^:]*?)(?:-([^-:]*))?$")
 
 
 def _dpkg_order(ch: str) -> int:
-    """Debian's per-character collation order.
+    """Debian's per-character collation order, matching dpkg's ``order()``.
 
-    Tilde sorts before everything including the end of string, then digits are
-    handled separately, then ASCII letters, then everything else.
+    Tilde sorts before everything, including the end of string. A **digit
+    orders as 0**, the same as end-of-string -- that is not an oversight in
+    dpkg, it is what makes a version terminate before a letter run: ``1.0``
+    sorts below ``1.0a`` but *above* ``unknown``. Letters order as their own
+    code point, and anything else as its code point plus 256, so punctuation
+    sorts after letters.
+
+    Getting the digit case wrong is invisible in most corpora, because it only
+    shows up when a letter is compared against a digit at the same position --
+    exactly what happens when a component reports a non-numeric version such as
+    ``UNKNOWN`` and it is compared against a real one.
     """
     if ch == "~":
         return -1
     if ch == "":
+        return 0
+    if ch.isdigit():
         return 0
     if ch.isalpha():
         return ord(ch)
