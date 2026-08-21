@@ -132,12 +132,37 @@ class FeedWorker(Script):
                      and request.get("state") == "running"
                      and quiet_for > ORPHAN_AFTER_SECONDS)
         if (in_flight and not request) or abandoned:
-            importer._write_status(
-                kv, state="failed",
-                error="the worker running this operation was interrupted "
-                      "(usually a Splunk restart). The live feed was not "
-                      "affected; start the import again.")
-            ew.log("WARN", "riskability: cleared an orphaned feed operation")
+            # An interruption after the atomic flip is not a failure: the feed
+            # landed and only the old generation's cleanup was cut short. Saying
+            # "the last import failed" above a feed showing 487,041 advisories
+            # is worse than saying nothing, so compare what the operation was
+            # building against what is now live before declaring anything.
+            target = 0
+            try:
+                target = int(status.get("generation") or 0)
+            except (TypeError, ValueError):
+                pass
+            live = importer.live_generation(kv)
+
+            if target and live >= target:
+                importer._write_status(
+                    kv, state="done", generation=live,
+                    error="",
+                    message="completed; the previous feed's cleanup was "
+                            "interrupted and will finish on the next import")
+                ew.log("INFO", "riskability: operation had already completed "
+                               "before the interruption; marked done")
+                # The old generation is unreachable but still occupying space.
+                for gen in range(0, live):
+                    importer._delete_generation(kv, gen)
+            else:
+                importer._write_status(
+                    kv, state="failed",
+                    error="the worker running this operation was interrupted "
+                          "(usually a Splunk restart). The live feed was not "
+                          "affected; start the import again.")
+                ew.log("WARN", "riskability: cleared an orphaned feed operation")
+            clear_request(kv)
             return
 
         if not request or request.get("state") != "pending":

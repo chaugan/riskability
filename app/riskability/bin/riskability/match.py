@@ -271,9 +271,12 @@ def cpe_candidate_keys(component: dict) -> List[str]:
     low confidence, because the *identity* is inferred even when the version
     comparison is exact.
     """
-    cpes = component.get("cpes") or ()
+    # Accept either a real list (offline scanner, reading JSON directly) or the
+    # flattened, whitespace-separated string the Splunk macro produces, because
+    # a multivalue field cannot cross the search-command boundary intact.
+    cpes = component.get("cpes") or component.get("cpe_list") or ()
     if isinstance(cpes, str):
-        cpes = [cpes]
+        cpes = cpes.split()
     keys = []
     for c in cpes:
         k = feedlib.cpe_key(c)

@@ -361,7 +361,24 @@
         card.appendChild(checkRow);
         card.appendChild(checkMsg);
 
-        if (onlineState) renderReachability(card, onlineState, checkMsg);
+        if (onlineState) {
+            renderReachability(card, onlineState, checkMsg);
+        } else {
+            // Check once automatically on first load. Hiding the whole panel
+            // behind a button meant an operator could not tell whether the
+            // online path was even available without guessing that the button
+            // did something -- and on an air-gapped search head the honest
+            // answer ("nothing is reachable, build a bundle elsewhere") is the
+            // one worth showing without being asked.
+            checkMsg.textContent = "Checking which sources this search head can reach\u2026";
+            request("POST", { action: "online_check" }).then(function (r) {
+                onlineState = r;
+                checkMsg.textContent = "";
+                renderReachability(card, r, checkMsg);
+            }).catch(function (e) {
+                checkMsg.textContent = "Could not check connectivity: " + e.message;
+            });
+        }
         return card;
     }
 
