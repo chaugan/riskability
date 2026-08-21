@@ -131,8 +131,14 @@ python3 -m zipapp "$APPDIR" -o "$STAGE/riskability-feed.pyz" -p "/usr/bin/env py
 chmod +x "$STAGE/riskability-feed.pyz"
 
 # --- wrappers and readme ---------------------------------------------------
-cp "$STATIC/build-feed.sh" "$STAGE/build-feed.sh"
-cp "$STATIC/build-feed.ps1" "$STAGE/build-feed.ps1"
+# The wrappers live here rather than under appserver/static, so the only thing
+# the app can serve is the complete archive. They used to sit in static beside
+# the zip, which meant a stale page -- or a stale browser cache -- could still
+# hand someone a lone build-feed.ps1 that fails with "riskability-feed not
+# found". A file that cannot work on its own should not be downloadable.
+SRC="$ROOT/tools/feedbuilder"
+cp "$SRC/build-feed.sh" "$STAGE/build-feed.sh"
+cp "$SRC/build-feed.ps1" "$STAGE/build-feed.ps1"
 chmod +x "$STAGE/build-feed.sh"
 
 cat > "$STAGE/README.txt" <<'TXTEOF'
