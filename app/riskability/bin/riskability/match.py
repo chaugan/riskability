@@ -16,7 +16,36 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List, Optional, Sequence
 
+from . import purl as purllib
+from . import scope as scopelib
 from . import vercmp
+
+
+def prepare_component(component: dict) -> dict:
+    """Resolve a raw inventory row into something safe to match against.
+
+    Order matters and is the whole point of having one function for it:
+
+    1. **PURL enrichment** recovers the source package and the package's own
+       distro, both of which the flat inventory record drops.
+    2. **The PURL's distro is applied** where the component is a host package,
+       because it describes the package rather than the machine.
+    3. **Scope resolution wins last**, because the root a package was physically
+       found in is stronger evidence than a qualifier. Syft stamps the *host's*
+       distro onto packages it finds inside someone else's root: a Debian 12
+       openssl in an unpacked rootfs is labelled ``distro=ubuntu-26.04`` on an
+       Ubuntu host. Trusting that qualifier matches a Debian package against
+       Ubuntu advisories, so for any non-host root the scope's answer overrides
+       it -- an inferred release where one is derivable, nothing otherwise.
+    """
+    enriched = purllib.enrich(component)
+
+    if enriched.get("purl_distro"):
+        enriched["os_id"] = enriched["purl_distro"]
+        if enriched.get("purl_distro_release"):
+            enriched["os_version_id"] = enriched["purl_distro_release"]
+
+    return scopelib.apply_scope(enriched)
 
 # Higher wins. A finding from a lower authority is dropped when a higher
 # authority has already spoken about the same (component, advisory).

@@ -87,7 +87,13 @@ def main() -> int:
     covered_by_type: collections.Counter = collections.Counter()
     no_identifier: collections.Counter = collections.Counter()
 
-    for comp in components:
+    by_scope: collections.Counter = collections.Counter()
+    for raw_comp in components:
+        # Recover the source package and the package's own root/release before
+        # matching. A package inside /snap/core18 is Ubuntu 18.04, whatever the
+        # host runs, and libssl3t64 is advised under its source package openssl.
+        comp = matchlib.prepare_component(raw_comp)
+        by_scope[comp["scope_id"] or comp["scope"]] += 1
         eco = (comp.get("type") or "").lower()
         by_type[eco] += 1
         if not comp.get("purl") and not comp.get("cpes"):
@@ -106,6 +112,8 @@ def main() -> int:
             f["epss"] = a.get("epss")
             f["title"] = a.get("title", "")
             f["hostname"] = comp.get("hostname", "")
+            f["scope"] = comp["scope"]
+            f["scope_id"] = comp["scope_id"]
             findings.append(f)
 
     shown = findings if args.all else [f for f in findings if f["confidence"] == "high"]
@@ -136,6 +144,11 @@ def main() -> int:
         print(f"  {eco:<24}{n:>11}{feed_n:>9}{no_identifier.get(eco,0):>13}  {cmpname}")
     print()
 
+    print("components by root")
+    for name, n in by_scope.most_common(10):
+        print(f"  {name:<44}{n:>8}")
+    print()
+
     high = [f for f in findings if f["confidence"] == "high"]
     info = [f for f in findings if f["confidence"] == "informational"]
     low = [f for f in findings if f["confidence"] == "low"]
@@ -143,11 +156,13 @@ def main() -> int:
     print()
 
     if shown:
-        print(f"{'CVE':<20}{'PACKAGE':<28}{'INSTALLED':<24}{'FIXED':<22}{'EPSS':>7}")
+        print(f"{'CVE':<18}{'PACKAGE':<26}{'INSTALLED':<22}{'FIXED':<20}{'ROOT':<14}{'EPSS':>7}")
         for f in shown[:args.limit]:
             epss = f.get("epss")
-            print(f"{f['cve_id']:<20}{f['package'][:27]:<28}"
-                  f"{f['installed_version'][:23]:<24}{(f['fixed_version'] or '-')[:21]:<22}"
+            root = f.get("scope_id") or f.get("scope") or "host"
+            print(f"{f['cve_id']:<18}{f['package'][:25]:<26}"
+                  f"{f['installed_version'][:21]:<22}{(f['fixed_version'] or '-')[:19]:<20}"
+                  f"{root[:13]:<14}"
                   f"{(f'{epss:.4f}' if epss is not None else '-'):>7}")
         if len(shown) > args.limit:
             print(f"... and {len(shown) - args.limit} more")

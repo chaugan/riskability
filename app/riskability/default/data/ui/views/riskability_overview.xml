@@ -1,0 +1,94 @@
+<dashboard version="1.1" theme="dark">
+  <label>Fleet overview</label>
+  <description>Vulnerability posture across every host reporting a swinv inventory.</description>
+
+  <!-- An air-gapped feed is only as good as the last upload, so how stale it
+       is comes first, before any number derived from it. -->
+  <row>
+    <panel>
+      <title>Vulnerability feed</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_feedstate_lookup
+| eval age_days = round((now() - imported_at)/86400, 1)
+| fields age_days</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">days since feed was imported</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[7,30]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Hosts reporting</title>
+      <single>
+        <search>
+          <query>index=riskability_inventory sourcetype=riskability:swinv earliest=-7d
+| stats dc(hostname) AS hosts</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">in the last 7 days</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Components tracked</title>
+      <single>
+        <search>
+          <query>`riskability_latest_inventory`
+| stats count AS components</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">latest state, all hosts</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Findings by confidence</title>
+      <chart>
+        <search>
+          <query>`riskability_latest_inventory`
+| riskabilitymatch include_informational=true
+| stats count BY confidence</query>
+        </search>
+        <option name="charting.chart">pie</option>
+        <option name="charting.legend.placement">right</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Most affected hosts</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| riskabilitymatch
+| stats dc(cve_id) AS cves, dc(package) AS packages BY hostname
+| sort - cves
+| head 20</query>
+        </search>
+        <option name="drilldown">cell</option>
+        <drilldown>
+          <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.hostname$</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Known-exploited vulnerabilities present in the fleet (CISA KEV)</title>
+      <table>
+        <search>
+          <query>`riskability_latest_inventory`
+| riskabilitymatch
+| where isnotnull(kev_added) AND kev_added!=""
+| stats dc(hostname) AS hosts, values(package) AS packages BY cve_id, kev_added, kev_due, epss
+| sort - hosts</query>
+        </search>
+        <option name="count">15</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+</dashboard>

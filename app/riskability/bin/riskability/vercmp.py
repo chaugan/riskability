@@ -628,14 +628,28 @@ HEURISTIC_TYPES = {"binary", "unknown", "generic"}
 # "1.4.3" is the worked example. The matcher uses this to tell a real
 # comparison from a guess, and marks the guess as low confidence instead of
 # reporting it as fact.
+def _looks_like_a_version(v: str) -> bool:
+    """Reject placeholders that dpkg/rpm would happily order anyway.
+
+    Debian and RPM version syntax is permissive enough that "unknown" parses
+    and sorts below every real version, so a component whose version could not
+    be determined matches every advisory ever filed against that package. A
+    real version contains at least one digit.
+    """
+    v = (v or "").strip()
+    if not v or not any(ch.isdigit() for ch in v):
+        return False
+    return v.lower() not in {"unknown", "none", "null", "n/a", "-"}
+
+
 _PARSE_CHECKS = {
-    dpkg_compare: lambda v: bool((v or "").strip()),
-    rpm_compare: lambda v: bool((v or "").strip()),
+    dpkg_compare: _looks_like_a_version,
+    rpm_compare: _looks_like_a_version,
     apk_compare: lambda v: _apk_parse(v) is not None,
     semver_compare: lambda v: _SEMVER_RE.match((v or "").strip()) is not None,
     pep440_compare: lambda v: _pep440_parse(v) is not None,
     go_compare: lambda v: _SEMVER_RE.match(_go_normalise(v)) is not None,
-    maven_compare: lambda v: bool((v or "").strip()),
+    maven_compare: _looks_like_a_version,
     generic_compare: lambda v: False,
 }
 
