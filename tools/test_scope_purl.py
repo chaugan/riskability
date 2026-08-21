@@ -77,8 +77,10 @@ def main() -> int:
     print("host identity is not applied to other roots")
 
     # Real case: a Debian 12 openssl inside an unpacked rootfs on an Ubuntu
-    # host. Syft stamps the HOST's distro onto it, which would match it against
-    # Ubuntu advisories.
+    # host. Syft normally omits distro= for nested roots, but where one
+    # component's evidence spans two roots the merge leaves the HOST's
+    # qualifier attached to a foreign package, which would match it against
+    # Ubuntu advisories. Rare (3 of 14,349 on the measured host) but wrong.
     nested = {
         "name": "openssl", "version": "3.0.11-1~deb12u2", "type": "deb",
         "purl": "pkg:deb/ubuntu/openssl@3.0.11-1~deb12u2?arch=amd64&distro=ubuntu-26.04",

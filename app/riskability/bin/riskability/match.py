@@ -32,12 +32,21 @@ def prepare_component(component: dict) -> dict:
     2. **The PURL's distro is applied** where the component is a host package,
        because it describes the package rather than the machine.
     3. **Scope resolution wins last**, because the root a package was physically
-       found in is stronger evidence than a qualifier. Syft stamps the *host's*
-       distro onto packages it finds inside someone else's root: a Debian 12
-       openssl in an unpacked rootfs is labelled ``distro=ubuntu-26.04`` on an
-       Ubuntu host. Trusting that qualifier matches a Debian package against
-       Ubuntu advisories, so for any non-host root the scope's answer overrides
-       it -- an inferred release where one is derivable, nothing otherwise.
+       found in is stronger evidence than a qualifier.
+
+       Syft is well behaved here on its own: measured over a real host, all 804
+       components living wholly inside a nested root carried *no* ``distro=``
+       qualifier at all, which is the honest answer. The qualifier goes wrong
+       only where one component's evidence spans two roots -- Syft then merges a
+       nested package with host evidence and the surviving qualifier describes
+       the host. That was 3 components out of 14,349, so this ordering is a
+       cheap guard against a rare case rather than a fix for a widespread one.
+
+       The ordering earns its place for the common case instead: a nested
+       component inherits the host's ``os_id``/``os_version_id`` from the flat
+       inventory row regardless of what its PURL says, because every row repeats
+       host identity. Scope resolution is what replaces that with the root's own
+       release, or with nothing when none can be derived.
     """
     enriched = purllib.enrich(component)
 
