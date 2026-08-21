@@ -1,0 +1,27 @@
+[]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = none
+
+[views]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[collections/riskability_ranges]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[collections/riskability_advisories]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[collections/riskability_notaffected]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[collections/riskability_feedstate]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[collections/riskability_suppressions]
+access = read : [ * ], write : [ admin, power, sc_admin ]
+
+[transforms]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+[commands]
+access = read : [ * ], write : [ admin, sc_admin ]
