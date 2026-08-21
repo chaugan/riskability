@@ -30,8 +30,11 @@ built around getting that distinction right:
 | A comparison that could not be made properly is *low confidence*, not a finding | A guess reported as fact is worse than no finding |
 
 The Debian and RPM comparators are differentially tested against the real
-`dpkg` and `rpm` binaries — 1482/1482 and 702/702 version pairs match the
-reference implementations exactly.
+`dpkg` and `rpm` binaries: **2450/2450** and **1190/1190** version pairs match
+the reference implementations exactly. That test earns its keep — it caught a
+collation bug where digits were ordered as punctuation rather than as
+end-of-string, which mis-sorted every component whose version could not be
+determined.
 
 ---
 
@@ -40,15 +43,17 @@ reference implementations exactly.
 **It knows a filesystem contains more than one operating system.** A single
 Ubuntu 26.04 host in testing reported four different `openssl` packages: the
 host's own, one inside `/snap/core18` (Ubuntu 18.04), one inside `/snap/core20`
-(20.04), and one in an unpacked container rootfs. All four inherit the host's
-identity in the raw inventory. Riskability resolves each to its own root,
-infers the release a base snap is built on, and reports findings against the
-root they belong to.
+(20.04), and one in an unpacked container rootfs. 810 components (5.6%) live in
+a root that is not the host's, and every one of them inherits the host's
+`os_id`/`os_version_id` from the flat inventory record, because each row repeats
+host identity. Riskability resolves each to its own root, infers the release a
+base snap is built on, and reports findings against the root they belong to.
 
 **It recovers source packages.** Debian and RPM advisories are keyed on the
 *source* package while an inventory reports the *binary* one — `libssl3t64` is
 advised as `openssl`. Syft encodes this in the PURL's `upstream` qualifier.
-Parsing it tripled deb coverage on the test host.
+Parsing it took deb coverage on the test host from 260 to 770 matched
+components, a 2.96× improvement.
 
 **It distinguishes "fixed" from "stopped being reported".** A finding that
 disappears may have been remediated, or the scan may have failed, or the host
@@ -58,9 +63,14 @@ about that exact install path: `mitigated` (still installed, different version,
 with the version change recorded), `removed`, or `unknown`.
 
 **It says what it cannot assess.** Of 14,349 components on the test host, 6,905
-were kernel modules that no vulnerability feed covers. The Coverage dashboard
-puts that in front of you, because a scanner silently blind to half a host is
-more dangerous than one that admits it.
+— **48%** — were kernel modules that no vulnerability feed covers. The Coverage
+dashboard puts that in front of you, because a scanner silently blind to half a
+host is more dangerous than one that admits it.
+
+**It reports one vulnerability once.** OSV routinely describes the same CVE in
+several advisories: on the test feed, 11,122 (package, CVE) pairs are covered by
+more than one advisory record, and the worst is described by nine. Keyed on
+advisory id, a single flaw is reported up to nine times.
 
 ---
 
@@ -111,9 +121,10 @@ tools/riskability-feed build --out riskability-feed.tar.gz \
 ```
 
 Only the sources you name are downloaded. A bundle covering Ubuntu plus four
-language ecosystems is **~41 MB** and holds 323,387 advisories and 2.96M
-affected ranges — built from ~880 MB of raw upstream feeds, because everything
-that is not needed for matching is normalised away.
+language ecosystems is **40.9 MB** and holds 323,387 advisories and 2,960,955
+affected ranges — built from 884 MB of raw upstream feeds, because everything
+that is not needed for matching is normalised away. It imports into the KV Store
+in about five minutes.
 
 Carry the bundle across, then either drop it in
 `$SPLUNK_HOME/var/run/riskability/incoming/` or upload it on the **Feed
@@ -170,7 +181,13 @@ python3 tools/test_vercmp_differential.py   # vs the real dpkg and rpm
 python3 tools/test_vercmp_spec.py           # vs each ecosystem's spec
 python3 tools/test_match.py                 # matching and precedence
 python3 tools/test_scope_purl.py            # regressions from real inventory
+python3 tools/audit_claims.py               # recompute every number in this file
 ```
+
+`audit_claims.py` exists because a claim in this README was once a
+generalisation from a single example rather than a measurement. Every
+quantitative statement above is recomputed by that script from the actual
+inventory and feed, so it can be checked rather than trusted.
 
 `tools/riskability-scan` is the fastest way to sanity-check behaviour, because
 it runs the app's matching logic against a `swinv` file with no Splunk involved:

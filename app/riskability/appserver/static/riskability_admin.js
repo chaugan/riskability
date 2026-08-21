@@ -94,6 +94,42 @@
         var card = el("div", "rk-card");
         card.appendChild(el("h3", null, "Active vulnerability feed"));
 
+        var st = state.status || {};
+        if (st.state === "importing" || st.state === "cleaning") {
+            var prog = el("div", "rk-status rk-warn");
+            var loaded = st.loaded_ranges || 0, want = st.expected_ranges || 0;
+            var pct = want ? Math.min(99, Math.round(loaded * 100 / want)) : 0;
+            prog.appendChild(el("b", null,
+                st.state === "cleaning"
+                    ? "Import complete — removing the previous feed…"
+                    : "Importing " + (st.bundle_version || "") + " — " + pct + "%"));
+            prog.appendChild(el("span", null,
+                " The feed below stays live and searchable until this finishes. " +
+                "The import continues on the server whether or not this page is open."));
+            if (want) {
+                prog.appendChild(el("div", "rk-dim",
+                    loaded.toLocaleString() + " of " + want.toLocaleString() + " ranges loaded"));
+            }
+            card.appendChild(prog);
+        } else if (st.state === "failed") {
+            var bad = el("div", "rk-status rk-bad");
+            bad.appendChild(el("b", null, "The last import failed."));
+            bad.appendChild(el("span", null,
+                " " + (st.error || "") + " The previous feed is still live and intact."));
+            card.appendChild(bad);
+        }
+
+        // A truncated collection must never look like a healthy feed.
+        var v = state.verify;
+        if (v && v.consistent === false) {
+            var warn = el("div", "rk-status rk-bad");
+            warn.appendChild(el("b", null, "The stored feed does not match what was imported."));
+            warn.appendChild(el("span", null,
+                " Searches will under-report until this is corrected. Re-import the bundle."));
+            warn.appendChild(el("div", "rk-dim", v.reason || ""));
+            card.appendChild(warn);
+        }
+
         if (!feed) {
             var none = el("div", "rk-status rk-bad");
             none.appendChild(el("b", null, "No feed imported."));
@@ -181,11 +217,12 @@
                         if (!window.confirm(
                             "Import " + item.filename + "?\n\n" +
                             "This replaces the active feed. Searches keep using the current " +
-                            "feed until the import completes.")) return;
+                            "feed until the import completes, and the import continues even " +
+                            "if you close this page.")) return;
                         actions.textContent = "";
-                        actions.appendChild(el("span", "rk-dim", "Importing…"));
+                        actions.appendChild(el("span", "rk-dim", "Starting…"));
                         request("POST", { action: "import", filename: item.filename })
-                            .then(load)
+                            .then(function () { poll(); })
                             .catch(function (e) { fail(e, actions); });
                     });
                     actions.appendChild(imp);
@@ -246,8 +283,20 @@
         else { root.appendChild(box); }
     }
 
+    // While an import runs, refresh often enough to look alive without
+    // hammering an endpoint that counts KV Store rows.
+    var pollTimer = null;
+    function poll() {
+        if (pollTimer) clearTimeout(pollTimer);
+        pollTimer = setTimeout(load, 3000);
+    }
+
     function load() {
-        request("GET").then(render).catch(function (err) {
+        request("GET").then(function (state) {
+            render(state);
+            var st = state.status && state.status.state;
+            if (st === "importing" || st === "cleaning") poll();
+        }).catch(function (err) {
             root.textContent = "";
             var box = el("div", "rk-status rk-bad");
             box.appendChild(el("b", null, "Could not read feed state. "));

@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 from splunklib.searchcommands import Configuration, EventingCommand, Option, dispatch  # noqa: E402
 from splunklib.searchcommands.validators import Boolean  # noqa: E402
 
+from riskability import importer as importerlib  # noqa: E402
 from riskability import match as matchlib  # noqa: E402
 
 RANGES_COLLECTION = "riskability_ranges"
@@ -62,11 +63,22 @@ class RiskabilityMatchCommand(EventingCommand):
     def __init__(self):
         super().__init__()
         self._advisory_cache: Dict[str, dict] = {}
+        self._generation = None
 
     # -- KV Store access ---------------------------------------------------
 
     def _kv(self, collection: str):
         return self.service.kvstore[collection].data
+
+    def _gen(self) -> int:
+        """The feed generation to read, resolved once per search.
+
+        Filtering on this is what keeps a search off a feed that is still being
+        imported: a partially written generation is simply not the live one.
+        """
+        if self._generation is None:
+            self._generation = importerlib.live_generation(self.service.kvstore)
+        return self._generation
 
     def _query_all(self, collection: str, query: dict) -> List[dict]:
         """Page through a KV Store query so a hot package is never truncated."""
@@ -99,7 +111,8 @@ class RiskabilityMatchCommand(EventingCommand):
             names = sorted(packages)
             for i in range(0, len(names), 1000):
                 batch = names[i:i + 1000]
-                q = {"ecosystem": ecosystem, "package": {"$in": batch}}
+                q = {"gen": self._gen(), "ecosystem": ecosystem,
+                     "package": {"$in": batch}}
                 for row in self._query_all(RANGES_COLLECTION, q):
                     ranges.setdefault((ecosystem, row.get("package", "")), []).append(row)
                 for row in self._query_all(NOTAFFECTED_COLLECTION, q):
@@ -110,7 +123,7 @@ class RiskabilityMatchCommand(EventingCommand):
         missing = [a for a in set(advisory_ids) if a not in self._advisory_cache]
         for i in range(0, len(missing), 1000):
             batch = missing[i:i + 1000]
-            q = {"advisory_id": {"$in": batch}}
+            q = {"gen": self._gen(), "advisory_id": {"$in": batch}}
             for row in self._query_all(ADVISORIES_COLLECTION, q):
                 self._advisory_cache[row.get("advisory_id", "")] = row
         for a in missing:

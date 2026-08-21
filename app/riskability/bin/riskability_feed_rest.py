@@ -30,6 +30,7 @@ import json
 import os
 import re
 import sys
+import threading
 import traceback
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
@@ -161,12 +162,22 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
     def _get(self, request):
         service = self._service(request)
         state = importer.current_state(service.kvstore)
-        return _reply(200, {
+        status = importer.import_status(service.kvstore)
+        payload = {
             "feed": state,
+            "status": status,
             "incoming": self._list_incoming(),
             "incoming_dir": INCOMING_DIR,
             "schema": feedlib.SCHEMA_VERSION,
-        })
+        }
+        # Only verify when nothing is mid-flight: during an import the counts
+        # legitimately disagree, and counting millions of rows is not free.
+        if not status or status.get("state") in ("done", "failed", None):
+            try:
+                payload["verify"] = importer.verify(service.kvstore)
+            except Exception:
+                pass
+        return _reply(200, payload)
 
     def _post(self, request):
         payload = request.get("payload")
@@ -216,14 +227,43 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
                             "size_bytes": len(raw)})
 
     def _import(self, request, body):
+        """Start an import and return immediately.
+
+        A full bundle takes minutes to load. Running that inside the HTTP
+        request ties it to the admin's browser: closing the tab, a proxy
+        timeout or a dropped session aborts the handler mid-import. Running it
+        on a background thread means the only thing the browser controls is
+        whether it watches the progress.
+        """
         path = _safe_incoming_path(body.get("filename", ""))
         if not os.path.isfile(path):
             raise ValueError(f"no staged bundle named {os.path.basename(path)!r}")
         service = self._service(request)
         user = request.get("session", {}).get("user") or ""
-        state = importer.import_bundle(path, service.kvstore, imported_by=user)
-        self._mark_configured(service)
-        return _reply(200, {"ok": True, "feed": state})
+
+        running = importer.import_status(service.kvstore) or {}
+        if running.get("state") in ("importing", "cleaning"):
+            raise ValueError(
+                "an import is already running; wait for it to finish before "
+                "starting another")
+
+        # Validate here, in the request, so a bad bundle is an immediate error
+        # to the operator rather than a background failure they must go looking
+        # for.
+        feedlib.read_manifest(path)
+
+        def run():
+            try:
+                importer.import_bundle(path, service.kvstore, imported_by=user)
+                self._mark_configured(service)
+            except Exception:
+                # import_bundle already recorded the failure in the status row,
+                # which is what the admin page reads.
+                pass
+
+        threading.Thread(target=run, name="riskability-import", daemon=True).start()
+        return _reply(202, {"ok": True, "started": True,
+                            "filename": os.path.basename(path)})
 
     def _mark_configured(self, service):
         """Clear Splunk's first-run setup gate once a feed actually exists.
