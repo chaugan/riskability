@@ -11,14 +11,14 @@
     PURL. NVD's CPE data is the only source that can assess it, which is why
     -Windows is the default here and optional on the Linux script.
 
-.PARAMETER Profile
+.PARAMETER FeedProfile
     Linux      distributions and language ecosystems only
     Windows    adds NVD CPE data (default)
     Everything every distribution, every ecosystem, all NVD years
 
 .EXAMPLE
     .\build-feed.ps1
-    .\build-feed.ps1 -Profile Everything -OutDir D:\feeds
+    .\build-feed.ps1 -FeedProfile Everything -OutDir D:\feeds
 
 .NOTES
     Requires Python 3.8+. Everything else ships in the same archive as this
@@ -27,7 +27,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Linux', 'Windows', 'Everything')]
-    [string]$Profile = 'Windows',
+    [string]$FeedProfile = 'Windows',
     [string]$OutDir = '.',
     [string]$FeedTool = ''
 )
@@ -49,12 +49,15 @@ function Find-FeedTool {
 }
 
 function Find-Python {
+    # Returns an object rather than an array on purpose. PowerShell unrolls a
+    # single-element array on return, so "return @($cmd.Source)" hands back a
+    # STRING; indexing it then yields one character. An object cannot unroll.
     foreach ($name in @('python3', 'python', 'py')) {
         $cmd = Get-Command $name -ErrorAction SilentlyContinue
         if ($cmd) {
-            # 'py' needs -3 to select Python 3.
-            if ($name -eq 'py') { return @($cmd.Source, '-3') }
-            return @($cmd.Source)
+            # The py launcher needs -3 to select Python 3.
+            $pre = if ($name -eq 'py') { @('-3') } else { @() }
+            return [pscustomobject]@{ Exe = $cmd.Source; Pre = $pre }
         }
     }
     throw "Python 3 was not found on PATH. Install it from python.org or the Microsoft Store."
@@ -67,7 +70,7 @@ $out = Join-Path $OutDir "riskability-feed-$stamp.tar.gz"
 
 # Trim these lists to what your fleet actually runs: every entry is a download,
 # and a feed you do not need is only bulk to carry across the air gap.
-$args = @(
+$buildArgs = @(
     'build', '--out', $out, '--version', $stamp,
     '--ecosystem', 'Ubuntu',
     '--ecosystem', 'Debian',
@@ -79,10 +82,10 @@ $args = @(
     '--kev', '--epss', '--mitre'
 )
 
-switch ($Profile) {
-    'Windows' { $args += @('--nvd', '2015-2026') }
+switch ($FeedProfile) {
+    'Windows' { $buildArgs += @('--nvd', '2015-2026') }
     'Everything' {
-        $args += @(
+        $buildArgs += @(
             '--ecosystem', 'Red Hat', '--ecosystem', 'Rocky Linux',
             '--ecosystem', 'AlmaLinux', '--ecosystem', 'SUSE',
             '--ecosystem', 'openSUSE', '--ecosystem', 'NuGet',
@@ -94,7 +97,7 @@ switch ($Profile) {
 }
 
 Write-Host "Building $out ..." -ForegroundColor Cyan
-& $python[0] @($python[1..($python.Length - 1)]) $tool @args
+& $python.Exe @($python.Pre) $tool @buildArgs
 if ($LASTEXITCODE -ne 0) { throw "riskability-feed exited with $LASTEXITCODE" }
 
 Write-Host ""

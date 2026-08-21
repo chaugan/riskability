@@ -328,15 +328,69 @@
         row.appendChild(box);
         card.appendChild(row);
 
-        var note = el("div", "rk-dim");
+        // Spelled out rather than summarised. The wrappers take a profile, but
+        // the two platforms spell it differently -- a positional flag on the
+        // shell script, a named parameter in PowerShell -- and a reader who
+        // guesses gets an unhelpful error rather than a hint.
+        card.appendChild(el("h4", null, "Choosing what goes in the bundle"));
+
+        var tbl = el("table", "rk-table");
+        var head = el("tr");
+        ["Profile", "Linux / macOS", "Windows", "What it fetches"].forEach(function (h) {
+            head.appendChild(el("th", null, h));
+        });
+        tbl.appendChild(head);
+        [["Linux (default on the .sh)",
+          "./build-feed.sh",
+          ".\\build-feed.ps1 -FeedProfile Linux",
+          "Ubuntu, Debian, Alpine, npm, PyPI, Go, Maven, plus KEV, EPSS and the MITRE mapping"],
+         ["Windows (default on the .ps1)",
+          "./build-feed.sh --windows",
+          ".\\build-feed.ps1",
+          "The above plus NVD CPE data for 2015-2026, which is the only source that can assess Windows software"],
+         ["Everything",
+          "./build-feed.sh --everything",
+          ".\\build-feed.ps1 -FeedProfile Everything",
+          "Every distribution and ecosystem, and all NVD years. Much larger and much slower"]
+        ].forEach(function (row) {
+            var tr = el("tr");
+            tr.appendChild(el("td", null, row[0]));
+            tr.appendChild(el("td", "rk-mono", row[1]));
+            tr.appendChild(el("td", "rk-mono", row[2]));
+            tr.appendChild(el("td", "rk-dim", row[3]));
+            tbl.appendChild(tr);
+        });
+        card.appendChild(tbl);
+
+        var opts = el("div", "rk-dim");
+        opts.style.marginTop = "10px";
+        opts.appendChild(el("b", null, "Other options"));
+        var ul = el("ul");
+        [["-OutDir <path>", "PowerShell only. Where to write the bundle. Defaults to the current directory."],
+         ["Driving the builder directly",
+          "Both wrappers are convenience over one command. For a bundle covering only what you "
+          + "run, call it yourself: python3 riskability-feed.pyz build --out feed.tar.gz "
+          + "--ecosystem Ubuntu --ecosystem npm --kev --epss --mitre --nvd 2020-2026"],
+         ["Listing the sources", "python3 riskability-feed.pyz sources  (add --check to query live download sizes)"]
+        ].forEach(function (o) {
+            var li = el("li");
+            li.appendChild(el("code", null, o[0]));
+            li.appendChild(document.createTextNode(" \u2014 " + o[1]));
+            ul.appendChild(li);
+        });
+        opts.appendChild(ul);
+        card.appendChild(opts);
+
+        var note = el("div", "rk-status rk-warn");
         note.style.marginTop = "10px";
-        note.appendChild(document.createTextNode(
-            "Each wrapper takes a profile: Linux, Windows, or Everything. Windows estates "
-            + "need the Windows profile, which adds NVD CPE data: Windows software is not "
-            + "installed by a package manager, so it carries no PURL and only NVD's CPE "
-            + "data can assess it. Findings reached that way are always reported at low "
-            + "confidence, because the product identity is inferred from a display name "
-            + "rather than read from a package record."));
+        note.appendChild(el("b", null, "Windows estates need the Windows profile."));
+        note.appendChild(el("span", null,
+            "Windows software is not installed by a package manager, so it carries no PURL "
+            + "and only NVD's CPE data can assess it. Findings reached that way are always "
+            + "reported at low confidence, because the product identity is inferred from a "
+            + "display name rather than read from a package record. Trim the ecosystem list "
+            + "to what your fleet actually runs: every entry is a download, and a feed you "
+            + "do not need is only bulk to carry across the air gap."));
         card.appendChild(note);
         return card;
     }

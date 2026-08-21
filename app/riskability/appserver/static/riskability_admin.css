@@ -138,3 +138,6 @@
 
 .rk-reach { margin-top: 12px; }
 .rk-good-text { color: #6db56b; }
+
+/* Commands are copied by hand off this page, so they get a monospace column. */
+.rk-mono { font-family: Menlo, Consolas, monospace; font-size: 11px; color: #d5d8dc; white-space: nowrap; }

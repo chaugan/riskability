@@ -25,14 +25,19 @@
  */
 import { Tabulator, SortModule, FilterModule, FormatModule, EditModule,
          ResizeColumnsModule, PageModule, DownloadModule, MenuModule,
-         TooltipModule } from 'tabulator-tables';
+         TooltipModule, InteractionModule } from 'tabulator-tables';
 
 import SplunkVisualizationBase from 'api/SplunkVisualizationBase';
 import vizUtils from 'api/SplunkVisualizationUtils';
 
+// InteractionModule is what emits cellClick/rowClick. Without it Tabulator
+// still renders and filters perfectly, and on('cellClick') simply never fires
+// -- no error, no warning, just a table where clicking does nothing. That is
+// how the drilldown appeared to be a Splunk problem when it was a missing
+// module here.
 Tabulator.registerModule([
     SortModule, FilterModule, FormatModule, EditModule, ResizeColumnsModule,
-    PageModule, DownloadModule, MenuModule, TooltipModule,
+    PageModule, DownloadModule, MenuModule, TooltipModule, InteractionModule,
 ]);
 
 var ROW_CAP = 10000;
@@ -248,7 +253,14 @@ export default SplunkVisualizationBase.extend({
             this.table = new Tabulator(host, {
                 data: tableData,
                 columns: columns,
-                layout: 'fitDataStretch',
+                // fitColumns, not fitDataStretch. fitDataStretch sizes to the
+                // content and then stretches the last column, which overshoots
+                // the panel by a few pixels on narrow tables and leaves a
+                // permanent horizontal scrollbar under a two-column grid.
+                // fitColumns divides the panel width instead, and minWidth
+                // below still forces a scrollbar on genuinely wide tables like
+                // Findings, where scrolling is the correct answer.
+                layout: 'fitColumns',
                 // Virtual DOM. Ten thousand rows rendered eagerly would lock
                 // the tab; Tabulator only builds the visible window.
                 renderVertical: 'virtual',
@@ -294,10 +306,20 @@ export default SplunkVisualizationBase.extend({
                 var rowData = cell.getRow().getData();
                 var payload = {};
                 for (var i = 0; i < fields.length; i++) {
-                    payload['row.' + fields[i].name] = rowData['c' + i];
+                    var v = rowData['c' + i];
+                    // The BARE field name is the one that works: Splunk adds
+                    // the row. prefix itself, so a payload keyed on
+                    // "row.hostname" leaves $row.hostname$ in the URL
+                    // unsubstituted. The prefixed copy is kept alongside it
+                    // because it costs nothing and the framework's handling of
+                    // this is undocumented enough to be worth not relying on.
+                    payload[fields[i].name] = v;
+                    payload['row.' + fields[i].name] = v;
                 }
                 payload['click.name'] = cell.getColumn().getDefinition().title;
                 payload['click.value'] = cell.getValue();
+                payload['name'] = payload['click.name'];
+                payload['value'] = payload['click.value'];
                 self.drilldown({
                     action: SplunkVisualizationBase.FIELD_VALUE_DRILLDOWN,
                     data: payload,

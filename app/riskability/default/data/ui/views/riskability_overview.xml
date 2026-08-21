@@ -115,6 +115,7 @@
         <drilldown>
           <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.hostname$</link>
         </drilldown>
+        <option name="drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No host has an open finding. If no inventory has arrived, that is silence rather than a clean fleet.</option>
       </viz>
     </panel>

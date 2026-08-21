@@ -91,6 +91,7 @@
         <drilldown>
           <link target="_blank">https://attack.mitre.org/techniques/$row.Technique$/</link>
         </drilldown>
+        <option name="drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE, so this is usually a gap in the mapping rather than an absence of exposure.</option>
       </viz>
     </panel>

@@ -64,3 +64,9 @@
 
 /* Only show the pointer where a click actually goes somewhere. */
 .riskability-grid .rk-grid-clickable .tabulator-cell { cursor: pointer; }
+
+/* Borders must not push the table past its panel; a few pixels of overflow is
+   still a scrollbar. */
+.riskability-grid .tabulator,
+.riskability-grid .tabulator * { box-sizing: border-box; }
+.riskability-grid .rk-grid-host { overflow: hidden; }

@@ -153,8 +153,25 @@ Riskability > Feed administration page.
 
 Requires Python 3.8 or later. Nothing else, and nothing to install.
 
-  Linux / macOS     ./build-feed.sh
-  Windows           .\build-feed.ps1
+PROFILES
+--------
+The two wrappers take the same three profiles, but spell them differently:
+a positional flag on the shell script, a named parameter in PowerShell.
+
+  Profile      Linux / macOS                 Windows
+  ---------    ---------------------------   ---------------------------------
+  Linux        ./build-feed.sh               .\build-feed.ps1 -FeedProfile Linux
+  Windows      ./build-feed.sh --windows     .\build-feed.ps1
+  Everything   ./build-feed.sh --everything  .\build-feed.ps1 -FeedProfile Everything
+
+  Linux        Ubuntu, Debian, Alpine, npm, PyPI, Go, Maven, plus CISA KEV,
+               FIRST EPSS and the MITRE CWE -> ATT&CK mapping.
+  Windows      All of the above plus NVD CPE data for 2015-2026. This is the
+               default for the PowerShell script.
+  Everything   Every distribution and ecosystem, and all NVD years. Much
+               larger and much slower.
+
+PowerShell also takes -OutDir <path> to choose where the bundle is written.
 
 Or drive it directly:
 
