@@ -118,6 +118,15 @@ def component_scope(component: dict) -> Dict[str, str]:
     swinv sorts locations, so the first entry is stable across scans, and a
     component backed by several files inside one root has all of them in it.
     """
+    # swinv 0.2.3 reports the filesystem root it scanned. Where it names one
+    # other than "/", that is authoritative and needs no inference. It does not
+    # currently treat a snap base as a separate root, so path classification
+    # still does the work for those.
+    root = (component.get("root") or "").strip()
+    if root and root not in ("/", ""):
+        return {"scope": SCOPE_NESTED, "scope_id": root.rstrip("/"),
+                "scope_release": ""}
+
     path = component.get("path")
     if not path:
         locations = component.get("locations") or ()

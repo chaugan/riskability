@@ -102,10 +102,18 @@ def distro_managed_language_package(component: dict) -> bool:
     ``cryptography 2.1.4`` is thirty-seven releases behind the upstream fix and
     looks catastrophic; assessed as the deb it is, it is patched.
 
-    So the same backport rule that protects deb/rpm/apk has to protect a
-    language package that the distribution installed, and the install path is
-    what distinguishes the two cases.
+    swinv 0.2.3 answers this directly with ``owned_by``, which names the OS
+    package that claims the file. That is authoritative and is used first.
+
+    It is not always present, though: ownership is resolved against the host's
+    package database, so a language package inside a snap base gets no
+    ``owned_by`` -- and that is exactly the case that produced the original
+    false positive. The install-path heuristic therefore remains as a fallback
+    rather than being deleted.
     """
+    if component.get("owned_by"):
+        return True
+
     path = primary_path(component)
     if not path:
         return False

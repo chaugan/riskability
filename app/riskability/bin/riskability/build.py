@@ -91,6 +91,38 @@ def head_size(url: str) -> Optional[int]:
         return None
 
 
+def probe(url: str) -> Dict[str, str]:
+    """Reachability plus the reason, because "no" alone is not actionable.
+
+    An operator needs to tell a firewall or proxy problem they can fix from a
+    CDN edge-block they cannot. CISA in particular serves the KEV catalogue
+    behind Akamai, which 403s whole datacenter IP ranges -- the site is up, the
+    URL is right, and this host will never reach it.
+    """
+    try:
+        req = urllib.request.Request(url, method="HEAD",
+                                     headers={"User-Agent": USER_AGENT})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return {"ok": True, "detail": f"HTTP {r.status}"}
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 401):
+            return {"ok": False, "detail": (
+                f"HTTP {exc.code}: the server refused this host. Usually a CDN "
+                f"blocking datacenter IP ranges rather than anything to fix "
+                f"locally -- the same request normally succeeds from a "
+                f"corporate or home network.")}
+        if exc.code == 404:
+            return {"ok": False, "detail": f"HTTP 404: the feed URL has moved."}
+        return {"ok": False, "detail": f"HTTP {exc.code}"}
+    except urllib.error.URLError as exc:
+        reason = getattr(exc, "reason", exc)
+        return {"ok": False, "detail": (
+            f"no route: {reason}. If this host is meant to have access, check "
+            f"the firewall or proxy allowlist.")}
+    except Exception as exc:
+        return {"ok": False, "detail": str(exc)[:120]}
+
+
 def online() -> Dict[str, bool]:
     """Which upstream hosts are reachable right now.
 
@@ -104,7 +136,7 @@ def online() -> Dict[str, bool]:
         "kev": KEV_URL,
         "epss": EPSS_URL,
     }
-    return {name: head_size(url) is not None for name, url in checks.items()}
+    return {name: probe(url) for name, url in checks.items()}
 
 
 def nvd_years(spec: str) -> List[int]:

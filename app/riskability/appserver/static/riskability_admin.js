@@ -389,16 +389,21 @@
 
         var tbl = el("table", "rk-table");
         var head = el("tr");
-        ["Source", "Reachable"].forEach(function (h) { head.appendChild(el("th", null, h)); });
+        ["Source", "Reachable", "Detail"].forEach(function (h) { head.appendChild(el("th", null, h)); });
         tbl.appendChild(head);
         var any = false;
         Object.keys(r.reachable || {}).forEach(function (k) {
+            var res = r.reachable[k] || {};
+            // Older builds returned a bare boolean here.
+            var ok = (typeof res === "object") ? !!res.ok : !!res;
+            var detail = (typeof res === "object") ? (res.detail || "") : "";
+            if (ok) any = true;
             var tr = el("tr");
             tr.appendChild(el("td", null, k));
-            var ok = r.reachable[k];
-            if (ok) any = true;
-            var td = el("td", ok ? "rk-good-text" : "rk-bad-text", ok ? "yes" : "no");
-            tr.appendChild(td);
+            tr.appendChild(el("td", ok ? "rk-good-text" : "rk-bad-text", ok ? "yes" : "no"));
+            // The reason matters: a firewall rule is fixable here, a CDN
+            // blocking this IP range is not.
+            tr.appendChild(el("td", "rk-dim", ok ? "" : detail));
             tbl.appendChild(tr);
         });
         wrap.appendChild(tbl);
