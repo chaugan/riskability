@@ -9,8 +9,17 @@ source "$ROOT/docker/.env"
 
 for app in riskability TA-riskability; do
   [ -d "$ROOT/app/$app" ] || continue
-  docker exec -u splunk "$CONTAINER" rm -rf "/opt/splunk/etc/apps/$app"
-  docker cp "$ROOT/app/$app" "$CONTAINER:/opt/splunk/etc/apps/$app"
+  # Replace default/ and bin/ but never local/ or metadata/local.meta: Splunk
+  # writes runtime state there (the is_configured flag, any UI edits), and an
+  # upgrade that deletes it is exactly the upgrade that loses an operator's
+  # customisations. Splunk's own precedence rules expect local/ to survive.
+  docker exec -u splunk "$CONTAINER" sh -c "
+    cd /opt/splunk/etc/apps/$app 2>/dev/null || exit 0
+    find . -mindepth 1 -maxdepth 1 ! -name local ! -name metadata -exec rm -rf {} +
+    [ -d metadata ] && find metadata -maxdepth 1 -type f ! -name local.meta -delete
+    true"
+  docker exec -u splunk "$CONTAINER" mkdir -p "/opt/splunk/etc/apps/$app"
+  docker cp "$ROOT/app/$app/." "$CONTAINER:/opt/splunk/etc/apps/$app/"
   docker exec -u root "$CONTAINER" chown -R splunk:splunk "/opt/splunk/etc/apps/$app"
   # Bytecode caches are build artefacts; AppInspect flags them and they can
   # shadow edited sources across a re-deploy.
