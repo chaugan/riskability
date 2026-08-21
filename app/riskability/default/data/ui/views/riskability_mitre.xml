@@ -66,12 +66,8 @@
       <title>Weakness classes present in the fleet (CWE)</title>
       <chart>
         <search>
-          <query>`riskability_open_findings`
+          <query>`riskability_finding_cwes`
 | search hostname=$host_tok|s$
-| lookup riskability_advisory_lookup cve_id OUTPUT cwes
-| eval cwe = split(cwes, ",")
-| mvexpand cwe
-| where isnotnull(cwe) AND cwe!=""
 | stats dc(cve_id) AS cves BY cwe
 | sort - cves
 | head 15</query>
