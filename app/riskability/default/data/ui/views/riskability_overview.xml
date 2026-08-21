@@ -10,6 +10,7 @@
       <single>
         <search>
           <query>| inputlookup riskability_feedstate_lookup
+| where isnotnull(imported_at)
 | eval age_days = round((now() - imported_at)/86400, 1)
 | fields age_days</query>
         </search>
