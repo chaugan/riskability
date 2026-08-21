@@ -36,7 +36,7 @@
   <row>
     <panel>
       <title>Assessable components by ecosystem</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | eval has_identifier = if(isnotnull(purl) OR isnotnull(cpes), 1, 0)
@@ -48,13 +48,13 @@
          with_identifier AS "With purl/cpe", without_identifier AS "No identifier",
          identifier_pct AS "Identifiable %"</query>
         </search>
-        <option name="count">20</option>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+      </viz>
     </panel>
     <panel>
       <title>Components by filesystem root</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | riskabilitymatch include_informational=true
@@ -63,16 +63,16 @@
 | sort - packages
 | rename root AS "Root", hostname AS "Host", packages AS "Packages", cves AS "CVEs"</query>
         </search>
-        <option name="count">20</option>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+      </viz>
     </panel>
   </row>
 
   <row>
     <panel>
       <title>Ecosystems present in the fleet but absent from the feed</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | stats count AS components BY type
@@ -86,12 +86,9 @@
 | rename type AS "Ecosystem", components AS "Components in fleet",
          feed_packages AS "Packages in feed", status AS "Status"</query>
         </search>
-        <option name="count">20</option>
-        <option name="drilldown">none</option>
-        <format type="color" field="Status">
-          <colorPalette type="map">{"covered":#53a051,"add this ecosystem to the bundle":#F8BE34,"no feed exists for this type":#708794}</colorPalette>
-        </format>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Every ecosystem in the fleet is covered by the imported feed. This is the one empty table here that is genuinely good news.</option>
+      </viz>
     </panel>
   </row>
 </dashboard>

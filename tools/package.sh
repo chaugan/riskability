@@ -130,7 +130,17 @@ need riskability "riskability/appserver/static/visualizations/riskability_chart/
      "Splunkbase vetting requires vendored licences"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/THIRD-PARTY.md" \
      "identifies the bundled library and version"
-forbid riskability "node_modules" "93MB of build-time dependencies must not ship"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/visualization.js" \
+     "the Tabulator table bundle"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/visualization.css" \
+     "Tabulator's theme plus our palette; without it the grid is unstyled"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/formatter.html" \
+     "panel options"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/TABULATOR-LICENSE.txt" \
+     "Splunkbase vetting requires vendored licences"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/THIRD-PARTY.md" \
+     "identifies the bundled library and version"
+forbid riskability "node_modules" "build-time dependencies must not ship"
 
 need TA-riskability "TA-riskability/default/inputs.conf"  "the file input"
 need TA-riskability "TA-riskability/default/props.conf"   "index-time parsing"

@@ -75,7 +75,7 @@
   <row>
     <panel>
       <title>Techniques enabled by open findings, most exposed first</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
@@ -88,12 +88,11 @@
          hosts AS "Hosts", packages AS "Packages", weaknesses AS "Via CWE",
          peak_epss AS "Peak EPSS"</query>
         </search>
-        <option name="count">25</option>
-        <option name="drilldown">cell</option>
         <drilldown>
           <link target="_blank">https://attack.mitre.org/techniques/$row.Technique$/</link>
         </drilldown>
-      </table>
+        <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE, so this is usually a gap in the mapping rather than an absence of exposure.</option>
+      </viz>
     </panel>
   </row>
 
@@ -116,7 +115,7 @@
     </panel>
     <panel>
       <title>Coverage of the mapping itself</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_open_findings`
 | search hostname=$host_tok|s$
@@ -128,8 +127,9 @@
 | fields mapped, cves, share
 | rename mapped AS "Mapping status", cves AS "CVEs", share AS "Share"</query>
         </search>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing to summarise: there are no open findings to classify.</option>
+      </viz>
     </panel>
   </row>
 
@@ -201,7 +201,7 @@
   <row>
     <panel>
       <title>Findings behind each technique</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
@@ -214,9 +214,9 @@
          fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
          cwe AS "CWE", via_capec AS "Via CAPEC", epss AS "EPSS"</query>
         </search>
-        <option name="count">30</option>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No findings map to a technique at the current confidence filter.</option>
+      </viz>
     </panel>
   </row>
 </form>

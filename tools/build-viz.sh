@@ -20,20 +20,39 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-VIZ="$ROOT/app/riskability/appserver/static/visualizations/riskability_chart"
+VIZDIR="$ROOT/app/riskability/appserver/static/visualizations"
 APPCONF="$ROOT/app/riskability/default/app.conf"
 
-[ -d "$VIZ/node_modules" ] || { echo "installing viz dependencies"; ( cd "$VIZ" && npm ci --silent --no-audit --no-fund ); }
+changed=0
 
-before=""
-[ -f "$VIZ/visualization.js" ] && before=$(sha256sum "$VIZ/visualization.js" | cut -d' ' -f1)
+for name in riskability_chart riskability_grid; do
+  VIZ="$VIZDIR/$name"
+  [ -d "$VIZ" ] || continue
+  [ -d "$VIZ/node_modules" ] || { echo "  installing $name dependencies"
+                                  ( cd "$VIZ" && npm ci --silent --no-audit --no-fund ); }
 
-( cd "$VIZ" && npx webpack --mode production >/dev/null 2>&1 )
+  before=""
+  [ -f "$VIZ/visualization.js" ] && before=$(sha256sum "$VIZ/visualization.js" | cut -d' ' -f1)
 
-after=$(sha256sum "$VIZ/visualization.js" | cut -d' ' -f1)
+  ( cd "$VIZ" && npx webpack --mode production >/dev/null 2>&1 )
 
-if [ "$before" = "$after" ]; then
-  echo "  visualization.js unchanged (build $(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF"))"
+  # The grid's stylesheet is Tabulator's dark theme plus our overrides, joined
+  # here rather than by a CSS loader: Splunk wants a real visualization.css on
+  # disk, and an injected <style> would depend on Splunk Web's CSP.
+  if [ -f "$VIZ/overrides.css" ]; then
+    cat "$VIZ/node_modules/tabulator-tables/dist/css/tabulator_midnight.min.css" \
+        "$VIZ/overrides.css" > "$VIZ/visualization.css"
+  fi
+
+  after=$(sha256sum "$VIZ/visualization.js" | cut -d' ' -f1)
+  if [ "$before" != "$after" ]; then
+    echo "  $name/visualization.js changed"
+    changed=1
+  fi
+done
+
+if [ "$changed" -eq 0 ]; then
+  echo "  visualizations unchanged (build $(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF"))"
   exit 0
 fi
 
@@ -43,4 +62,4 @@ next=$((current + 1))
 tmp=$(mktemp)
 awk -v n="$next" '/^build = /{print "build = " n; next} {print}' "$APPCONF" > "$tmp"
 mv "$tmp" "$APPCONF"
-echo "  visualization.js changed; app build $current -> $next (cache key)"
+echo "  app build $current -> $next (cache key)"

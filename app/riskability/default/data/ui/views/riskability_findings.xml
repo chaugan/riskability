@@ -34,7 +34,7 @@
   <row>
     <panel>
       <title>Findings, ranked by exploitation likelihood (EPSS) rather than CVSS</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | search hostname=$host_tok|s$
@@ -49,15 +49,21 @@
          epss_pct AS "EPSS %", kev AS "KEV", title AS "Summary"
 | sort - "EPSS %"</query>
         </search>
-        <option name="count">50</option>
-        <option name="drilldown">cell</option>
-        <format type="color" field="Confidence">
-          <colorPalette type="map">{"high":#DC4E41,"low":#F8BE34,"informational":#708794}</colorPalette>
-        </format>
-        <format type="color" field="KEV">
-          <colorPalette type="map">{"yes":#DC4E41}</colorPalette>
-        </format>
-      </table>
+        <option name="riskability.riskability_grid.emptyText">No findings matched. With the Confidence filter on "High only" this can mean the evidence was never strong enough to assert one, not that the fleet is clean — switch it to All to see what was found and why it was downgraded.</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>The column filters narrow what is shown, not what was searched.</b>
+          <span>
+            Typing in a column header filters the rows already loaded into the page. It does
+            not re-run the search, so it cannot reach findings the search did not return, and
+            it does not change the panels on any other dashboard. For anything you intend to
+            act on, narrow it with the Confidence, Root and Host inputs above, which filter in
+            the search itself. "Download shown rows" likewise exports what is currently
+            displayed and filtered, not the whole result set.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 

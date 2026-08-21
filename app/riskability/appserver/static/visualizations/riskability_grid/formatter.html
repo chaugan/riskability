@@ -1,0 +1,20 @@
+<!--
+  The grid takes its columns from the search, so there is no column contract to
+  configure here -- whatever the SPL returns becomes the table.
+-->
+<form>
+  <splunk-control-group label="Empty message"
+                        help="Shown when the search returns no rows. Say what empty means on this panel.">
+    <splunk-text-input name="display.visualizations.custom.riskability.riskability_grid.emptyText"
+                       value=""></splunk-text-input>
+  </splunk-control-group>
+
+  <splunk-control-group label="Row click"
+                        help="Emits row.&lt;Column&gt; and click.value tokens for a &lt;drilldown&gt; block. Turn off where a click should do nothing.">
+    <splunk-select name="display.visualizations.custom.riskability.riskability_grid.drilldown"
+                   value="enabled">
+      <option value="enabled">Enabled</option>
+      <option value="disabled">Disabled</option>
+    </splunk-select>
+  </splunk-control-group>
+</form>

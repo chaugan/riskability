@@ -15,15 +15,15 @@
   <row>
     <panel>
       <title>Host</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>index=riskability_inventory sourcetype=riskability:swinv hostname=$hostname|s$
 | stats latest(os_id) AS os, latest(os_version_id) AS release, latest(architecture) AS arch,
         latest(machine_id) AS machine_id, count AS components, latest(_time) AS last_scan BY hostname
 | eval last_scan = strftime(last_scan, "%Y-%m-%d %H:%M:%S")</query>
         </search>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+      </viz>
     </panel>
   </row>
 
@@ -84,7 +84,7 @@
   <row>
     <panel>
       <title>Findings on this host</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | search hostname=$hostname|s$
@@ -93,8 +93,8 @@
 | table cve_id, package, ecosystem, installed_version, fixed_version, root, confidence, epss, title
 | sort - epss</query>
         </search>
-        <option name="count">30</option>
-      </table>
+        <option name="riskability.riskability_grid.emptyText">No open findings for this host, or it has not reported inventory recently.</option>
+      </viz>
     </panel>
   </row>
 </form>

@@ -104,7 +104,7 @@
     </panel>
     <panel>
       <title>Most affected hosts</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | riskabilitymatch
@@ -112,18 +112,18 @@
 | sort - cves
 | head 20</query>
         </search>
-        <option name="drilldown">cell</option>
         <drilldown>
           <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.hostname$</link>
         </drilldown>
-      </table>
+        <option name="riskability.riskability_grid.emptyText">No host has an open finding. If no inventory has arrived, that is silence rather than a clean fleet.</option>
+      </viz>
     </panel>
   </row>
 
   <row>
     <panel>
       <title>Known-exploited vulnerabilities present in the fleet (CISA KEV)</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
 | riskabilitymatch
@@ -131,9 +131,9 @@
 | stats dc(hostname) AS hosts, values(package) AS packages BY cve_id, kev_added, kev_due, epss
 | sort - hosts</query>
         </search>
-        <option name="count">15</option>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle — if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
+      </viz>
     </panel>
   </row>
 </dashboard>

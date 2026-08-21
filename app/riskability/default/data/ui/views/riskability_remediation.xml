@@ -97,7 +97,7 @@
   <row>
     <panel>
       <title>Mitigated: the upgrade that fixed it</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_mitigated_findings`
 | search hostname=$host_tok|s$
@@ -109,9 +109,9 @@
          path AS "Path", fixed_after_days AS "Open for (days)", epss AS "EPSS"
 | sort - "EPSS"</query>
         </search>
-        <option name="count">25</option>
-        <option name="drilldown">none</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing has been observed being fixed yet. Mitigation is only visible once a host reports the same path at a newer version.</option>
+      </viz>
     </panel>
   </row>
 
@@ -126,7 +126,7 @@
           like this. They are listed separately from mitigated findings for that reason.
         </p>
       </html>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_finding_lifecycle`
 | search hostname=$host_tok|s$
@@ -138,12 +138,9 @@
          status AS "Status", root AS "Root", hostname AS "Host", path AS "Path",
          last_seen AS "Last reported"</query>
         </search>
-        <option name="count">25</option>
-        <option name="drilldown">none</option>
-        <format type="color" field="Status">
-          <colorPalette type="map">{"removed":#708794,"unknown":#F8BE34}</colorPalette>
-        </format>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing here, which is the good case: every finding that stopped appearing did so with evidence of an upgrade.</option>
+      </viz>
     </panel>
   </row>
 
