@@ -222,7 +222,24 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         service = self._service(request)
         user = request.get("session", {}).get("user") or ""
         state = importer.import_bundle(path, service.kvstore, imported_by=user)
+        self._mark_configured(service)
         return _reply(200, {"ok": True, "feed": state})
+
+    def _mark_configured(self, service):
+        """Clear Splunk's first-run setup gate once a feed actually exists.
+
+        app.conf ships ``is_configured = 0`` so a fresh install lands the admin
+        on this page instead of on dashboards that can only show zeroes. Nothing
+        clears that flag on its own, though, so without this the setup screen
+        keeps interrupting every navigation forever. Importing a feed is the
+        one thing that makes the app useful, so it is what marks it configured.
+        """
+        try:
+            service.post("/servicesNS/nobody/riskability/apps/local/riskability",
+                         configured=1)
+        except Exception:
+            # Never fail an otherwise-successful import over a cosmetic flag.
+            pass
 
     def _delete(self, body):
         path = _safe_incoming_path(body.get("filename", ""))

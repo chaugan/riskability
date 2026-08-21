@@ -167,6 +167,12 @@ class RiskabilityMatchCommand(EventingCommand):
                 if finding["confidence"] == "informational" and not self.include_informational:
                     continue
                 finding["hostname"] = r.get("hostname", "")
+                # Carry the scan timestamp onto the finding. The command emits
+                # a fresh record per finding, so anything not copied here is
+                # lost -- and without the scan time the lifecycle cannot tell
+                # "still present in the latest scan" from "never seen again",
+                # which is the whole basis of mitigation detection.
+                finding["scanned_at"] = r.get("scanned_at", "")
                 # The resolved root, not the host's: an operator needs to see
                 # that a finding is about /snap/core18 rather than the machine.
                 finding["scope"] = r.get("scope", "host")
