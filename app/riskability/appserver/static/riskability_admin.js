@@ -23,6 +23,13 @@
         return node;
     }
 
+    // Static assets are served from the app's own namespace, and like every
+    // other URL here it must be built relative to the Splunk root endpoint so
+    // it survives being served under a reverse-proxy path prefix.
+    function staticUrl(rel) {
+        return splunkRoot() + "/static/app/riskability/" + rel;
+    }
+
     function splunkRoot() {
         // .../app/riskability/riskability_admin -> everything before /app/
         var path = window.location.pathname;
@@ -273,6 +280,180 @@
         staged.appendChild(up);
         staged.appendChild(msg);
         root.appendChild(staged);
+
+        root.appendChild(buildScriptsCard());
+        root.appendChild(onlineCard(state));
+    }
+
+    // ---- build scripts --------------------------------------------------
+
+    function buildScriptsCard() {
+        var card = el("div", "rk-card");
+        card.appendChild(el("h3", null, "Build a bundle on a connected machine"));
+        card.appendChild(el("p", "rk-dim",
+            "These wrap the riskability-feed tool with sensible source lists. Run one on a "
+            + "machine that has internet access, then bring the file back here. Both take a "
+            + "profile: Linux, Windows (adds NVD CPE data), or Everything."));
+
+        var row = el("div", "rk-scripts");
+        [["build-feed.sh", "Linux and macOS", "bash"],
+         ["build-feed.ps1", "Windows", "PowerShell"]
+        ].forEach(function (spec) {
+            var box = el("div", "rk-script");
+            var a = el("a", "rk-btn rk-btn-primary", "Download " + spec[0]);
+            a.href = staticUrl("scripts/" + spec[0]);
+            a.setAttribute("download", spec[0]);
+            box.appendChild(a);
+            box.appendChild(el("div", "rk-dim", spec[1] + " \u00b7 " + spec[2]));
+            row.appendChild(box);
+        });
+        card.appendChild(row);
+
+        var note = el("div", "rk-dim");
+        note.style.marginTop = "10px";
+        note.appendChild(document.createTextNode(
+            "Windows estates need the NVD profile: Windows software is not installed by a "
+            + "package manager, so it carries no PURL and only NVD's CPE data can assess it. "
+            + "Findings reached that way are always reported at low confidence, because the "
+            + "product identity is inferred from a display name rather than read from a "
+            + "package record."));
+        card.appendChild(note);
+        return card;
+    }
+
+    // ---- online fetch ---------------------------------------------------
+
+    var onlineState = null;
+
+    function onlineCard(state) {
+        var card = el("div", "rk-card");
+        card.appendChild(el("h3", null, "Fetch directly (needs internet access)"));
+        card.appendChild(el("p", "rk-dim",
+            "Riskability never reaches the network on its own. If this search head does have "
+            + "outbound access, it can download and import a feed in one step instead of you "
+            + "carrying a file. Nothing here is scheduled and nothing runs at install time."));
+
+        var st = state.status || {};
+        if (st.state === "fetching") {
+            var prog = el("div", "rk-status rk-warn");
+            prog.appendChild(el("b", null, "Fetching feeds\u2026"));
+            prog.appendChild(el("span", null, " " + (st.message || "")));
+            prog.appendChild(el("div", "rk-dim",
+                "The current feed stays live until the download completes and imports."));
+            card.appendChild(prog);
+            return card;
+        }
+
+        var checkRow = el("div", "rk-upload");
+        var checkBtn = el("button", "rk-btn", "Check connectivity");
+        var checkMsg = el("div", "rk-dim", "");
+        checkBtn.addEventListener("click", function () {
+            checkMsg.textContent = "Checking\u2026";
+            request("POST", { action: "online_check" }).then(function (r) {
+                onlineState = r;
+                checkMsg.textContent = "";
+                renderReachability(card, r, checkMsg);
+            }).catch(function (e) { checkMsg.textContent = "Check failed: " + e.message; });
+        });
+        checkRow.appendChild(checkBtn);
+        card.appendChild(checkRow);
+        card.appendChild(checkMsg);
+
+        if (onlineState) renderReachability(card, onlineState, checkMsg);
+        return card;
+    }
+
+    function renderReachability(card, r, anchor) {
+        var old = card.querySelector(".rk-reach");
+        if (old) old.remove();
+        var wrap = el("div", "rk-reach");
+
+        var tbl = el("table", "rk-table");
+        var head = el("tr");
+        ["Source", "Reachable"].forEach(function (h) { head.appendChild(el("th", null, h)); });
+        tbl.appendChild(head);
+        var any = false;
+        Object.keys(r.reachable || {}).forEach(function (k) {
+            var tr = el("tr");
+            tr.appendChild(el("td", null, k));
+            var ok = r.reachable[k];
+            if (ok) any = true;
+            var td = el("td", ok ? "rk-good-text" : "rk-bad-text", ok ? "yes" : "no");
+            tr.appendChild(td);
+            tbl.appendChild(tr);
+        });
+        wrap.appendChild(tbl);
+        wrap.appendChild(el("div", "rk-dim",
+            "Allow outbound HTTPS to: " + (r.hosts || []).join(", ")));
+
+        if (!any) {
+            var none = el("div", "rk-status rk-bad");
+            none.appendChild(el("b", null, "No upstream source is reachable."));
+            none.appendChild(el("span", null,
+                " This search head is offline, which is the expected case. Build a bundle "
+                + "elsewhere with one of the scripts above and import it."));
+            wrap.appendChild(none);
+            card.appendChild(wrap);
+            return;
+        }
+
+        wrap.appendChild(el("h4", null, "What to fetch"));
+        var picks = el("div", "rk-picks");
+        var chosen = {};
+        ["Ubuntu", "Debian", "Alpine", "Red Hat", "npm", "PyPI", "Go", "Maven"].forEach(function (eco) {
+            var lab = el("label", "rk-pick");
+            var cb = el("input");
+            cb.type = "checkbox";
+            cb.checked = ["Ubuntu", "Debian", "npm", "PyPI", "Go"].indexOf(eco) >= 0;
+            chosen[eco] = cb;
+            lab.appendChild(cb);
+            lab.appendChild(document.createTextNode(" " + eco));
+            picks.appendChild(lab);
+        });
+        wrap.appendChild(picks);
+
+        var extras = el("div", "rk-picks");
+        var nvdCb = el("input"); nvdCb.type = "checkbox";
+        var nvdLab = el("label", "rk-pick");
+        nvdLab.appendChild(nvdCb);
+        nvdLab.appendChild(document.createTextNode(" NVD CPE data (needed for Windows)"));
+        extras.appendChild(nvdLab);
+
+        var mitreCb = el("input"); mitreCb.type = "checkbox"; mitreCb.checked = true;
+        var mitreLab = el("label", "rk-pick");
+        mitreLab.appendChild(mitreCb);
+        mitreLab.appendChild(document.createTextNode(" MITRE ATT&CK mapping"));
+        extras.appendChild(mitreLab);
+
+        var overlayCb = el("input"); overlayCb.type = "checkbox"; overlayCb.checked = true;
+        var overlayLab = el("label", "rk-pick");
+        overlayLab.appendChild(overlayCb);
+        overlayLab.appendChild(document.createTextNode(" KEV and EPSS"));
+        extras.appendChild(overlayLab);
+        wrap.appendChild(extras);
+
+        var go = el("button", "rk-btn rk-btn-primary", "Fetch and import now");
+        var goMsg = el("div", "rk-dim", "");
+        go.addEventListener("click", function () {
+            var ecosystems = Object.keys(chosen).filter(function (k) { return chosen[k].checked; });
+            if (!window.confirm(
+                "Download the selected feeds and import them?\n\n"
+                + "This contacts the hosts listed above. With NVD selected it can take "
+                + "several minutes. The current feed stays live until it finishes.")) return;
+            goMsg.textContent = "Starting\u2026";
+            request("POST", {
+                action: "fetch",
+                ecosystems: ecosystems,
+                nvd: nvdCb.checked ? "2015-2026" : "",
+                mitre: mitreCb.checked,
+                kev: overlayCb.checked,
+                epss: overlayCb.checked
+            }).then(function () { poll(); })
+              .catch(function (e) { goMsg.textContent = "Failed: " + e.message; });
+        });
+        wrap.appendChild(go);
+        wrap.appendChild(goMsg);
+        card.appendChild(wrap);
     }
 
     function fail(err, container) {

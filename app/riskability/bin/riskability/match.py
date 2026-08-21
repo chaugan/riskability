@@ -76,6 +76,46 @@ AUTHORITY_NAMES = {
 # For these, an upstream range is never sufficient evidence on its own.
 DISTRO_TYPES = {"deb", "rpm", "apk"}
 
+# Paths that mean a *language* package was installed by the distribution rather
+# than by pip/npm/gem. Debian puts distro-managed Python in dist-packages and
+# leaves site-packages to pip; RPM distros use site-packages under /usr/lib,
+# with /usr/local reserved for locally installed software.
+_DISTRO_MANAGED_MARKERS = (
+    "/dist-packages/",
+    "/usr/share/nodejs/",
+    "/usr/lib/node_modules/",
+    "/usr/share/gems/",
+    "/usr/lib/ruby/gems/",
+)
+_DISTRO_MANAGED_PREFIXES = (
+    "/usr/lib/python",
+    "/usr/lib64/python",
+)
+
+
+def distro_managed_language_package(component: dict) -> bool:
+    """Is this language package owned by the distribution's package manager?
+
+    The same installation is legitimately reported twice by an SBOM scanner --
+    once as a deb from the dpkg database, once as a PyPI package from its
+    egg-info. Assessed as an upstream PyPI package, Ubuntu's ESM-patched
+    ``cryptography 2.1.4`` is thirty-seven releases behind the upstream fix and
+    looks catastrophic; assessed as the deb it is, it is patched.
+
+    So the same backport rule that protects deb/rpm/apk has to protect a
+    language package that the distribution installed, and the install path is
+    what distinguishes the two cases.
+    """
+    path = primary_path(component)
+    if not path:
+        return False
+    if any(m in path for m in _DISTRO_MANAGED_MARKERS):
+        return True
+    if any(path.startswith(p) for p in _DISTRO_MANAGED_PREFIXES) and \
+            "/site-packages/" in path:
+        return True
+    return False
+
 
 def authority_for(range_row: dict) -> int:
     """How much this row's claim is worth for the package it names."""
@@ -345,8 +385,14 @@ def match_component(
         # An upstream range cannot settle a distro package: the distro version
         # string is not comparable to the upstream one, and a backport keeps the
         # upstream number unchanged. Record it as informational only.
+        #
+        # This covers both a native distro package and a language package the
+        # distribution installed -- the latter is reported by its upstream
+        # version, so it looks like a plain PyPI/npm package until you notice
+        # where it lives on disk.
         upstream_claim_about_distro_pkg = (
-            ecosystem in DISTRO_TYPES and authority < AUTHORITY_DISTRO
+            (ecosystem in DISTRO_TYPES or distro_managed_language_package(component))
+            and authority < AUTHORITY_DISTRO
         )
 
         verdict = _in_range(ecosystem, installed, row)
@@ -377,8 +423,11 @@ def match_component(
         if upstream_claim_about_distro_pkg:
             confidence = "informational"
             reason = (
-                "upstream range for a distribution package; the vendor may have "
-                "backported the fix without changing the upstream version"
+                "upstream range for a package the distribution installed and "
+                "maintains; the vendor may have backported the fix without "
+                "changing the upstream version. Check the matching "
+                + (ecosystem if ecosystem in DISTRO_TYPES else "distro")
+                + " package instead."
             )
         elif is_cpe_identity:
             # The version comparison may be exact, but the component was tied to

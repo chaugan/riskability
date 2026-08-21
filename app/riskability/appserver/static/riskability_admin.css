@@ -127,3 +127,14 @@
     font-size: 12px;
     line-height: 1.5;
 }
+
+.rk-scripts { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 4px; }
+.rk-script { display: flex; flex-direction: column; gap: 6px; }
+.rk-script a { text-decoration: none; text-align: center; }
+
+.rk-picks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 8px 0 14px; }
+.rk-pick { color: #c3cad1; font-size: 13px; cursor: pointer; user-select: none; }
+.rk-pick input { margin-right: 2px; vertical-align: middle; }
+
+.rk-reach { margin-top: 12px; }
+.rk-good-text { color: #6db56b; }

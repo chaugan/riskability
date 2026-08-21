@@ -1,0 +1,123 @@
+<form version="1.1" theme="dark">
+  <label>MITRE ATT&amp;CK</label>
+  <description>Which adversary techniques the fleet's open vulnerabilities could enable.</description>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="text" token="host_tok" searchWhenChanged="true">
+      <label>Host (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="dropdown" token="conf_tok" searchWhenChanged="true">
+      <label>Confidence</label>
+      <choice value="confidence=high">High only</choice>
+      <choice value="confidence=*">All</choice>
+      <default>confidence=high</default>
+      <initialValue>confidence=high</initialValue>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0">
+          <b>Read this as exposure, not as attack evidence.</b>
+          <span>
+            The chain is CVE &#8594; CWE &#8594; CAPEC &#8594; ATT&amp;CK technique, and every hop is a
+            mapping MITRE publishes. But it is many-to-many and lossy: it says
+            <em>this weakness class is the kind of thing that enables that technique</em>, not that
+            an adversary used it, and not that this particular vulnerability is exploitable in your
+            environment. A CVE with no CWE, or a CWE MITRE has not mapped, simply does not appear
+            &#8212; so absence here is not safety. Use it to see which capabilities your open
+            findings could hand an attacker, and pair it with the KEV and EPSS columns on
+            <b>Findings</b>, which are about real-world exploitation rather than classification.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Techniques enabled by open findings, most exposed first</title>
+      <table>
+        <search>
+          <query>`riskability_attack_surface`
+| search hostname=$host_tok|s$ $conf_tok$
+| stats dc(cve_id) AS cves, dc(hostname) AS hosts, dc(package) AS packages,
+        values(cwe) AS weaknesses, max(epss) AS peak_epss
+        BY technique, technique_name
+| eval peak_epss = round(peak_epss, 4)
+| sort - cves
+| rename technique AS "Technique", technique_name AS "Name", cves AS "CVEs",
+         hosts AS "Hosts", packages AS "Packages", weaknesses AS "Via CWE",
+         peak_epss AS "Peak EPSS"</query>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">cell</option>
+        <drilldown>
+          <link target="_blank">https://attack.mitre.org/techniques/$row.Technique$/</link>
+        </drilldown>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Weakness classes present in the fleet (CWE)</title>
+      <chart>
+        <search>
+          <query>`riskability_open_findings`
+| search hostname=$host_tok|s$
+| lookup riskability_advisory_lookup cve_id OUTPUT cwes
+| eval cwe = split(cwes, ",")
+| mvexpand cwe
+| where isnotnull(cwe) AND cwe!=""
+| stats dc(cve_id) AS cves BY cwe
+| sort - cves
+| head 15</query>
+        </search>
+        <option name="charting.chart">bar</option>
+        <option name="charting.legend.placement">none</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Coverage of the mapping itself</title>
+      <table>
+        <search>
+          <query>`riskability_open_findings`
+| search hostname=$host_tok|s$
+| lookup riskability_advisory_lookup cve_id OUTPUT cwes
+| eval mapped = case(isnull(cwes) OR cwes=="", "no CWE recorded for this CVE", 1=1, "has a CWE")
+| stats dc(cve_id) AS cves BY mapped
+| eventstats sum(cves) AS total
+| eval share = round(cves*100/total, 1)."%"
+| fields mapped, cves, share
+| rename mapped AS "Mapping status", cves AS "CVEs", share AS "Share"</query>
+        </search>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Findings behind each technique</title>
+      <table>
+        <search>
+          <query>`riskability_attack_surface`
+| search hostname=$host_tok|s$ $conf_tok$
+| eval root = if(scope_id!="", scope_id, "host")
+| table technique, technique_name, cve_id, package, installed_version, fixed_version,
+        hostname, root, cwe, via_capec, epss
+| sort technique, - epss
+| rename technique AS "Technique", technique_name AS "Name", cve_id AS "CVE",
+         package AS "Package", installed_version AS "Installed",
+         fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
+         cwe AS "CWE", via_capec AS "Via CAPEC", epss AS "EPSS"</query>
+        </search>
+        <option name="count">30</option>
+        <option name="drilldown">none</option>
+      </table>
+    </panel>
+  </row>
+</form>

@@ -277,6 +277,53 @@ def main() -> int:
     check("a different install path is a different finding",
           match.finding_key(v1, "CVE-2021-23337") != match.finding_key(other_path, "CVE-2021-23337"))
 
+
+    print("distro-managed language packages")
+
+    # Real case that produced the worst-looking false positive on the test
+    # fleet: Ubuntu's ESM-patched python3-cryptography, reported a second time
+    # by its egg-info as PyPI cryptography 2.1.4, then compared against the
+    # upstream fix in 39.0.1 -- thirty-seven releases of apparent exposure.
+    distro_py = {
+        "hostname": "h", "name": "cryptography", "type": "python", "version": "2.1.4",
+        "locations": ["/snap/core18/2999/usr/lib/python3/dist-packages/"
+                      "cryptography-2.1.4.egg-info/PKG-INFO"],
+    }
+    upstream = {
+        "advisory_id": "GHSA-x", "cve_id": "CVE-2023-0286", "ecosystem": "python",
+        "package": "cryptography", "introduced": "", "fixed": "39.0.1",
+        "feed_source": "osv:PyPI",
+    }
+    found = match.match_component(distro_py, [upstream])
+    check("a distro-installed Python package is not asserted from an upstream range",
+          found and found[0]["confidence"] == "informational",
+          f"got {[f['confidence'] for f in found]}")
+
+    # A genuinely pip-installed package in a virtualenv must still be asserted.
+    venv_py = dict(distro_py,
+                   locations=["/srv/app/.venv/lib/python3.11/site-packages/"
+                              "cryptography/__init__.py"])
+    found = match.match_component(venv_py, [upstream])
+    check("a pip-installed package IS still reported at high confidence",
+          found and found[0]["confidence"] == "high",
+          f"got {[f['confidence'] for f in found]}")
+
+    # And the deb that actually owns it is assessed against its own advisories.
+    deb = {
+        "hostname": "h", "name": "python3-cryptography", "type": "deb",
+        "version": "2.1.4-1ubuntu1.4+esm1", "os_id": "ubuntu", "os_version_id": "18.04",
+        "locations": ["/snap/core18/2999/usr/share/snappy/dpkg.yaml"],
+    }
+    ubuntu_adv = {
+        "advisory_id": "USN-1", "cve_id": "CVE-2023-0286", "ecosystem": "deb",
+        "package": "python3-cryptography", "fixed": "2.1.4-1ubuntu1.4+esm1",
+        "distro": "ubuntu", "distro_release": "18.04", "distro_variant": "pro",
+        "feed_source": "osv:Ubuntu",
+    }
+    check("the ESM-patched deb is correctly clear of the advisory",
+          not match.match_component(deb, [ubuntu_adv]),
+          f"got {match.match_component(deb, [ubuntu_adv])}")
+
     print()
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

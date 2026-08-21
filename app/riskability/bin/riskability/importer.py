@@ -43,12 +43,14 @@ COLLECTIONS = {
     "ranges": "riskability_ranges",
     "advisories": "riskability_advisories",
     "notaffected": "riskability_notaffected",
+    "attack": "riskability_attack",
 }
 
 MEMBER_FOR = {
     "ranges": feedlib.RANGES_NAME,
     "advisories": feedlib.ADVISORIES_NAME,
     "notaffected": feedlib.NOTAFFECTED_NAME,
+    "attack": feedlib.ATTACK_MEMBER,
 }
 
 STATE_COLLECTION = "riskability_feedstate"
@@ -201,6 +203,7 @@ def import_bundle(
         "advisory_count": counts.get("advisories", 0),
         "range_count": counts.get("ranges", 0),
         "notaffected_count": counts.get("notaffected", 0),
+        "attack_count": counts.get("attack", 0),
         "schema": manifest.get("schema", ""),
         "previous_bundle_version": previous.get("bundle_version", ""),
     }
@@ -269,6 +272,7 @@ def verify(kvstore) -> dict:
         "ranges": int(state.get("range_count") or 0),
         "advisories": int(state.get("advisory_count") or 0),
         "notaffected": int(state.get("notaffected_count") or 0),
+        "attack": int(state.get("attack_count") or 0),
     }
     out = {"generation": gen, "claimed": claimed, "readable": {}, "consistent": True}
 

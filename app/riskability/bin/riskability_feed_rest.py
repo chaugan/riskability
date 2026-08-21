@@ -31,6 +31,7 @@ import os
 import re
 import sys
 import threading
+import time
 import traceback
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
@@ -41,6 +42,7 @@ from splunklib import client  # noqa: E402
 # so importing it from splunklib would break on any modern install.
 from splunk.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
 
+from riskability import build as buildlib  # noqa: E402
 from riskability import feed as feedlib  # noqa: E402
 from riskability import importer  # noqa: E402
 
@@ -195,7 +197,74 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             return self._import(request, body)
         if action == "delete":
             return self._delete(body)
+        if action == "online_check":
+            return self._online_check()
+        if action == "fetch":
+            return self._fetch(request, body)
         raise ValueError(f"unknown action {action!r}")
+
+    def _online_check(self):
+        """Report which upstream hosts this search head can actually reach.
+
+        Offered before the Fetch button is used so an air-gapped instance says
+        so immediately, rather than starting a download that fails minutes in.
+        """
+        return _reply(200, {
+            "ok": True,
+            "reachable": buildlib.online(),
+            "hosts": buildlib.NETWORK_HOSTS,
+            "ecosystems": buildlib.ECOSYSTEMS,
+        })
+
+    def _fetch(self, request, body):
+        """Download feeds directly and build a bundle on this search head.
+
+        This is the one code path in the app that touches the network, and it
+        runs only when an operator presses the button. Nothing here is
+        scheduled, and nothing runs at install time.
+        """
+        service = self._service(request)
+        user = request.get("session", {}).get("user") or ""
+
+        running = importer.import_status(service.kvstore) or {}
+        if running.get("state") in ("importing", "cleaning", "fetching"):
+            raise ValueError("a feed operation is already running")
+
+        ecosystems = [e for e in (body.get("ecosystems") or []) if e in buildlib.ECOSYSTEMS]
+        nvd = str(body.get("nvd") or "").strip()
+        mitre = bool(body.get("mitre"))
+        kev = bool(body.get("kev"))
+        epss = bool(body.get("epss"))
+        if not (ecosystems or nvd or mitre or kev or epss):
+            raise ValueError("select at least one source to fetch")
+
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        name = f"riskability-feed-online-{stamp}.tar.gz"
+        path = _safe_incoming_path(name)
+
+        def run():
+            try:
+                importer._write_status(
+                    service.kvstore, state="fetching", bundle_version=name,
+                    started_at=int(time.time()), message="contacting upstream feeds")
+
+                def say(msg):
+                    importer._write_status(service.kvstore, state="fetching",
+                                           message=msg)
+
+                buildlib.build_bundle(
+                    path, ecosystems=ecosystems, nvd=nvd, mitre=mitre,
+                    kev=kev, epss=epss, version=f"online-{stamp}", log=say)
+                # Building and importing are one operation from the operator's
+                # point of view, so the fetch continues straight into an import.
+                importer.import_bundle(path, service.kvstore, imported_by=user)
+                self._mark_configured(service)
+            except Exception as exc:
+                importer._write_status(service.kvstore, state="failed",
+                                       error=f"online fetch failed: {exc}")
+
+        threading.Thread(target=run, name="riskability-fetch", daemon=True).start()
+        return _reply(202, {"ok": True, "started": True, "filename": name})
 
     def _upload(self, request, body):
         path = _safe_incoming_path(body.get("filename", ""))
