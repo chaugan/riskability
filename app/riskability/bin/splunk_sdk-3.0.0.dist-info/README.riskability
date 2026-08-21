@@ -1,0 +1,7 @@
+This directory exists so importlib.metadata can resolve the vendored
+splunklib's own version. splunklib 3.0's binding.py calls
+importlib.metadata.version("splunk-sdk") to build its User-Agent header, which
+raises PackageNotFoundError when the library is vendored into an app's bin/
+directory rather than pip-installed. Shipping the package metadata fixes that
+without patching vendored third-party code, which would otherwise have to be
+re-applied on every SDK upgrade.

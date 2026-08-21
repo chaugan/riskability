@@ -19,7 +19,12 @@ for app in riskability TA-riskability; do
 done
 
 if [ "${RESTART:-0}" = "1" ]; then
-  docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk restart -auth "admin:$SPLUNK_PASSWORD" >/dev/null
+  # "splunk restart" stops cleanly but its start half waits on a license
+  # prompt and never completes non-interactively, leaving splunkd down. Stop
+  # and start explicitly with the acceptance flags instead.
+  docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk stop >/dev/null 2>&1 || true
+  docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk start \
+    --accept-license --answer-yes --no-prompt >/dev/null
   echo "splunk restarted"
 else
   docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "admin:$SPLUNK_PASSWORD" >/dev/null 2>&1 || true

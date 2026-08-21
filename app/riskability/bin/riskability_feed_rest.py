@@ -35,8 +35,10 @@ import traceback
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 
 from splunklib import client  # noqa: E402
-from splunklib.binding import HTTPError  # noqa: E402
-from splunklib.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
+
+# Splunk bundles this base class; the Splunk SDK dropped its own copy in 3.0,
+# so importing it from splunklib would break on any modern install.
+from splunk.persistconn.application import PersistentServerConnectionApplication  # noqa: E402
 
 from riskability import feed as feedlib  # noqa: E402
 from riskability import importer  # noqa: E402
@@ -127,6 +129,9 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
     # -- routes ------------------------------------------------------------
 
     def handle(self, in_string):
+        # splunkd may hand this over as bytes or str depending on version.
+        if isinstance(in_string, (bytes, bytearray)):
+            in_string = in_string.decode("utf-8")
         try:
             request = json.loads(in_string)
         except Exception:
