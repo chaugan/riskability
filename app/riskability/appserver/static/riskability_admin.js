@@ -154,6 +154,21 @@
                 "bounds how much the findings below can be trusted."));
             card.appendChild(age);
 
+            // A bundle built while a source was unreachable is not obviously
+            // different from a complete one -- it just silently lacks, say,
+            // every known-exploited flag. The build host recorded what it
+            // could not reach; this is the only place anyone will read it.
+            if (feed.warnings && feed.warnings.length) {
+                var inc = el("div", "rk-status rk-warn");
+                inc.appendChild(el("b", null, "This bundle is incomplete."));
+                inc.appendChild(el("span", null,
+                    " The machine that built it could not reach every source, so findings "
+                    + "may be missing enrichment or whole ecosystems: "
+                    + feed.warnings.join("; ")
+                    + ". Rebuild it on a host that can reach those sources."));
+                card.appendChild(inc);
+            }
+
             var dl = el("dl", "rk-facts");
             [["Bundle", feed.bundle_version || feed.bundle_id],
              ["Bundle id", feed.bundle_id],
@@ -293,32 +308,35 @@
         var card = el("div", "rk-card");
         card.appendChild(el("h3", null, "Build a bundle on a connected machine"));
         card.appendChild(el("p", "rk-dim",
-            "These wrap the riskability-feed tool with sensible source lists. Run one on a "
-            + "machine that has internet access, then bring the file back here. Both take a "
-            + "profile: Linux, Windows (adds NVD CPE data), or Everything."));
+            "One archive holding the builder and a wrapper script for each platform. "
+            + "Unpack it on a machine that has internet access, run the wrapper for that "
+            + "platform, then bring the resulting .tar.gz back here and upload it above. "
+            + "Python 3.8 or later is the only requirement, and there is nothing to install."));
 
+        // Deliberately a single self-contained download. The page used to offer
+        // build-feed.sh and build-feed.ps1 on their own, and both failed on
+        // first run with "riskability-feed not found": they are wrappers around
+        // a builder that nobody installing from Splunkbase had any way to get.
         var row = el("div", "rk-scripts");
-        [["build-feed.sh", "Linux and macOS", "bash"],
-         ["build-feed.ps1", "Windows", "PowerShell"]
-        ].forEach(function (spec) {
-            var box = el("div", "rk-script");
-            var a = el("a", "rk-btn rk-btn-primary", "Download " + spec[0]);
-            a.href = staticUrl("scripts/" + spec[0]);
-            a.setAttribute("download", spec[0]);
-            box.appendChild(a);
-            box.appendChild(el("div", "rk-dim", spec[1] + " \u00b7 " + spec[2]));
-            row.appendChild(box);
-        });
+        var box = el("div", "rk-script");
+        var a = el("a", "rk-btn rk-btn-primary", "Download riskability-feedbuilder.zip");
+        a.href = staticUrl("scripts/riskability-feedbuilder.zip");
+        a.setAttribute("download", "riskability-feedbuilder.zip");
+        box.appendChild(a);
+        box.appendChild(el("div", "rk-dim",
+            "Linux and macOS: ./build-feed.sh \u00b7 Windows: .\\build-feed.ps1"));
+        row.appendChild(box);
         card.appendChild(row);
 
         var note = el("div", "rk-dim");
         note.style.marginTop = "10px";
         note.appendChild(document.createTextNode(
-            "Windows estates need the NVD profile: Windows software is not installed by a "
-            + "package manager, so it carries no PURL and only NVD's CPE data can assess it. "
-            + "Findings reached that way are always reported at low confidence, because the "
-            + "product identity is inferred from a display name rather than read from a "
-            + "package record."));
+            "Each wrapper takes a profile: Linux, Windows, or Everything. Windows estates "
+            + "need the Windows profile, which adds NVD CPE data: Windows software is not "
+            + "installed by a package manager, so it carries no PURL and only NVD's CPE "
+            + "data can assess it. Findings reached that way are always reported at low "
+            + "confidence, because the product identity is inferred from a display name "
+            + "rather than read from a package record."));
         card.appendChild(note);
         return card;
     }

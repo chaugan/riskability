@@ -400,7 +400,7 @@ class BundleWriter:
     def add_attack(self, rec: dict) -> None:
         self.write(ATTACK_MEMBER, rec)
 
-    def close(self, bundle_version: str = "") -> dict:
+    def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
 
@@ -416,6 +416,10 @@ class BundleWriter:
             "bundle_version": bundle_version or time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()),
             "created_at": int(time.time()),
             "sources": self.sources,
+            # Sources that could not be fetched. Carried in the bundle so the
+            # person importing it on the far side of the air gap can see that
+            # it is incomplete without access to the build host's console.
+            "warnings": list(warnings or []),
             "counts": {
                 "advisories": self._counts[ADVISORIES_NAME],
                 "ranges": self._counts[RANGES_NAME],

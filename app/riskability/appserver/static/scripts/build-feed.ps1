@@ -21,8 +21,8 @@
     .\build-feed.ps1 -Profile Everything -OutDir D:\feeds
 
 .NOTES
-    Requires Python 3.8+ and the riskability-feed tool from the repository,
-    which must sit next to this script or be given with -FeedTool.
+    Requires Python 3.8+. Everything else ships in the same archive as this
+    script -- keep the files together after unzipping.
 #>
 [CmdletBinding()]
 param(
@@ -36,14 +36,16 @@ $ErrorActionPreference = 'Stop'
 
 function Find-FeedTool {
     param([string]$Explicit)
+    # The builder ships beside this script as a Python zipapp, so the download
+    # works on its own. An earlier version looked for a separately-installed
+    # "riskability-feed" that nobody downloading from Splunkbase could obtain.
     if ($Explicit -and (Test-Path $Explicit)) { return (Resolve-Path $Explicit).Path }
     $here = Split-Path -Parent $PSCommandPath
-    foreach ($candidate in @(
-            (Join-Path $here 'riskability-feed'),
-            (Join-Path $here '..\tools\riskability-feed'))) {
-        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
-    }
-    throw "riskability-feed not found. Put it next to this script, or pass -FeedTool <path>."
+    $pyz = Join-Path $here 'riskability-feed.pyz'
+    if (Test-Path $pyz) { return (Resolve-Path $pyz).Path }
+    throw ("riskability-feed.pyz not found next to this script. Download " +
+           "riskability-feedbuilder.zip from the Riskability app's Feed " +
+           "administration page and unpack it, keeping the files together.")
 }
 
 function Find-Python {

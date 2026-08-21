@@ -10,18 +10,29 @@
 #   ./build-feed.sh --windows           # add NVD CPE data for Windows estates
 #   ./build-feed.sh --everything        # every distro, every ecosystem, all NVD
 #
-# Requires: python3 (3.8+) and the riskability-feed tool from the repo, which
-# must sit next to this script or on your PATH. Nothing else is installed.
+# Requires: Python 3.8+. Everything else ships in the same archive as this
+# script -- keep the files together after unzipping.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FEED="${RISKABILITY_FEED:-}"
-for cand in "$HERE/riskability-feed" "$HERE/../tools/riskability-feed" "$(command -v riskability-feed 2>/dev/null || true)"; do
-  if [ -n "$cand" ] && [ -x "$cand" ]; then FEED="$cand"; break; fi
+
+# The builder ships beside this script as a Python zipapp, so the download
+# works on its own. An earlier version looked for a separately-installed
+# "riskability-feed" that nobody downloading from Splunkbase could obtain.
+PYZ="${RISKABILITY_FEED:-$HERE/riskability-feed.pyz}"
+if [ ! -f "$PYZ" ]; then
+  echo "error: riskability-feed.pyz not found next to this script." >&2
+  echo "Download riskability-feedbuilder.zip from the Riskability app's" >&2
+  echo "Feed administration page and unpack it, keeping the files together." >&2
+  exit 1
+fi
+
+PY=""
+for cand in python3 python py; do
+  if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
 done
-if [ -z "$FEED" ]; then
-  echo "error: riskability-feed not found." >&2
-  echo "Put it next to this script, or set RISKABILITY_FEED=/path/to/riskability-feed" >&2
+if [ -z "$PY" ]; then
+  echo "error: Python 3.8+ is required and was not found on PATH." >&2
   exit 1
 fi
 
@@ -58,13 +69,13 @@ case "${1:-}" in
     )
     ;;
   --help|-h)
-    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
     exit 0
     ;;
 esac
 
 echo "Building $OUT ..."
-"$FEED" build --out "$OUT" --version "$STAMP" "${ARGS[@]}"
+"$PY" "$PYZ" build --out "$OUT" --version "$STAMP" "${ARGS[@]}"
 echo
 echo "Done. Copy $OUT to the search head and import it on the"
 echo "Riskability > Feed administration page."

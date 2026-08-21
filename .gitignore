@@ -22,3 +22,8 @@ __pycache__/
 # Splunk runtime leakage
 local/
 local.meta
+
+# Built by tools/make-feedbuilder.sh, which both package.sh and deploy-dev.sh
+# run first. Kept out of the repo so the binary does not churn on every build,
+# and so the archive can never be older than the sources it is built from.
+app/riskability/appserver/static/scripts/riskability-feedbuilder.zip

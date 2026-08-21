@@ -16,6 +16,11 @@ DIST="$ROOT/dist"
 VERSION=$(awk -F'= *' '/^version/{print $2; exit}' "$ROOT/app/riskability/default/app.conf")
 APPS=(riskability TA-riskability TA-riskability-indexes)
 
+# Rebuild the downloadable feed builder first, so the archive in the package is
+# always built from the tree being packaged. It shipped stale once already --
+# as two wrapper scripts around a tool that was never in the package at all.
+"$ROOT/tools/make-feedbuilder.sh"
+
 rm -rf "$DIST"
 mkdir -p "$DIST"
 STAGE=$(mktemp -d)
@@ -102,8 +107,8 @@ need riskability "riskability/bin/riskability/vercmp.py"           "version comp
 need riskability "riskability/bin/splunklib/binding.py"            "vendored SDK"
 need riskability "riskability/bin/splunk_sdk-3.0.0.dist-info/METADATA" "vendored SDK version lookup"
 need riskability "riskability/appserver/static/riskability_admin.js"  "admin page"
-need riskability "riskability/appserver/static/scripts/build-feed.sh" "offered as a download"
-need riskability "riskability/appserver/static/scripts/build-feed.ps1" "offered as a download"
+need riskability "riskability/appserver/static/scripts/riskability-feedbuilder.zip" \
+     "the self-contained feed builder the admin page offers"
 
 need TA-riskability "TA-riskability/default/inputs.conf"  "the file input"
 need TA-riskability "TA-riskability/default/props.conf"   "index-time parsing"
@@ -123,6 +128,42 @@ case "$mode" in
   *)   printf '  BAD   %-52s %s\n' "riskability: feedworker not executable ($mode)" \
          "Splunk will never introspect it"; fail=1 ;;
 esac
+
+# The feed builder must be usable straight out of the package: a download that
+# needs a separately-obtained tool is what this archive exists to replace.
+fb="$STAGE/fb"
+mkdir -p "$fb"
+if tar -C "$fb" -xzf "$DIST/riskability-${VERSION}.spl" \
+     riskability/appserver/static/scripts/riskability-feedbuilder.zip 2>/dev/null; then
+  if python3 - "$fb/riskability/appserver/static/scripts/riskability-feedbuilder.zip" "$fb" <<'PYEOF'
+import os, subprocess, sys, zipfile
+src, dest = sys.argv[1], os.path.join(sys.argv[2], "unpacked")
+with zipfile.ZipFile(src) as z:
+    names = set(z.namelist())
+    for info in z.infolist():
+        z.extract(info, dest)
+        os.chmod(os.path.join(dest, info.filename), info.external_attr >> 16)
+missing = {"riskability-feed.pyz", "build-feed.sh", "build-feed.ps1"} - names
+if missing:
+    print("missing from the archive: " + ", ".join(sorted(missing)))
+    sys.exit(1)
+# Runs it the way a user would, which is the only check that would have caught
+# the original "riskability-feed not found" failure.
+r = subprocess.run([sys.executable, os.path.join(dest, "riskability-feed.pyz"), "sources"],
+                   capture_output=True, text=True)
+if r.returncode != 0:
+    print("the builder does not run: " + (r.stderr.strip().splitlines() or [""])[-1])
+    sys.exit(1)
+PYEOF
+  then
+    printf '  ok    %-52s\n' "riskability: feed builder runs standalone"
+  else
+    printf '  BAD   %-52s %s\n' "riskability: feed builder is not usable" \
+      "the download would fail for every user"; fail=1
+  fi
+else
+  printf '  BAD   %-52s\n' "riskability: feed builder archive missing"; fail=1
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then echo "all packages complete"; else echo "PACKAGE INCOMPLETE"; exit 1; fi

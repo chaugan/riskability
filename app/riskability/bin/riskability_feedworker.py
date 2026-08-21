@@ -173,6 +173,7 @@ class FeedWorker(Script):
             # the live one.
             if status.get("state") not in ("importing", "cleaning", "fetching"):
                 self._sweep_stale_generations(kv, ew)
+                self._reconcile_configured(service, kv, ew)
             return
 
         action = request.get("action")
@@ -223,6 +224,33 @@ class FeedWorker(Script):
             ew.log("ERROR", f"riskability: feed operation failed: {exc}")
         finally:
             clear_request(kv)
+
+    def _reconcile_configured(self, service, kv, ew) -> None:
+        """Keep Splunk's setup gate in step with whether a feed actually exists.
+
+        app.conf ships is_configured=0 so a fresh install lands the admin on the
+        feed page instead of on dashboards that can only show zeroes. Clearing
+        that writes to local/app.conf -- which a reinstall or an upgrade
+        replaces, leaving Splunk insisting the app "has not been fully
+        configured yet" while the KV Store holds half a million advisories.
+
+        The flag should describe the current state rather than remember a past
+        event, so it is recomputed here: a feed present means configured.
+        """
+        if importer.live_generation(kv) <= 0:
+            return
+        try:
+            app = service.apps["riskability"]
+            if str(app.content.get("configured", "0")).lower() in ("1", "true"):
+                return
+        except Exception:
+            return
+        try:
+            service.post("/servicesNS/nobody/riskability/apps/local/riskability",
+                         configured=1)
+            ew.log("INFO", "riskability: a feed is present; cleared the setup gate")
+        except Exception:
+            pass
 
     def _sweep_stale_generations(self, kv, ew) -> None:
         live = importer.live_generation(kv)

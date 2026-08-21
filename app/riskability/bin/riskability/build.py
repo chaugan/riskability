@@ -71,6 +71,10 @@ ECOSYSTEMS: Dict[str, str] = {
 }
 
 
+class BuildError(Exception):
+    """A build that produced nothing usable."""
+
+
 def osv_url(ecosystem: str) -> str:
     return f"{OSV_BASE}/{urllib.parse.quote(ecosystem)}/all.zip"
 
@@ -209,6 +213,15 @@ def build_bundle(
     say = log or (lambda msg: None)
     ecosystems = list(ecosystems or [])
     sources: List[dict] = []
+    # Every source failure is recorded, not just narrated. A source that could
+    # not be fetched changes what the bundle means, and the person importing it
+    # on the air-gapped side never sees this side's console output.
+    warnings: List[str] = []
+
+    def failed(source: str, exc) -> None:
+        warnings.append(f"{source}: {exc}")
+        say(f"  ERROR {exc} - continuing without {source}")
+
     writer = feedlib.BundleWriter(out_path, sources)
 
     seen_advisories: Dict[str, dict] = {}
@@ -221,7 +234,7 @@ def build_bundle(
             with _open(url) as r:
                 raw = r.read()
         except Exception as exc:
-            say(f"  ERROR {exc} - skipping {eco}")
+            failed(f"OSV {eco}", exc)
             continue
         count = 0
         for record in _iter_osv_zip(raw):
@@ -252,7 +265,7 @@ def build_bundle(
                 with _open(NVD_YEAR_URL.format(year=year)) as r:
                     doc = json.loads(gzip.decompress(r.read()).decode("utf-8"))
             except Exception as exc:
-                say(f"  ERROR {exc} - skipping {year}")
+                failed(f"NVD {year}", exc)
                 continue
             for item in doc.get("vulnerabilities") or []:
                 try:
@@ -283,7 +296,7 @@ def build_bundle(
                             "fetched_at": int(time.time()), "records": len(rows),
                             "licence": "MITRE CWE/CAPEC; see MITRE terms of use"})
         except Exception as exc:
-            say(f"  ERROR {exc} - continuing without MITRE mapping")
+            failed("MITRE CWE/CAPEC", exc)
 
     kev_map: Dict[str, dict] = {}
     if kev:
@@ -296,7 +309,7 @@ def build_bundle(
                             "fetched_at": int(time.time()), "records": len(kev_map),
                             "licence": "US Government work, public domain"})
         except Exception as exc:
-            say(f"  ERROR {exc} - continuing without KEV")
+            failed("CISA KEV", exc)
 
     epss_map: Dict[str, dict] = {}
     if epss:
@@ -310,7 +323,7 @@ def build_bundle(
                             "fetched_at": int(time.time()), "records": len(epss_map),
                             "licence": "FIRST.org EPSS; attribution expected"})
         except Exception as exc:
-            say(f"  ERROR {exc} - continuing without EPSS")
+            failed("FIRST EPSS", exc)
 
     for advisory in seen_advisories.values():
         cve = (advisory.get("cve_id") or "").upper()
@@ -322,4 +335,24 @@ def build_bundle(
             advisory.update(epss_map[cve])
         writer.add_advisory(advisory)
 
-    return writer.close(bundle_version=version or "")
+    manifest = writer.close(bundle_version=version or "", warnings=warnings)
+
+    # An empty bundle is a failed build, not a small one.
+    #
+    # Every fetch above is best-effort so that one unreachable source does not
+    # throw away the others. Taken to its conclusion that meant a run in which
+    # *everything* failed still wrote a valid 512-byte bundle and exited 0.
+    # Carried across the air gap and imported, that would atomically replace a
+    # working feed with nothing -- on the one host that cannot simply rebuild
+    # it. Fail here instead, and leave no file to carry.
+    counts = manifest.get("counts", {})
+    if not any(counts.get(k, 0) for k in ("advisories", "ranges", "attack")):
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
+        detail = "; ".join(warnings) if warnings else "no sources were requested"
+        raise BuildError(
+            "no data could be collected, so no bundle was written (" + detail + ")")
+
+    return manifest

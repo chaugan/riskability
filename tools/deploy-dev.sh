@@ -7,6 +7,10 @@ CONTAINER=${CONTAINER:-riskability-splunk}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/docker/.env"
 
+# The downloadable feed builder is a build artefact, not a checked-in file, so
+# build it before syncing or the admin page offers a download that is missing.
+"$ROOT/tools/make-feedbuilder.sh"
+
 for app in riskability TA-riskability TA-riskability-indexes; do
   [ -d "$ROOT/app/$app" ] || continue
   # Replace default/ and bin/ but never local/ or metadata/local.meta: Splunk

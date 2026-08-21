@@ -212,6 +212,23 @@ def import_bundle(
         _delete_generation(kvstore, new_gen)
         raise ImportError_(f"failed importing {path!r}: {exc}") from exc
 
+    # Never flip to an empty generation.
+    #
+    # The builder now refuses to write an empty bundle, but the import side
+    # cannot depend on that: bundles arrive by hand, across an air gap, from a
+    # build host this code has never seen, possibly built by an older version.
+    # Since the flip below is atomic and irreversible, and the search head has
+    # no way to re-fetch a feed it just discarded, an empty import must be
+    # rejected here rather than trusted to have been rejected earlier.
+    if not any(counts.get(k, 0) for k in ("advisories", "ranges", "attack")):
+        _delete_generation(kvstore, new_gen)
+        msg = ("the bundle contains no advisories, no version ranges and no "
+               "ATT&CK mappings, so it was not imported. The existing feed is "
+               "unchanged. This usually means the build host could not reach "
+               "the upstream feeds; rebuild the bundle and check its output.")
+        _write_status(kvstore, state="failed", generation=old_gen, error=msg)
+        raise ImportError_(msg)
+
     state = {
         "_key": STATE_KEY,
         "generation": new_gen,
@@ -221,6 +238,10 @@ def import_bundle(
         "imported_at": int(time.time()),
         "imported_by": imported_by,
         "sources": manifest.get("sources", []),
+        # Sources the build host could not reach. Kept with the feed so the
+        # search head can say the feed is incomplete; otherwise this is known
+        # only to whoever watched the build scroll past on the other side.
+        "warnings": manifest.get("warnings", []),
         "advisory_count": counts.get("advisories", 0),
         "range_count": counts.get("ranges", 0),
         "notaffected_count": counts.get("notaffected", 0),
