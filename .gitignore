@@ -27,3 +27,7 @@ local.meta
 # run first. Kept out of the repo so the binary does not churn on every build,
 # and so the archive can never be older than the sources it is built from.
 app/riskability/appserver/static/scripts/riskability-feedbuilder.zip
+
+# Build-time only: 93MB of webpack/ECharts sources. visualization.js is the
+# built artefact that actually ships; see the viz THIRD-PARTY.md to rebuild.
+app/riskability/appserver/static/visualizations/*/node_modules/

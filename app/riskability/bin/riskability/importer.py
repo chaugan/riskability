@@ -47,6 +47,7 @@ COLLECTIONS = {
     "advisories": "riskability_advisories",
     "notaffected": "riskability_notaffected",
     "attack": "riskability_attack",
+    "tactics": "riskability_tactics",
 }
 
 MEMBER_FOR = {
@@ -54,6 +55,7 @@ MEMBER_FOR = {
     "advisories": feedlib.ADVISORIES_NAME,
     "notaffected": feedlib.NOTAFFECTED_NAME,
     "attack": feedlib.ATTACK_MEMBER,
+    "tactics": feedlib.TACTICS_MEMBER,
 }
 
 STATE_COLLECTION = "riskability_feedstate"

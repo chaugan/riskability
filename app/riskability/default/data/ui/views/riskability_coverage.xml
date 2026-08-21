@@ -17,6 +17,24 @@
 
   <row>
     <panel>
+      <title>Assessable surface by ecosystem</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_latest_inventory`
+| stats dc(name) AS components BY type
+| sort - components
+| head 40</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">treemap</option>
+        <option name="riskability.riskability_chart.valueLabel">components</option>
+        <option name="riskability.riskability_chart.emptyText">No inventory has been received. Nothing can be assessed until swinv data reaches the index.</option>
+        <option name="height">380</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Assessable components by ecosystem</title>
       <table>
         <search>

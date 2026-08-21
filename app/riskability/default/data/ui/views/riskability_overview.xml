@@ -47,6 +47,34 @@
 
   <row>
     <panel>
+      <title>Where the open findings are, by package</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_open_findings`
+| stats dc(cve_id) AS cves BY package
+| sort - cves
+| head 60</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">treemap</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings. If no feed has been imported this means the app cannot assess anything yet, not that the fleet is clean — check the Feed administration page.</option>
+        <option name="height">420</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Area is distinct CVEs, not severity.</b>
+          <span>
+            A large tile is a package carrying many open CVEs, so it is where patching
+            effort goes furthest. That is not the same as where the single worst
+            vulnerability is — for that, sort the Findings page by EPSS.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Findings by confidence</title>
       <chart>
         <search>

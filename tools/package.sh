@@ -35,6 +35,11 @@ for app in "${APPS[@]}"; do
   # user's layer, and shipping them silently overwrites their customisations on
   # upgrade.
   rm -rf "$STAGE/$app/local" "$STAGE/$app/metadata/local.meta"
+  # node_modules is 93MB of build-time dependencies. visualization.js is the
+  # artefact that ships; the sources it was built from stay in the repo, and
+  # THIRD-PARTY.md records the pinned versions so the bundle is reproducible.
+  find "$STAGE/$app" -name 'node_modules' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+
   # Build artefacts. AppInspect fails a package containing bytecode.
   find "$STAGE/$app" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
   find "$STAGE/$app" \( -name '*.pyc' -o -name '.DS_Store' -o -name '*.swp' \) -delete 2>/dev/null || true
@@ -109,6 +114,18 @@ need riskability "riskability/bin/splunk_sdk-3.0.0.dist-info/METADATA" "vendored
 need riskability "riskability/appserver/static/riskability_admin.js"  "admin page"
 need riskability "riskability/appserver/static/scripts/riskability-feedbuilder.zip" \
      "the self-contained feed builder the admin page offers"
+need riskability "riskability/default/visualizations.conf"                "declares the custom visualization"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/visualization.js" \
+     "the built ECharts bundle; without it every chart panel is blank"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/visualization.css" \
+     "sizes the chart element; ECharts draws nothing at 0x0"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/formatter.html" \
+     "panel options"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/ECHARTS-LICENSE.txt" \
+     "Splunkbase vetting requires vendored licences"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/THIRD-PARTY.md" \
+     "identifies the bundled library and version"
+forbid riskability "node_modules" "93MB of build-time dependencies must not ship"
 
 need TA-riskability "TA-riskability/default/inputs.conf"  "the file input"
 need TA-riskability "TA-riskability/default/props.conf"   "index-time parsing"

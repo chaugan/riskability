@@ -64,6 +64,38 @@
 
   <row>
     <panel>
+      <title>How long findings stay open, by severity</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_open_findings`
+| eval sev = coalesce(severity, "unrated")
+| stats min(age_days) AS lo, perc25(age_days) AS q1, median(age_days) AS med,
+        perc75(age_days) AS q3, max(age_days) AS hi, dc(cve_id) AS cves
+        BY sev
+| where cves &gt;= 3
+| sort - cves
+| fields sev, lo, q1, med, q3, hi</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">boxplot</option>
+        <option name="riskability.riskability_chart.valueLabel">days open</option>
+        <option name="riskability.riskability_chart.emptyText">Not enough open findings to describe an age distribution.</option>
+        <option name="height">380</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>Age is time since Riskability first saw it.</b>
+          <span>
+            Not time since the CVE was published, and not time since the host became
+            vulnerable. On a recent install every box is short; the number means
+            something only once the app has collected for longer than your patch cycle.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Mitigated: the upgrade that fixed it</title>
       <table>
         <search>

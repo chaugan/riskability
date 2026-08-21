@@ -44,8 +44,17 @@ NOTAFFECTED_NAME = "notaffected.jsonl"
 # MITRE mapping existed must still import, so readers treat it as "no mapping"
 # rather than as a malformed bundle.
 ATTACK_MEMBER = "attack.jsonl"
-MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER)
-OPTIONAL_MEMBERS = (ATTACK_MEMBER,)
+
+# tactics.jsonl is likewise optional, and for the same reason: it arrived with
+# the ATT&CK matrix, and every bundle built before it must keep importing. The
+# schema version deliberately does NOT change -- bumping it would reject the
+# feed an air-gapped site already has, forcing a rebuild to install an upgrade.
+# A missing member means "no tactic data", which the matrix panel says plainly
+# rather than drawing an empty grid.
+TACTICS_MEMBER = "tactics.jsonl"
+MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
+           ATTACK_MEMBER, TACTICS_MEMBER)
+OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -378,10 +387,11 @@ class BundleWriter:
         os.makedirs(self._dir, exist_ok=True)
         self._files: Dict[str, io.TextIOWrapper] = {}
         self._counts = {ADVISORIES_NAME: 0, RANGES_NAME: 0, NOTAFFECTED_NAME: 0,
-                        ATTACK_MEMBER: 0}
+                        ATTACK_MEMBER: 0, TACTICS_MEMBER: 0}
         self._staging = self._tmp + ".d"
         os.makedirs(self._staging, exist_ok=True)
-        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER):
+        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
+                     TACTICS_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -400,12 +410,16 @@ class BundleWriter:
     def add_attack(self, rec: dict) -> None:
         self.write(ATTACK_MEMBER, rec)
 
+    def add_tactic(self, rec: dict) -> None:
+        self.write(TACTICS_MEMBER, rec)
+
     def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
 
         digests = {}
-        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER):
+        for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
+                     TACTICS_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -425,6 +439,7 @@ class BundleWriter:
                 "ranges": self._counts[RANGES_NAME],
                 "notaffected": self._counts[NOTAFFECTED_NAME],
                 "attack": self._counts[ATTACK_MEMBER],
+                "tactics": self._counts[TACTICS_MEMBER],
             },
             "digests": digests,
         }
@@ -780,8 +795,84 @@ def _canonical_technique_names(capec_attack: Dict[str, List[dict]]) -> Dict[str,
     return canonical
 
 
+def parse_attack_stix(raw: str):
+    """MITRE's ATT&CK STIX bundle -> technique metadata and the tactic order.
+
+    Two things come from here that CAPEC cannot provide.
+
+    The tactic each technique belongs to, which is what makes an ATT&CK matrix
+    a matrix: without it the app can say a technique is reachable but not where
+    it sits in an attack. A technique can belong to several tactics.
+
+    Authoritative technique names. CAPEC's taxonomy strings are hand-entered
+    and disagree with themselves -- "Services File Permissions Weakness" and
+    "ServicesFile Permissions Weakness" for one id -- which previously had to
+    be resolved by majority vote. STIX is the source of record, so where it
+    knows a name, that name wins outright.
+
+    Tactic order is read from the matrix object rather than hardcoded: ATT&CK
+    reorders and renames tactics between versions (Defense Evasion recently
+    became Stealth and Defense Impairment), and a hardcoded list would quietly
+    render last year's matrix.
+    """
+    doc = json.loads(raw)
+    objects = doc.get("objects") or []
+
+    tactic_by_ref = {o.get("id"): o for o in objects
+                     if o.get("type") == "x-mitre-tactic"}
+    tactic_rows: List[dict] = []
+    order_by_shortname: Dict[str, int] = {}
+    for matrix in objects:
+        if matrix.get("type") != "x-mitre-matrix":
+            continue
+        for position, ref in enumerate(matrix.get("tactic_refs") or []):
+            tactic = tactic_by_ref.get(ref)
+            if not tactic:
+                continue
+            shortname = tactic.get("x_mitre_shortname") or ""
+            if not shortname or shortname in order_by_shortname:
+                continue
+            order_by_shortname[shortname] = position
+            tactic_rows.append({
+                "tactic": shortname,
+                "tactic_name": tactic.get("name") or shortname,
+                "tactic_order": position,
+            })
+        break
+
+    technique_meta: Dict[str, dict] = {}
+    for obj in objects:
+        if obj.get("type") != "attack-pattern":
+            continue
+        # Revoked and deprecated techniques still resolve from old CAPEC
+        # mappings. Carrying them would put retired ids on the matrix.
+        if obj.get("revoked") or obj.get("x_mitre_deprecated"):
+            continue
+        tid = ""
+        for ref in obj.get("external_references") or []:
+            if ref.get("source_name") == "mitre-attack":
+                tid = (ref.get("external_id") or "").strip()
+                break
+        if not tid:
+            continue
+        tactics = []
+        for phase in obj.get("kill_chain_phases") or []:
+            if phase.get("kill_chain_name") != "mitre-attack":
+                continue
+            name = phase.get("phase_name")
+            if name and name not in tactics:
+                tactics.append(name)
+        tactics.sort(key=lambda t: order_by_shortname.get(t, 999))
+        technique_meta[tid] = {
+            "name": (obj.get("name") or "").strip(),
+            "tactics": tactics,
+        }
+    return technique_meta, tactic_rows
+
+
 def build_attack_rows(cwe_capec: Dict[str, List[str]],
-                      capec_attack: Dict[str, List[dict]]) -> List[dict]:
+                      capec_attack: Dict[str, List[dict]],
+                      technique_meta: Optional[Dict[str, dict]] = None) -> List[dict]:
     """Flatten CWE -> ATT&CK, keeping the CAPEC that justified each hop.
 
     Each hop is a published MITRE mapping, but the chain is many-to-many and
@@ -790,15 +881,24 @@ def build_attack_rows(cwe_capec: Dict[str, List[str]],
     rather than asserting an attack path.
     """
     canonical = _canonical_technique_names(capec_attack)
+    meta = technique_meta or {}
     rows = []
     for cwe, capecs in cwe_capec.items():
         seen = {}
         for capec in capecs:
             for t in capec_attack.get(capec, ()):
-                entry = seen.setdefault(t["technique"], {
+                tid = t["technique"]
+                info = meta.get(tid) or {}
+                # STIX first, majority-vote second, whatever CAPEC said last.
+                name = info.get("name") or canonical.get(tid) or t["name"]
+                entry = seen.setdefault(tid, {
                     "cwe": cwe,
-                    "technique": t["technique"],
-                    "technique_name": canonical.get(t["technique"], t["name"]),
+                    "technique": tid,
+                    "technique_name": name,
+                    # Comma-joined rather than a list: the KV Store lookup path
+                    # already flattens multivalue fields, and the macro that
+                    # reads this splits on comma exactly as it does for cwes.
+                    "tactics": ",".join(info.get("tactics") or []),
                     "via_capec": [],
                 })
                 if capec not in entry["via_capec"]:

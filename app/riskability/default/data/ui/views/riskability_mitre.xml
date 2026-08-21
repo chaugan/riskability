@@ -38,6 +38,42 @@
 
   <row>
     <panel>
+      <title>ATT&amp;CK matrix — where open findings sit in an attack</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_attack_matrix`
+| search hostname=$host_tok|s$ $conf_tok$
+| stats dc(cve_id) AS cves BY tactic_name, tactic_order, technique_name
+| eventstats max(cves) AS peak BY technique_name
+| sort - peak
+| head 120
+| sort tactic_order
+| fields tactic_name, technique_name, cves</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">heatmap</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No tactic data. The matrix needs the ATT&amp;CK tactic mapping, which older feed bundles do not carry — rebuild the bundle with --mitre and import it. Until then this panel is blank because the mapping is missing, not because nothing is exposed.</option>
+        <option name="height">520</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>An empty matrix is not a clean matrix.</b>
+          <span>
+            The grid needs MITRE's technique-to-tactic mapping, which only bundles built
+            with <code>--mitre</code> by a recent feed builder carry. If this panel is
+            empty, rebuild the bundle and import it — the techniques listed below are
+            still correct in the meantime, they simply cannot be placed in an attack
+            sequence without tactics. Cells show distinct CVEs; a technique appears in
+            every tactic MITRE assigns it, so reading across a row counts the same CVEs
+            more than once.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Techniques enabled by open findings, most exposed first</title>
       <table>
         <search>
@@ -64,17 +100,19 @@
   <row>
     <panel>
       <title>Weakness classes present in the fleet (CWE)</title>
-      <chart>
+      <viz type="riskability.riskability_chart">
         <search>
           <query>`riskability_finding_cwes`
 | search hostname=$host_tok|s$
 | stats dc(cve_id) AS cves BY cwe
 | sort - cves
-| head 15</query>
+| head 40</query>
         </search>
-        <option name="charting.chart">bar</option>
-        <option name="charting.legend.placement">none</option>
-      </chart>
+        <option name="riskability.riskability_chart.chartType">treemap</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk — see the coverage panel beside it.</option>
+        <option name="height">400</option>
+      </viz>
     </panel>
     <panel>
       <title>Coverage of the mapping itself</title>
@@ -92,6 +130,71 @@
         </search>
         <option name="drilldown">none</option>
       </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Which weaknesses lead to which techniques</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_attack_surface`
+| search hostname=$host_tok|s$ $conf_tok$
+| stats dc(cve_id) AS cves BY cwe, technique_name
+| sort - cves
+| head 25</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">sankey</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to map. No open finding has a CWE that MITRE links to a technique.</option>
+        <option name="height">460</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>Widths do not add up, by design.</b>
+          <span>
+            One weakness can enable several techniques, so a single CVE is drawn once per
+            technique it reaches. Each ribbon is honest on its own — that many distinct CVEs
+            connect that CWE to that technique — but summing the right-hand side counts the
+            same CVE several times. Read concentration, not totals. Only the top 25 links
+            are shown.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Exploitation likelihood per technique (EPSS distribution)</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_attack_surface`
+| search hostname=$host_tok|s$ $conf_tok$
+| stats min(epss) AS lo, perc25(epss) AS q1, median(epss) AS med,
+        perc75(epss) AS q3, max(epss) AS hi, dc(cve_id) AS cves
+        BY technique_name
+| where cves &gt;= 3
+| sort - cves
+| head 15
+| fields technique_name, lo, q1, med, q3, hi</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">boxplot</option>
+        <option name="riskability.riskability_chart.valueLabel">EPSS</option>
+        <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to show a distribution. EPSS comes from the feed; if it was not included in the bundle there is nothing to plot.</option>
+        <option name="height">420</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Why a distribution rather than a peak.</b>
+          <span>
+            The table above reports each technique's highest EPSS, which one noisy CVE can
+            dominate. A box shows whether a technique is backed by many likely-exploited
+            CVEs or by a single outlier — those call for different responses. Techniques
+            with fewer than three scored CVEs are omitted as too small to describe.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 

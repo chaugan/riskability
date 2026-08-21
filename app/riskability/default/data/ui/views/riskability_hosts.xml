@@ -57,6 +57,26 @@
 
   <row>
     <panel>
+      <title>Severity against ecosystem</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>`riskability_open_findings`
+| search hostname=$host_tok|s$
+| eval sev = coalesce(severity, "unrated")
+| stats dc(cve_id) AS cves BY sev, ecosystem
+| sort - cves
+| fields sev, ecosystem, cves</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">heatmap</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings for this host. That can also mean the host has not reported inventory recently — check its last scan time above.</option>
+        <option name="height">380</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Findings on this host</title>
       <table>
         <search>

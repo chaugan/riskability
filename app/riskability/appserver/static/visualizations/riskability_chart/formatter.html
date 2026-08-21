@@ -1,0 +1,28 @@
+<!--
+  Panel options. Chart type is a closed set: each entry has a fixed column
+  contract that the panel's search must produce, documented beside it.
+-->
+<form>
+  <splunk-control-group label="Chart type">
+    <splunk-select name="display.visualizations.custom.riskability.riskability_chart.chartType"
+                   value="treemap">
+      <option value="treemap">Treemap — columns: label, value</option>
+      <option value="sankey">Sankey — columns: source, target, value</option>
+      <option value="heatmap">Heatmap — columns: x, y, value</option>
+      <option value="boxplot">Boxplot — columns: category, min, q1, median, q3, max</option>
+      <option value="bar">Bar — columns: label, value</option>
+    </splunk-select>
+  </splunk-control-group>
+
+  <splunk-control-group label="Value label"
+                        help="What one unit means, e.g. &quot;CVEs&quot;. Shown in tooltips.">
+    <splunk-text-input name="display.visualizations.custom.riskability.riskability_chart.valueLabel"
+                       value="CVEs"></splunk-text-input>
+  </splunk-control-group>
+
+  <splunk-control-group label="Empty message"
+                        help="Shown when the search returns no rows. Say what empty means on this panel — on a security dashboard it is rarely &quot;no risk&quot;.">
+    <splunk-text-input name="display.visualizations.custom.riskability.riskability_chart.emptyText"
+                       value=""></splunk-text-input>
+  </splunk-control-group>
+</form>

@@ -31,6 +31,11 @@ from . import feed as feedlib
 USER_AGENT = "riskability-feed/0.1 (+https://github.com/chaugan/riskability)"
 
 OSV_BASE = "https://storage.googleapis.com/osv-vulnerabilities"
+# MITRE publishes ATT&CK as STIX here rather than on attack.mitre.org. It is
+# the only source for which tactic a technique belongs to, and so the only way
+# to draw a matrix rather than a list.
+ATTACK_STIX_URL = ("https://raw.githubusercontent.com/mitre-attack/attack-stix-data"
+                   "/master/enterprise-attack/enterprise-attack.json")
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz"
@@ -46,6 +51,7 @@ NETWORK_HOSTS = [
     "nvd.nist.gov",             # NVD CVE 2.0 feeds
     "cwe.mitre.org",            # MITRE CWE catalogue
     "capec.mitre.org",          # MITRE CAPEC catalogue
+    "raw.githubusercontent.com", # MITRE ATT&CK STIX bundle
     "www.cisa.gov",             # CISA KEV
     "epss.empiricalsecurity.com",  # FIRST EPSS scores
 ]
@@ -288,13 +294,36 @@ def build_bundle(
         try:
             cwe_capec = feedlib.parse_cwe_capec(_fetch_csv(CWE_URL))
             capec_attack = feedlib.parse_capec_attack(_fetch_csv(CAPEC_URL))
-            rows = feedlib.build_attack_rows(cwe_capec, capec_attack)
+
+            # Tactic data is fetched separately and tolerated missing: the
+            # CWE -> technique mapping is still useful without it, and losing
+            # the whole MITRE section because one host is unreachable would be
+            # a poor trade. The matrix panel says when it has no tactics.
+            technique_meta, tactic_rows = {}, []
+            try:
+                with _open(ATTACK_STIX_URL) as r:
+                    technique_meta, tactic_rows = feedlib.parse_attack_stix(
+                        r.read().decode("utf-8"))
+                for row in tactic_rows:
+                    writer.add_tactic(row)
+                say(f"  {len(technique_meta)} techniques, "
+                    f"{len(tactic_rows)} tactics from ATT&CK")
+            except Exception as exc:
+                failed("MITRE ATT&CK tactics", exc)
+
+            rows = feedlib.build_attack_rows(cwe_capec, capec_attack, technique_meta)
             for row in rows:
                 writer.add_attack(row)
             say(f"  {len(rows)} CWE -> ATT&CK technique mappings")
             sources.append({"name": "mitre-attack", "url": CAPEC_URL,
                             "fetched_at": int(time.time()), "records": len(rows),
                             "licence": "MITRE CWE/CAPEC; see MITRE terms of use"})
+            if tactic_rows:
+                sources.append({"name": "mitre-attack-tactics",
+                                "url": ATTACK_STIX_URL,
+                                "fetched_at": int(time.time()),
+                                "records": len(tactic_rows),
+                                "licence": "MITRE ATT&CK; see MITRE terms of use"})
         except Exception as exc:
             failed("MITRE CWE/CAPEC", exc)
 

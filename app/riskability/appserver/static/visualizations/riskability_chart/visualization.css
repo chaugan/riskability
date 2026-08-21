@@ -1,0 +1,34 @@
+/* Sized to the Splunk panel: ECharts needs an element with real dimensions or
+   it initialises at 0x0 and silently draws nothing. */
+.riskability-chart { width: 100%; height: 100%; min-height: 320px; }
+.riskability-chart .rk-viz-canvas { width: 100%; height: 100%; min-height: 300px; }
+
+/* Deliberately styled like the rk-status blocks on the admin page: an empty
+   panel has to look like a statement, not like a chart that failed to paint. */
+.riskability-chart .rk-viz-msg {
+    display: flex; flex-direction: column; gap: 4px;
+    margin: 12px; padding: 12px 14px;
+    border-left: 3px solid #708794; background: #23272e; border-radius: 3px;
+    font-size: 12px; line-height: 1.45; color: #d5d8dc;
+}
+.riskability-chart .rk-viz-msg b { color: #f2f4f5; }
+.riskability-chart .rk-viz-warn { border-left-color: #f8be34; }
+.riskability-chart .rk-viz-warn b { color: #f8be34; }
+.riskability-chart .rk-viz-bad { border-left-color: #dc4e41; }
+.riskability-chart .rk-viz-bad b { color: #e26d63; }
+
+.riskability-chart .rk-viz-truncated {
+    margin: 6px 12px 0; padding: 6px 10px;
+    border-left: 3px solid #f8be34; background: #2c2f34;
+    font-size: 11px; color: #f8be34;
+}
+
+/* Splunk paints its own "No results found." next to the visualization when a
+   search returns nothing. On these panels that is exactly the wrong message:
+   an empty ATT&CK panel usually means the mapping had nothing to work with,
+   not that the fleet is clean, and the visualization says so itself in
+   rk-viz-msg. Two messages, one of them misleading, is worse than one.
+   Scoped with :has() so only panels using this visualization are affected;
+   where :has() is unsupported the rule is ignored and both messages show,
+   which is untidy but not wrong. */
+.splunk-view:has(.riskability-chart) > .splunk-message-container { display: none; }
