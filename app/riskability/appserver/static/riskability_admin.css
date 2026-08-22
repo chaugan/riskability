@@ -129,3 +129,15 @@
 
 /* Commands are copied by hand off this page, so they get a monospace column. */
 .rk-mono { font-family: Menlo, Consolas, monospace; font-size: 11px; color: #d5d8dc; white-space: nowrap; }
+
+/* A diagnosis with no remedy just tells somebody they are stuck. */
+.rk-remedy {
+    margin-top: 4px; padding: 6px 9px;
+    border-left: 2px solid #f8be34; background: #23272e;
+    color: #d5d8dc; font-size: 11px; line-height: 1.5;
+}
+.rk-remedy b { color: #f8be34; }
+.rk-remedy code {
+    background: #1a1d21; color: #f2f4f5; padding: 1px 5px;
+    border-radius: 2px; font-size: 11px;
+}

@@ -454,6 +454,24 @@
         return card;
     }
 
+    /* Sources that can be fetched by hand and handed to the builder. CISA in
+     * particular refuses whole datacentre ranges, so a perfectly connected
+     * build host can still never retrieve KEV -- and KEV is the strongest
+     * prioritisation signal available offline, so being stuck on it matters
+     * more than being stuck on anything else here. */
+    var REMEDY = {
+        kev: {
+            text: "download known_exploited_vulnerabilities.json from cisa.gov " +
+                  "on any machine that can reach it, then ",
+            flag: "--kev-file <path>",
+        },
+        epss: {
+            text: "download the EPSS csv or csv.gz from first.org on any " +
+                  "machine that can reach it, then ",
+            flag: "--epss-file <path>",
+        },
+    };
+
     function renderReachability(card, r, anchor) {
         var old = card.querySelector(".rk-reach");
         if (old) old.remove();
@@ -474,8 +492,25 @@
             tr.appendChild(el("td", null, k));
             tr.appendChild(el("td", ok ? "rk-good-text" : "rk-bad-text", ok ? "yes" : "no"));
             // The reason matters: a firewall rule is fixable here, a CDN
-            // blocking this IP range is not.
-            tr.appendChild(el("td", "rk-dim", ok ? "" : detail));
+            // blocking this IP range is not. And where the answer is "fetch it
+            // by hand", say so -- a diagnosis with no remedy just tells
+            // somebody they are stuck.
+            var cell = el("td", "rk-dim");
+            if (!ok) {
+                cell.appendChild(document.createTextNode(detail));
+                var fix = REMEDY[k];
+                if (fix) {
+                    var note = el("div", "rk-remedy");
+                    note.appendChild(el("b", null, "Workaround: "));
+                    note.appendChild(document.createTextNode(fix.text + "pass "));
+                    note.appendChild(el("code", null, fix.flag));
+                    note.appendChild(document.createTextNode(
+                        " to the feed builder. The bundle then carries it exactly as if it "
+                        + "had been fetched."));
+                    cell.appendChild(note);
+                }
+            }
+            tr.appendChild(cell);
             tbl.appendChild(tr);
         });
         wrap.appendChild(tbl);
