@@ -520,6 +520,59 @@ def read_manifest(path: str) -> dict:
     return manifest
 
 
+def verify_members(path: str, manifest: dict) -> None:
+    """Check every member against the digest the manifest recorded for it.
+
+    The manifest has carried per-member SHA-256 digests since the format was
+    written, and nothing ever checked them. That matters more here than in most
+    software: a bundle's whole delivery model is that somebody copies a 59MB
+    file onto removable media, walks it to an air-gapped search head, and
+    imports it. Truncated copies, bad media and interrupted transfers are the
+    ordinary failure modes of that journey, and the import had no way to tell
+    one from a good bundle.
+
+    What it did instead was fail partway through. A corrupt bundle got as far
+    as writing a million rows before a malformed line surfaced as
+    "Expecting value: line 1 column 1 (char 0)" -- a message that names neither
+    the file nor the line nor the fact that the bundle is damaged, after
+    minutes of work, leaving a half-written generation to clean up. Reading the
+    archive once up front costs seconds and turns that into an immediate
+    refusal that says which member is wrong.
+
+    Bundles built before digests were recorded verify trivially: a member with
+    no recorded digest is not checked.
+    """
+    digests = manifest.get("digests") or {}
+    if not digests:
+        return
+    seen = {}
+    with tarfile.open(path, "r:gz") as tar:
+        for member in _safe_members(tar):
+            want = digests.get(member.name)
+            if not want:
+                continue
+            fh = tar.extractfile(member)
+            if fh is None:
+                raise FeedError(f"member {member.name!r} is unreadable")
+            h = hashlib.sha256()
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+            seen[member.name] = h.hexdigest()
+    for name, want in digests.items():
+        got = seen.get(name)
+        if got is None:
+            raise FeedError(
+                f"the bundle's manifest lists {name!r} but the archive does not "
+                "contain it. The bundle is incomplete; rebuild or re-copy it.")
+        if got != want:
+            raise FeedError(
+                f"{name} does not match the digest recorded when the bundle was "
+                f"built (expected {want[:16]}..., got {got[:16]}...). The bundle "
+                "was damaged after it was built -- most likely an interrupted or "
+                "truncated copy. Nothing has been imported; the existing feed is "
+                "unchanged. Copy the bundle across again.")
+
+
 def iter_member(path: str, member_name: str) -> Iterator[dict]:
     """Stream one JSONL member without materialising it in memory.
 
@@ -532,10 +585,22 @@ def iter_member(path: str, member_name: str) -> Iterator[dict]:
             fh = tar.extractfile(member)
             if fh is None:
                 raise FeedError(f"member {member_name!r} is unreadable")
-            for line in io.TextIOWrapper(fh, encoding="utf-8"):
+            for lineno, line in enumerate(io.TextIOWrapper(fh, encoding="utf-8"), 1):
                 line = line.strip()
-                if line:
+                if not line:
+                    continue
+                try:
                     yield json.loads(line)
+                except ValueError as exc:
+                    # Name the member and the line. Without this the failure is
+                    # a bare "Expecting value: line 1 column 1" from json, which
+                    # says nothing about which of five members is damaged or how
+                    # far in -- and json's own "line 1" refers to the fragment it
+                    # was handed, not to the file, so it actively misleads.
+                    raise FeedError(
+                        f"{member_name} line {lineno} is not valid JSON ({exc}). "
+                        "The bundle is damaged; copy it across again."
+                    ) from exc
             return
 
 

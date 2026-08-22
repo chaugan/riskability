@@ -2,7 +2,12 @@
 # Resource-capped deliberately: this box is shared and short on RAM/disk.
 services:
   splunk:
-    image: splunk/splunk:latest
+    # Pinned, not :latest. Splunk 10.4's bundled MongoDB refuses to start on
+    # Linux kernel 6.19 and newer (SERVER-121912), so on a current host the KV
+    # Store never comes up and every collection this app depends on is missing
+    # -- which looks like an app fault and is not one. 9.4 matches the forwarder
+    # pin below and is the version this app is developed against.
+    image: splunk/splunk:9.4
     container_name: riskability-splunk
     hostname: riskability-splunk
     restart: unless-stopped

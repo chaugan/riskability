@@ -78,6 +78,42 @@ class ImportError_(Exception):
     """The bundle could not be imported."""
 
 
+# A batch_save that fails is usually a moment, not a verdict.
+BATCH_RETRIES = 5
+BATCH_BACKOFF = 2.0
+
+
+def _save_batch(data, batch: List[dict]) -> None:
+    """batch_save with bounded retries.
+
+    An import is 4.2 million rows in ~4,200 requests, over minutes, against a
+    KV Store that is also serving dashboards and the hourly pipeline. One of
+    those requests coming back with a closed socket or an empty body is a
+    normal event at that volume -- splunklib surfaces the empty body as
+    "Expecting value: line 1 column 1", which reads like corrupt data and is
+    not. Aborting the whole import for it means somebody carries a 59MB bundle
+    across the air gap a second time to work around a hiccup that lasted a
+    second. Observed on a clean install: failed at exactly 1,000,000 rows with
+    the KV Store healthy before and after.
+
+    Retrying is safe because writes are keyed and idempotent: the same batch
+    written twice produces the same documents, and the whole generation is
+    invisible to readers until the pointer flips at the end.
+    """
+    last = None
+    for attempt in range(BATCH_RETRIES):
+        try:
+            data.batch_save(*batch)
+            return
+        except Exception as exc:
+            last = exc
+            if attempt < BATCH_RETRIES - 1:
+                time.sleep(BATCH_BACKOFF * (2 ** attempt))
+    raise ImportError_(
+        f"a batch of {len(batch)} rows could not be written after {BATCH_RETRIES} "
+        f"attempts: {last}") from last
+
+
 def _batches(records: Iterable[dict], generation: int) -> Iterator[List[dict]]:
     """Group records into batches within both the count and byte limits."""
     batch: List[dict] = []
@@ -171,8 +207,12 @@ def import_bundle(
     module importable and testable without a running Splunk.
     """
     # Validate before touching anything. read_manifest also enforces the archive
-    # safety checks, so a hostile tar is rejected before extraction.
+    # safety checks, so a hostile tar is rejected before extraction, and
+    # verify_members checks each member against the digest recorded when the
+    # bundle was built -- the cheapest possible moment to discover that what
+    # crossed the air gap is not what was built on the far side.
     manifest = feedlib.read_manifest(path)
+    feedlib.verify_members(path, manifest)
 
     previous = current_state(kvstore) or {}
     old_gen = live_generation(kvstore)
@@ -212,7 +252,7 @@ def import_bundle(
             # the whole of this loop, which is what makes an interruption
             # harmless rather than destructive.
             for batch in _batches(feedlib.iter_member(path, member), new_gen):
-                data.batch_save(*batch)
+                _save_batch(data, batch)
                 n += len(batch)
                 if kind == "ranges":
                     for rec in batch:
