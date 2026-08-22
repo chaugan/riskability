@@ -44,6 +44,7 @@ REQUEST_KEY = "import_request"
 # assumed dead. Comfortably above the importer's progress interval.
 ORPHAN_AFTER_SECONDS = 300
 STATE_COLLECTION = "riskability_feedstate"
+FINDINGS_STATE_COLLECTION = "riskability_findings_state"
 
 SPLUNK_HOME = os.environ.get("SPLUNK_HOME", "/opt/splunk")
 INCOMING_DIR = os.path.join(SPLUNK_HOME, "var", "run", "riskability", "incoming")
@@ -174,6 +175,7 @@ class FeedWorker(Script):
             if status.get("state") not in ("importing", "cleaning", "fetching"):
                 self._sweep_stale_generations(kv, ew)
                 self._reconcile_configured(service, kv, ew)
+                self._expire_archived_findings(kv, ew)
             return
 
         action = request.get("action")
@@ -251,6 +253,50 @@ class FeedWorker(Script):
             ew.log("INFO", "riskability: a feed is present; cleared the setup gate")
         except Exception:
             pass
+
+    def _expire_archived_findings(self, kv, ew) -> None:
+        """Delete state rows that have already been written to the archive.
+
+        Deletion, not the decision to delete. A scheduled search decides what
+        has aged out, writes it to the archive index and stamps the row; this
+        only removes rows carrying that stamp. Splitting it that way means a
+        failed archive leaves the row in place rather than losing it, which is
+        the right direction for the failure to go.
+
+        It is here rather than in SPL because removing rows from a KV Store
+        collection with outputlookup means rewriting the whole collection --
+        and while that rewrite is in flight, dashboards read a partial or empty
+        result. On a vulnerability dashboard that renders as "no findings",
+        which is the most dangerous wrong answer this app can give. A delete by
+        query touches only the rows concerned and is invisible to readers.
+        """
+        try:
+            data = kv[FINDINGS_STATE_COLLECTION].data
+        except Exception:
+            return
+        # "$ne": null, not "$exists". Splunk's KV Store accepts only a subset of
+        # MongoDB's query operators and rejects $exists outright with "The
+        # provided query was invalid" -- and the worker swallowed that, so
+        # nothing was ever deleted and nothing was ever logged. $gt: 0 is no
+        # good either: SPL writes the timestamp as a string, so a numeric
+        # comparison matches nothing.
+        selector = json.dumps({"archived": {"$ne": None}})
+        try:
+            pending = data.query(query=selector, limit=1)
+        except Exception as exc:
+            ew.log("WARN", f"riskability: could not look for archived findings: {exc}")
+            return
+        if not pending:
+            return
+        try:
+            data.delete(query=selector)
+            ew.log("INFO", "riskability: removed archived findings from the "
+                           "state collection")
+        except Exception as exc:
+            # Not fatal: the rows stay, the archive already has them, and the
+            # next tick tries again. Better a collection that is briefly larger
+            # than one that is briefly wrong.
+            ew.log("WARN", f"riskability: could not expire archived findings: {exc}")
 
     def _sweep_stale_generations(self, kv, ew) -> None:
         live = importer.live_generation(kv)
