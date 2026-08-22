@@ -44,16 +44,15 @@
           <query>| `riskability_hosts_seen`
 | search hostname=$hostname|s$
 | lookup riskability_matchstate_lookup hostname OUTPUT n_components, matched_at
-| join type=left hostname
-    [| `riskability_open_findings`
-     | stats dc(cve_id) AS cves, count AS findings,
-             sum(eval(if(isnotnull(kev_added) AND kev_added!="", 1, 0))) AS kev,
-             max(epss) AS top_epss BY hostname]
+| lookup riskability_openstate_host_lookup hostname OUTPUT findings, cves, kev, top_epss, rolled_at
+| eval counted = if(isnotnull(rolled_at), "yes", "no")
 | fillnull value=0 cves, findings, kev
 | eval top_epss = if(isnotnull(top_epss), round(top_epss * 100, 1), null())
 | eval last_scan = strftime(tonumber(host_last_scan), "%Y-%m-%d %H:%M")
 | eval quiet_for = if(isnull(host_last_scan), "never reported",
                       tostring(round(now() - tonumber(host_last_scan)), "duration"))
+| eval findings = if(counted="yes", tostring(findings), "not counted yet")
+| eval cves = if(counted="yes", tostring(cves), "")
 | sort 50000 - kev, - cves
 | table hostname, os, release, arch, n_components, findings, cves, kev, top_epss, last_scan, quiet_for
 | rename hostname AS "Host", os AS "OS", release AS "Release", arch AS "Arch",
