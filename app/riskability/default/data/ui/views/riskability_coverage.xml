@@ -109,7 +109,7 @@
 
   <row>
     <panel>
-      <title>Ecosystems present in the fleet but absent from the feed</title>
+      <title>Feed coverage, ecosystem by ecosystem</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`

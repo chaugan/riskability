@@ -145,6 +145,26 @@ def _validate(payload: dict) -> dict:
     return row
 
 
+def _active_key(row: dict, state: str) -> str:
+    """match_key, but only while the decision is actually in force.
+
+    The reconciler resolves a finding to an exception with a KV lookup keyed on
+    match_key. That key is deliberately NOT unique across the register -- a
+    scope can be accepted, withdrawn, and accepted again, and keeping all three
+    on one key is what makes the history readable. But a Splunk lookup that
+    matches two documents returns every output field as a MULTIVALUE, and every
+    guard the reconciler applies to those values then collapses to false. The
+    exception reads "active" in the register, covers zero findings, and the
+    findings stay in the risk pool: an operator accepts a risk, is told it was
+    accepted, and nothing happens, with no error anywhere.
+
+    So the lookup keys on this instead. Revoked and expired rows carry an empty
+    string and are simply not found, which is what they should be to a search
+    asking what is in force right now.
+    """
+    return row.get("match_key", "") if state == "active" else ""
+
+
 def _match_key(row: dict) -> str:
     kind = row["scope_kind"]
     if kind == "finding":
@@ -399,6 +419,7 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             row["revoked_by"] = user
             row["updated_at"] = str(_now())
             row["updated_by"] = user
+            row["active_match_key"] = ""
             data.update(key, json.dumps(row))
             cleared = self._apply(service, row, active=False)
             self._audit(service, "revoke", user, {**row, "_key": key}, before=existing,
@@ -469,6 +490,9 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             else:
                 data.update(key, json.dumps(row))
             state = self._state_of(row, _now())
+            row["active_match_key"] = _active_key(row, state)
+            data.update(key, json.dumps(row))
+            self._stand_down_stale(data, row, _now())
             applied = self._apply(service, row, active=(state == "active"))
             self._audit(service, action, user, row, before=before,
                         finding_count=len(covered))
@@ -481,6 +505,37 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             })
 
         raise BadRequest(f"unknown action {action!r}")
+
+    def _stand_down_stale(self, data, row: dict, now: int) -> None:
+        """Clear active_match_key on any other row covering the same scope.
+
+        Expiry is derived from a timestamp rather than written, so a row can
+        lapse without anything touching it. If a new exception is then recorded
+        for that scope, both rows carry the key until the hourly expiry job
+        notices, and for that hour the lookup matches two documents and the new
+        decision does nothing. Doing it here makes it immediate.
+        """
+        key = row.get("match_key", "")
+        mine = row.get("_key") or row.get("exception_key", "")
+        if not key:
+            return
+        try:
+            rows = data.query(query=json.dumps({"match_key": key}), limit=500)
+        except Exception:
+            return
+        for other in rows:
+            if other.get("_key") == mine:
+                continue
+            if not other.get("active_match_key"):
+                continue
+            if self._state_of(other, now) == "active":
+                continue
+            other = dict(other)
+            other["active_match_key"] = ""
+            try:
+                data.update(other["_key"], json.dumps(other))
+            except Exception:
+                pass
 
     def _active_with_key(self, data, match_key: str, now: int):
         """An exception already in force covering exactly this scope, if any.

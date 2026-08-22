@@ -139,13 +139,18 @@
         <search>
           <query>| `riskability_finding_cwes`
 | search hostname=$host_tok|s$
-| search $cwe_filter$
 | stats dc(cve_id) AS cves BY cwe
 | sort - cves
 | head 40</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
-        <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
+        <!-- No filterNote, and no filter in the query above. This treemap is a
+             CONTROL: it is how you pick a weakness, so it has to keep showing
+             the ones you did not pick. Filtering it by its own selection
+             collapsed it to a single tile with no way back to the others, and
+             the note claimed a technique filter the query never applied. A
+             panel asserting it shows a subset while showing everything is the
+             exact failure the note exists to prevent. -->
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk — see the coverage panel beside it.</option>
         <option name="height">400</option>
@@ -279,9 +284,9 @@
           <span class="rk-drill-hint">This page is narrowed. The panels below show only what
             matches; the matrix and the technique list stay whole so you can pick something
             else.</span>
-          <span class="rk-drill-state">Filtered by $tech_label$$cwe_label$</span>
+          <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
-             href="riskability_mitre?form.host_tok=$host_tok$&amp;form.conf_tok=$conf_tok$">Clear</a>
+             href="riskability_mitre?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
         </div>
       </html>
     </panel>

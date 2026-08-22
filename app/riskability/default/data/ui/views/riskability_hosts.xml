@@ -22,7 +22,7 @@
     </input>
     <input type="hidden" token="sev_filter"><default>sev=*</default></input>
     <input type="hidden" token="eco_filter"><default>ecosystem=*</default></input>
-    <input type="hidden" token="host_drill_label"><default>everything</default></input>
+    <input type="hidden" token="host_drill_label"><default></default></input>
     <input type="hidden" token="host_note"><default></default></input>
   </fieldset>
 
@@ -71,6 +71,11 @@
                the page and its own control disagree about what is shown. -->
           <set token="form.hostname">$row.Host$</set>
           <set token="hostname">$row.Host$</set>
+          <set token="sev_filter">sev=*</set>
+          <set token="eco_filter">ecosystem=*</set>
+          <set token="host_drill_label"></set>
+          <set token="host_note"></set>
+          <unset token="host_any_filter"></unset>
         </drilldown>
       </viz>
     </panel>
@@ -94,8 +99,15 @@
         <option name="riskability.riskability_chart.emptyText">No inventory reported. Nothing here can be assessed.</option>
         <option name="height">360</option>
         <drilldown>
+          <!-- Reset the severity filter as well as setting this one. Each chart
+               owns one filter and they share one label, so clicking here after
+               clicking there left both applied while the chip named only the
+               newer. The table then went empty and read as "this ecosystem has
+               no findings", which on a vulnerability dashboard is the wrong
+               answer told convincingly. One click, one filter. -->
           <set token="eco_filter">ecosystem="$row.type$"</set>
-          <set token="host_drill_label">$row.type$</set>
+          <set token="sev_filter">sev=*</set>
+          <set token="host_drill_label">— $row.type$</set>
           <set token="host_note">$row.type$</set>
           <set token="host_any_filter">1</set>
         </drilldown>
@@ -119,7 +131,8 @@
         <option name="height">360</option>
         <drilldown>
           <set token="sev_filter">sev="$row.sev$"</set>
-          <set token="host_drill_label">$row.sev$</set>
+          <set token="eco_filter">ecosystem=*</set>
+          <set token="host_drill_label">— $row.sev$ severity</set>
           <set token="host_note">$row.sev$ severity</set>
           <set token="host_any_filter">1</set>
         </drilldown>
@@ -146,7 +159,7 @@
         <drilldown>
           <set token="sev_filter">sev="$row.sev$"</set>
           <set token="eco_filter">ecosystem="$row.ecosystem$"</set>
-          <set token="host_drill_label">$row.sev$ / $row.ecosystem$</set>
+          <set token="host_drill_label">— $row.sev$ severity in $row.ecosystem$</set>
           <set token="host_note">$row.sev$ severity in $row.ecosystem$</set>
           <set token="host_any_filter">1</set>
         </drilldown>
@@ -156,7 +169,7 @@
 
   <row>
     <panel>
-      <title>Findings on $hostname$ — $host_drill_label$</title>
+      <title>Open findings $host_drill_label$</title>
       <html rejects="$host_any_filter$">
         <div class="rk-drill-bar">
           <span class="rk-drill-hint">Click a bar or a heatmap cell above to narrow this table.</span>

@@ -156,18 +156,28 @@ export default SplunkVisualizationBase.extend({
             'table means the search found nothing, which is not the same as ' +
             'there being nothing to find.';
 
-        if (!rows.length) {
-            this._message('warn', 'Nothing to display', emptyText);
-            return;
-        }
-
-        this._clear();
-
         // A drilldown filter is invisible from inside the table: the row count
         // changes, but nothing says why, and the reader is left inferring it
         // from data they may never have seen unfiltered. The banner says it
         // where the numbers are, not only in a chip at the top of the page.
         var note = String(this._opt(config, 'filterNote') || '').trim();
+
+        if (!rows.length) {
+            // The empty case is the one where the filter matters most. A table
+            // that a drilldown emptied looks exactly like a table with nothing
+            // to report, and on a vulnerability dashboard those read the same
+            // and mean opposite things -- so an accumulated or unintended
+            // filter gets read as "this severity is clean". Say what is applied
+            // before saying there is nothing to show under it.
+            this._message('warn', 'Nothing to display', note
+                ? 'No rows match the filter currently applied to this panel (' + note +
+                  '). Clear the filter to see everything. \u2014 ' + emptyText
+                : emptyText);
+            return;
+        }
+
+        this._clear();
+
         if (note) {
             var fb = document.createElement('div');
             fb.className = 'rk-grid-filtered';
