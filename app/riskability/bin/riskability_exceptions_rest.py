@@ -326,6 +326,58 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             out["fleet_hosts"] = 0
         return out
 
+    def _apply(self, service, row: dict, active: bool) -> int:
+        """Stamp (or clear) the accepted flag on the findings this covers, now.
+
+        The hourly reconciler computes exactly the same thing and remains the
+        authority; this is the same answer applied immediately, because an
+        operator who has just accepted a risk and is told it covers nothing has
+        every reason to think the feature is broken. Waiting up to an hour to
+        find out whether a decision took effect is not a reasonable thing to ask.
+
+        Read-modify-write of the whole document, deliberately: a KV Store upsert
+        REPLACES the row rather than merging into it, so writing just the flag
+        would erase every other field on the finding.
+        """
+        try:
+            data = service.kvstore[FINDINGS_STATE_COLLECTION].data
+        except Exception:
+            return 0
+
+        if active:
+            targets = self._matching_findings(service, row)
+        else:
+            # Clearing: find what this exception is currently stamped on rather
+            # than recomputing its scope, so a revoke still works after the
+            # scope fields have been edited.
+            try:
+                targets = data.query(
+                    query=json.dumps({"exception_key": row.get("exception_key")}),
+                    limit=10000)
+            except Exception:
+                return 0
+
+        touched = 0
+        for finding in targets:
+            # Never stamp a finding that is not open. Mitigated and removed are
+            # already out of the risk pool, and marking them accepted would be
+            # laundering history.
+            if active and finding.get("status") != "open":
+                continue
+            updated = dict(finding)
+            updated["accepted"] = "1" if active else "0"
+            updated["exception_key"] = row.get("exception_key", "") if active else ""
+            updated["exception_expires_at"] = row.get("expires_at", "") if active else ""
+            key = updated.get("_key") or updated.get("finding_key")
+            if not key:
+                continue
+            try:
+                data.update(key, json.dumps(updated))
+                touched += 1
+            except Exception:
+                continue
+        return touched
+
     def _post(self, service, request):
         try:
             payload = json.loads(request.get("payload") or "{}")
@@ -348,9 +400,12 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             row["updated_at"] = str(_now())
             row["updated_by"] = user
             data.update(key, json.dumps(row))
-            self._audit(service, "revoke", user, {**row, "_key": key}, before=existing)
+            cleared = self._apply(service, row, active=False)
+            self._audit(service, "revoke", user, {**row, "_key": key}, before=existing,
+                        finding_count=cleared)
             return self._reply(200, {"ok": True, "exception_key": key,
-                                     "state": self._state_of(row, _now())})
+                                     "state": self._state_of(row, _now()),
+                                     "findings_affected": cleared})
 
         if action in ("create", "update", "reactivate"):
             now = _now()
@@ -398,12 +453,15 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
                 data.insert(json.dumps(row))
             else:
                 data.update(key, json.dumps(row))
+            state = self._state_of(row, _now())
+            applied = self._apply(service, row, active=(state == "active"))
             self._audit(service, action, user, row, before=before,
                         finding_count=len(covered))
             return self._reply(200, {
                 "ok": True, "exception_key": key,
-                "state": self._state_of(row, _now()),
+                "state": state,
                 "findings_affected": len(covered),
+                "findings_applied": applied,
                 "kev_affected": sum(1 for f in covered if f.get("kev_added")),
             })
 

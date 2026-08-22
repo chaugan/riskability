@@ -216,6 +216,15 @@
   <row>
     <panel>
       <title>Known-exploited vulnerabilities present in the fleet (CISA KEV)</title>
+      <html>
+        <div class="rk-status rk-bad" style="margin:0 0 8px">
+          <b>These are being exploited in the wild right now.</b>
+          <span>
+            CISA lists them as known-exploited, which is a stronger signal than any severity
+            score: it is not a prediction. Click a row to see every finding for that CVE.
+          </span>
+        </div>
+      </html>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings`
@@ -226,6 +235,10 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle — if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
+        <option name="drilldown">all</option>
+        <drilldown>
+          <link target="_blank">/app/riskability/riskability_findings?form.cve_tok=$row.cve_id$&amp;form.confidence_tok=confidence%3D*&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.scope_tok=scope%3D*</link>
+        </drilldown>
       </viz>
     </panel>
   </row>
