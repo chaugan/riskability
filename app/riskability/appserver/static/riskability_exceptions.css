@@ -49,3 +49,11 @@
 
 .rk-exc-msg { min-height: 18px; margin: 4px 0 10px; font-size: 12px; }
 .rk-exc-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* Shown when a host-wide choice would cover more than was selected. */
+.rk-exc-scopewarn { display: none; }
+.rk-exc-scopewarn-on {
+    display: block; margin-bottom: 10px; padding: 9px 11px;
+    border-left: 3px solid #f8be34; background: #2c2f34; border-radius: 3px;
+    color: #f8be34; font-size: 11px; line-height: 1.5;
+}

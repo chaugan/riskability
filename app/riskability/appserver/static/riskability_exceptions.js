@@ -218,28 +218,74 @@
 
         var scopeSel = el("select", "rk-exc-input");
         if (editing) { scopeSel.disabled = true; }
-        [["host_cve", "This CVE on " + (hosts.length === 1 ? hosts[0] : hosts.length + " selected hosts")],
-         ["finding", "Only the " + selection.length + " selected finding" +
-                     (selection.length === 1 ? "" : "s") + " (exact path)"],
-         ["fleet_cve", "This CVE on EVERY host, including ones added later"]
-        ].forEach(function (o) {
+        var scopeOpts = [
+            ["finding", "Only the " + selection.length + " selected finding" +
+                        (selection.length === 1 ? "" : "s") + " — this exact path"],
+            ["host_cve", "This CVE on " +
+                         (hosts.length === 1 ? hosts[0] : hosts.length + " selected hosts") +
+                         " — every path"],
+            ["fleet_cve", "This CVE on EVERY host, including ones added later"],
+        ];
+        scopeOpts.forEach(function (o) {
             var opt = el("option", null, o[1]);
             opt.value = o[0];
             scopeSel.appendChild(opt);
         });
+
+        // What each choice would really cover, asked of the server rather than
+        // guessed from the rows the grid happens to have loaded.
+        var scopeNote = el("div", "rk-exc-scopewarn");
+        if (!editing) {
+            post({
+                action: "preview",
+                cve_id: cve,
+                hostnames: hosts,
+                finding_keys: selection.map(function (r) { return r.Key; }),
+            }).then(function (c) {
+                scopeSel.options[0].textContent =
+                    "Only the selected finding" + (c.finding === 1 ? "" : "s") +
+                    " — this exact path (" + c.finding + ")";
+                scopeSel.options[1].textContent =
+                    "This CVE on " + (hosts.length === 1 ? hosts[0] : hosts.length + " hosts") +
+                    " — every path (" + c.host_cve + ")";
+                scopeSel.options[2].textContent =
+                    "This CVE on EVERY host, now and in future (" + c.fleet_cve +
+                    " across " + c.fleet_hosts + " host" + (c.fleet_hosts === 1 ? "" : "s") + ")";
+
+                if (c.host_cve > c.finding) {
+                    // The common case, not an edge case: the same CVE usually
+                    // appears at several paths on one host, and one copy being
+                    // unreachable says nothing about the others.
+                    scopeNote.textContent =
+                        "This CVE appears " + c.host_cve + " times on " +
+                        (hosts.length === 1 ? "this host" : "these hosts") + ", at different " +
+                        "paths. You selected " + c.finding + ". Accepting it host-wide also " +
+                        "accepts the " + (c.host_cve - c.finding) + " you did not look at — " +
+                        "a copy inside an unused container base says nothing about the copy " +
+                        "the service actually loads.";
+                    scopeNote.className = "rk-exc-scopewarn rk-exc-scopewarn-on";
+                    scopeSel.value = "finding";
+                }
+            }).catch(function () {
+                scopeNote.textContent = "Could not check how many findings each choice covers.";
+                scopeNote.className = "rk-exc-scopewarn rk-exc-scopewarn-on";
+            });
+        }
         if (editing) {
             var fixed = el("option", null, existing["Applies to"] || existing.Scope || "");
             fixed.value = existing.Scope || "host_cve";
             scopeSel.innerHTML = "";
             scopeSel.appendChild(fixed);
         }
+        box.appendChild(scopeNote);
         field(box, "What is being accepted", scopeSel,
               editing
                 ? "Fixed. Changing what an exception covers is a different decision — withdraw " +
                   "this one and accept the new scope, so the trail shows both."
-                : "Host-and-CVE is the usual choice: it survives a rebuild that moves the " +
-                  "package, and one entry covers every copy on that host. Fleet-wide also " +
-                  "covers hosts that do not exist yet.");
+                : "Per-path is the safe default when a CVE appears more than once on a host: " +
+                  "each copy is judged on its own. Host-wide is fewer entries and survives a " +
+                  "rebuild that moves the package, but it accepts every copy — including ones " +
+                  "you have not looked at.");
 
         var reasonSel = el("select", "rk-exc-input");
         [["compensating_control", "A compensating control is in place"],
