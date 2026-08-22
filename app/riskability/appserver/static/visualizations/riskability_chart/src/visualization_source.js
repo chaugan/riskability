@@ -285,6 +285,23 @@ function buildHeatmap(rows, t, config) {
     };
 }
 
+/* EPSS bands, on FIRST's own absolute scale rather than stretched across
+ * whatever this fleet happens to have.
+ *
+ * A relative ramp would always produce a full spectrum -- the worst thing
+ * present would glow red even if it were a 0.4% chance of exploitation -- and
+ * on a security dashboard that manufactures alarm out of arithmetic. These
+ * thresholds mean the same thing on every install, so a pale chart is a real
+ * statement: nothing here is especially likely to be exploited.
+ */
+function epssBand(v) {
+    if (v === null) { return { color: '#2b3a4a', label: 'unscored' }; }
+    if (v >= 0.5) { return { color: '#dc4e41', label: '50%+ chance' }; }
+    if (v >= 0.1) { return { color: '#f8be34', label: '10-50%' }; }
+    if (v >= 0.01) { return { color: '#6e9c4f', label: '1-10%' }; }
+    return { color: '#3f7d7a', label: 'under 1%' };
+}
+
 function buildBoxplot(rows, t, config) {
     var cats = [], data = [];
     for (var i = 0; i < rows.length; i++) {
@@ -295,7 +312,20 @@ function buildBoxplot(rows, t, config) {
             continue;
         }
         cats.push(c);
-        data.push([lo, q1, med, q3, hi]);
+        // Coloured by the WHISKER TOP, not the median: the question a reader
+        // brings to this panel is "does anything behind this technique look
+        // likely to be exploited", and that is the worst CVE in the group. The
+        // box still shows whether the group as a whole is hot or whether it is
+        // one outlier.
+        var band = epssBand(hi);
+        data.push({
+            value: [lo, q1, med, q3, hi],
+            itemStyle: {
+                color: band.color + '33',
+                borderColor: band.color,
+                borderWidth: 1.5,
+            },
+        });
     }
     if (!data.length) { return null; }
     return {
@@ -303,31 +333,44 @@ function buildBoxplot(rows, t, config) {
             trigger: 'item', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
             formatter: function (p) {
+                // p.value carries the category at index 0, so the five numbers
+                // start at 1.
                 var v = p.value;
+                var band = epssBand(v[5]);
                 return '<b>' + escapeHtml(p.name) + '</b><br/>' +
+                    '<span style="color:' + band.color + '">most likely: ' +
+                    band.label + '</span><br/>' +
                     'max ' + v[5] + '<br/>q3 ' + v[4] + '<br/>median ' + v[3] +
                     '<br/>q1 ' + v[2] + '<br/>min ' + v[1];
             },
         },
-        grid: { left: 60, right: 20, top: 20, bottom: 110, containLabel: false },
+        // containLabel lets ECharts measure the rotated labels and reserve
+        // room for them. With it false, long technique names ran off the
+        // bottom of the panel and the axis name was clipped at the top.
+        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: {
             type: 'category', data: cats,
             axisLabel: {
-                color: t.muted, rotate: 35, fontSize: 10, interval: 0,
-                formatter: function (v) { return shorten(v, 26); },
+                color: t.muted, rotate: 40, fontSize: 10, interval: 0,
+                // Truncation is a backstop; containLabel handles the space.
+                // Full names stay in the tooltip.
+                formatter: function (v) { return shorten(v, 34); },
             },
             axisLine: { lineStyle: { color: t.axis } },
         },
         yAxis: {
             type: 'value', name: config.valueLabel || '',
-            nameTextStyle: { color: t.muted },
+            // nameLocation end + a gap keeps the axis title inside the canvas;
+            // at the default it sits on the very top pixel row and clips.
+            nameLocation: 'end',
+            nameGap: 16,
+            nameTextStyle: { color: t.muted, align: 'left' },
             axisLabel: { color: t.muted, fontSize: 10 },
             splitLine: { lineStyle: { color: t.axis } },
         },
         series: [{
             type: 'boxplot', data: data,
-            itemStyle: { color: '#2b3a4a', borderColor: SEMANTIC.info },
-            emphasis: { itemStyle: { borderColor: t.text } },
+            emphasis: { itemStyle: { borderWidth: 2.5 } },
         }],
     };
 }
@@ -347,15 +390,19 @@ function buildBar(rows, t, config) {
             trigger: 'axis', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
         },
-        grid: { left: 60, right: 20, top: 20, bottom: 100, containLabel: false },
+        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: {
             type: 'category', data: cats,
-            axisLabel: { color: t.muted, rotate: 40, fontSize: 10, interval: 0 },
+            axisLabel: {
+                color: t.muted, rotate: 40, fontSize: 10, interval: 0,
+                formatter: function (v) { return shorten(v, 34); },
+            },
             axisLine: { lineStyle: { color: t.axis } },
         },
         yAxis: {
             type: 'value', name: config.valueLabel || '',
-            nameTextStyle: { color: t.muted },
+            nameLocation: 'end', nameGap: 16,
+            nameTextStyle: { color: t.muted, align: 'left' },
             axisLabel: { color: t.muted, fontSize: 10 },
             splitLine: { lineStyle: { color: t.axis } },
         },
@@ -455,9 +502,10 @@ function stacked(rows, t, config, horizontal) {
                    backgroundColor: t.tooltipBg, borderColor: t.axis,
                    textStyle: { color: t.text } },
         legend: { textStyle: { color: t.muted, fontSize: 11 }, top: 0 },
-        grid: horizontal
-            ? { left: 150, right: 24, top: 34, bottom: 30, containLabel: false }
-            : { left: 60, right: 24, top: 34, bottom: 92, containLabel: false },
+        // containLabel in both orientations: horizontal carries long category
+        // names on the y axis, vertical carries rotated dates on the x, and
+        // both were being clipped by fixed margins.
+        grid: { left: 12, right: 24, top: 40, bottom: 12, containLabel: true },
         xAxis: horizontal ? valAxis : catAxis,
         yAxis: horizontal ? catAxis : valAxis,
         series: series,
@@ -476,12 +524,13 @@ function buildLine(rows, t, config) {
     return {
         tooltip: { trigger: 'axis', backgroundColor: t.tooltipBg,
                    borderColor: t.axis, textStyle: { color: t.text } },
-        grid: { left: 60, right: 20, top: 20, bottom: 70, containLabel: false },
+        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: { type: 'category', data: xs, boundaryGap: false,
                  axisLabel: { color: t.muted, fontSize: 10, rotate: 30 },
                  axisLine: { lineStyle: { color: t.axis } } },
         yAxis: { type: 'value', name: config.valueLabel || '',
-                 nameTextStyle: { color: t.muted },
+                 nameLocation: 'end', nameGap: 16,
+                 nameTextStyle: { color: t.muted, align: 'left' },
                  axisLabel: { color: t.muted, fontSize: 10 },
                  splitLine: { lineStyle: { color: t.axis } } },
         series: [{
