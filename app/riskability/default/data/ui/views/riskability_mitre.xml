@@ -309,7 +309,7 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_attack_surface`
+          <query>| `riskability_attack_surface_detail`
 | search hostname=$host_tok|s$ $conf_tok$
 | search $tech_filter$ $cwe_filter$
 | eval root = if(scope_id!="", scope_id, "host")
