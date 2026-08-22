@@ -45,9 +45,9 @@
       <title>Findings by root</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_latest_inventory`
+          <query>| `riskability_open_findings`
 | search hostname=$hostname|s$
-| riskabilitymatch
+| where confidence!="informational"
 | eval root = if(scope_id!="", scope_id, "host")
 | eval sev = coalesce(severity, "unrated")
 | stats dc(cve_id) AS cves BY root, sev
@@ -66,7 +66,7 @@
       <title>Severity against ecosystem</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_open_findings`
+          <query>| `riskability_open_findings`
 | search hostname=$hostname|s$
 | eval sev = coalesce(severity, "unrated")
 | stats dc(cve_id) AS cves BY sev, ecosystem
@@ -86,10 +86,11 @@
       <title>Findings on this host</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
+          <query>| `riskability_open_findings`
 | search hostname=$hostname|s$
-| riskabilitymatch
+| where confidence!="informational"
 | eval root = if(scope_id!="", scope_id, "host")
+| eval installed_version = last_version
 | table cve_id, package, ecosystem, installed_version, fixed_version, root, confidence, epss, title
 | sort - epss</query>
         </search>

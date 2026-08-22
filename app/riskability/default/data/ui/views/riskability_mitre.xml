@@ -41,7 +41,7 @@
       <title>ATT&amp;CK matrix — where open findings sit in an attack</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_attack_matrix`
+          <query>| `riskability_attack_matrix`
 | search hostname=$host_tok|s$ $conf_tok$
 | stats dc(cve_id) AS cves BY tactic_name, tactic_order, technique_name
 | eventstats max(cves) AS peak BY technique_name
@@ -77,7 +77,7 @@
       <title>Techniques enabled by open findings, most exposed first</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_attack_surface`
+          <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
 | stats dc(cve_id) AS cves, dc(hostname) AS hosts, dc(package) AS packages,
         values(cwe) AS weaknesses, max(epss) AS peak_epss
@@ -102,7 +102,7 @@
       <title>Weakness classes present in the fleet (CWE)</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_finding_cwes`
+          <query>| `riskability_finding_cwes`
 | search hostname=$host_tok|s$
 | stats dc(cve_id) AS cves BY cwe
 | sort - cves
@@ -118,7 +118,7 @@
       <title>Coverage of the mapping itself</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_open_findings`
+          <query>| `riskability_open_findings`
 | search hostname=$host_tok|s$
 | lookup riskability_advisory_lookup cve_id OUTPUT cwes
 | eval mapped = case(isnull(cwes) OR cwes=="", "no CWE recorded for this CVE", 1=1, "has a CWE")
@@ -139,7 +139,7 @@
       <title>Which weaknesses lead to which techniques</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_attack_surface`
+          <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
 | stats dc(cve_id) AS cves BY cwe, technique_name
 | sort - cves
@@ -170,7 +170,7 @@
       <title>Exploitation likelihood per technique (EPSS distribution)</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_attack_surface`
+          <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
 | stats min(epss) AS lo, perc25(epss) AS q1, median(epss) AS med,
         perc75(epss) AS q3, max(epss) AS hi, dc(cve_id) AS cves
@@ -204,7 +204,7 @@
       <title>Findings behind each technique</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_attack_surface`
+          <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
 | eval root = if(scope_id!="", scope_id, "host")
 | table technique, technique_name, cve_id, package, installed_version, fixed_version,

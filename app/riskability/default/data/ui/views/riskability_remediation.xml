@@ -14,7 +14,7 @@
       <title>Open</title>
       <single>
         <search>
-          <query>`riskability_finding_lifecycle` | search hostname=$host_tok|s$ | where status="open" | stats dc(finding_key) AS n</query>
+          <query>| `riskability_findings_now` | search hostname=$host_tok|s$ | where status="open" | stats dc(finding_key) AS n</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">still present on the host</option>
@@ -27,7 +27,7 @@
       <title>Mitigated</title>
       <single>
         <search>
-          <query>`riskability_finding_lifecycle` | search hostname=$host_tok|s$ | where status="mitigated" | stats dc(finding_key) AS n</query>
+          <query>| `riskability_findings_now` | search hostname=$host_tok|s$ | where status="mitigated" | stats dc(finding_key) AS n</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">package upgraded at the same path</option>
@@ -41,7 +41,7 @@
       <title>Removed</title>
       <single>
         <search>
-          <query>`riskability_finding_lifecycle` | search hostname=$host_tok|s$ | where status="removed" | stats dc(finding_key) AS n</query>
+          <query>| `riskability_findings_now` | search hostname=$host_tok|s$ | where status="removed" | stats dc(finding_key) AS n</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">package no longer at that path</option>
@@ -51,7 +51,7 @@
       <title>Unknown</title>
       <single>
         <search>
-          <query>`riskability_finding_lifecycle` | search hostname=$host_tok|s$ | where status="unknown" | stats dc(finding_key) AS n</query>
+          <query>| `riskability_findings_now` | search hostname=$host_tok|s$ | where status="unknown" | stats dc(finding_key) AS n</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">host stopped reporting</option>
@@ -67,7 +67,7 @@
       <title>How long findings stay open, by severity</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_open_findings`
+          <query>| `riskability_open_findings`
 | eval sev = coalesce(severity, "unrated")
 | stats min(age_days) AS lo, perc25(age_days) AS q1, median(age_days) AS med,
         perc75(age_days) AS q3, max(age_days) AS hi, dc(cve_id) AS cves
@@ -99,7 +99,7 @@
       <title>Mitigated: the upgrade that fixed it</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_mitigated_findings`
+          <query>| `riskability_mitigated_findings`
 | search hostname=$host_tok|s$
 | eval fixed_after_days = round((last_seen - first_seen)/86400, 1)
 | eval root = if(scope_id!="", scope_id, "host")
@@ -128,7 +128,7 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_finding_lifecycle`
+          <query>| `riskability_findings_now`
 | search hostname=$host_tok|s$
 | where status="removed" OR status="unknown"
 | eval root = if(scope_id!="", scope_id, "host")
@@ -149,7 +149,7 @@
       <title>Findings first seen over time</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_finding_lifecycle`
+          <query>| `riskability_findings_now`
 | search hostname=$host_tok|s$
 | eval day = strftime(first_seen, "%Y-%m-%d")
 | stats dc(finding_key) AS findings BY day, status

@@ -36,10 +36,10 @@
       <title>Findings, ranked by exploitation likelihood (EPSS) rather than CVSS</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
+          <query>| `riskability_open_findings`
 | search hostname=$host_tok|s$
-| riskabilitymatch include_informational=true
 | search $confidence_tok$ $scope_tok$
+| eval installed_version = last_version
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")
 | table cve_id, package, installed_version, fixed_version, hostname, scope_id, ecosystem, match_authority, confidence, epss_pct, kev, title

@@ -50,7 +50,7 @@
       <title>Where the open findings are, by package</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_open_findings`
+          <query>| `riskability_open_findings`
 | stats dc(cve_id) AS cves BY package
 | sort - cves
 | head 60</query>
@@ -78,8 +78,7 @@
       <title>Findings by confidence</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_latest_inventory`
-| riskabilitymatch include_informational=true
+          <query>| `riskability_open_findings`
 | stats count AS findings BY confidence
 | eval sev = confidence
 | sort confidence
@@ -106,8 +105,8 @@
       <title>Most affected hosts</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
-| riskabilitymatch
+          <query>| `riskability_open_findings`
+| where confidence!="informational"
 | stats dc(cve_id) AS cves, dc(package) AS packages BY hostname
 | sort - cves
 | head 20</query>
@@ -126,8 +125,8 @@
       <title>Known-exploited vulnerabilities present in the fleet (CISA KEV)</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
-| riskabilitymatch
+          <query>| `riskability_open_findings`
+| where confidence!="informational"
 | where isnotnull(kev_added) AND kev_added!=""
 | stats dc(hostname) AS hosts, values(package) AS packages BY cve_id, kev_added, kev_due, epss
 | sort - hosts</query>

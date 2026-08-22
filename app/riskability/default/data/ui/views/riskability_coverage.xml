@@ -56,8 +56,7 @@
       <title>Components by filesystem root</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
-| riskabilitymatch include_informational=true
+          <query>| `riskability_open_findings`
 | eval root = if(scope_id!="", scope_id, "host")
 | stats dc(package) AS packages, dc(cve_id) AS cves BY root, hostname
 | sort - packages
