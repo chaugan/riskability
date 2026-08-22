@@ -29,21 +29,9 @@
     color: #9aa4ae;
 }
 
-.rk-status {
-    border-left: 3px solid #708794;
-    padding: 10px 14px;
-    margin-bottom: 14px;
-    background: #1a1d21;
-    line-height: 1.5;
-}
-.rk-status b { display: block; margin-bottom: 2px; }
-.rk-good { border-left-color: #53a051; }
-.rk-good b { color: #6db56b; }
-.rk-warn { border-left-color: #f8be34; }
-.rk-warn b { color: #f8be34; }
-.rk-bad  { border-left-color: #dc4e41; }
-.rk-bad b { color: #e26d63; }
-.rk-bad-text { color: #e26d63; }
+/* .rk-status and its variants now live in application.css, which Splunk loads
+   on every page of the app -- these callouts appear on six dashboards and were
+   only styled on this one. */
 
 /* Two-column facts list: label left, value right, so numbers line up. */
 .rk-facts {

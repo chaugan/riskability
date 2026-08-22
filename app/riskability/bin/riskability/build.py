@@ -211,6 +211,8 @@ def build_bundle(
     mitre: bool = False,
     kev: bool = False,
     epss: bool = False,
+    kev_file: str = "",
+    epss_file: str = "",
     version: str = "",
     include_withdrawn: bool = False,
     log: Optional[Callable[[str], None]] = None,
@@ -328,27 +330,52 @@ def build_bundle(
             failed("MITRE CWE/CAPEC", exc)
 
     kev_map: Dict[str, dict] = {}
-    if kev:
-        say("fetching CISA KEV")
+    if kev or kev_file:
+        # A local file wins over the download.
+        #
+        # CISA serves the KEV catalogue behind a CDN that refuses whole
+        # datacentre ranges, so a build host can be perfectly well connected,
+        # have the URL exactly right, and still never fetch it. Downloading the
+        # file by hand on a workstation and passing it in is the difference
+        # between a bundle with known-exploited flags and one without, and KEV
+        # is the strongest prioritisation signal available offline.
+        origin = kev_file or KEV_URL
+        say("reading CISA KEV from a file" if kev_file else "fetching CISA KEV")
         try:
-            with _open(KEV_URL) as r:
-                kev_map = feedlib.normalize_kev(json.loads(r.read().decode("utf-8")))
+            if kev_file:
+                with open(kev_file, "rb") as fh:
+                    raw = fh.read()
+            else:
+                with _open(KEV_URL) as r:
+                    raw = r.read()
+            kev_map = feedlib.normalize_kev(json.loads(raw.decode("utf-8")))
             say(f"  {len(kev_map)} known-exploited CVEs")
-            sources.append({"name": "cisa-kev", "url": KEV_URL,
+            sources.append({"name": "cisa-kev", "url": origin,
                             "fetched_at": int(time.time()), "records": len(kev_map),
                             "licence": "US Government work, public domain"})
         except Exception as exc:
             failed("CISA KEV", exc)
 
     epss_map: Dict[str, dict] = {}
-    if epss:
-        say("fetching EPSS")
+    if epss or epss_file:
+        origin = epss_file or EPSS_URL
+        say("reading EPSS from a file" if epss_file else "fetching EPSS")
         try:
-            with _open(EPSS_URL) as r:
-                data = gzip.decompress(r.read()).decode("utf-8")
+            if epss_file:
+                with open(epss_file, "rb") as fh:
+                    blob = fh.read()
+            else:
+                with _open(EPSS_URL) as r:
+                    blob = r.read()
+            # Accepts the published .csv.gz or a file somebody already
+            # decompressed, because both are what actually turns up.
+            if blob[:2] == b"\x1f\x8b":
+                data = gzip.decompress(blob).decode("utf-8")
+            else:
+                data = blob.decode("utf-8")
             epss_map = feedlib.normalize_epss(data.splitlines())
             say(f"  {len(epss_map)} scored CVEs")
-            sources.append({"name": "first-epss", "url": EPSS_URL,
+            sources.append({"name": "first-epss", "url": origin,
                             "fetched_at": int(time.time()), "records": len(epss_map),
                             "licence": "FIRST.org EPSS; attribution expected"})
         except Exception as exc:

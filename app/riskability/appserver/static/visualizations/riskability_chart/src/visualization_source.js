@@ -114,6 +114,21 @@ function num(v) {
  * and a viz that breaks when someone improves a column label is a viz nobody
  * will maintain.
  */
+/* Which of a click's identifying values map to which contract column.
+ * A drilldown that reports "category" is useless to a dashboard; one that
+ * reports "technique_name" can set a token. */
+var CLICK_FIELDS = {
+    treemap: ['label'],
+    donut: ['label'],
+    bar: ['label'],
+    stackedbar: ['category', 'series'],
+    stackedcolumn: ['category', 'series'],
+    heatmap: ['x', 'y'],
+    boxplot: ['category'],
+    sankey: ['source', 'target'],
+    line: ['x'],
+};
+
 var CONTRACTS = {
     treemap: ['label', 'value'],
     sankey: ['source', 'target', 'value'],
@@ -659,10 +674,10 @@ export default SplunkVisualizationBase.extend({
             return;
         }
 
-        this._render(option, rows.length >= ROW_CAP);
+        this._render(option, rows.length >= ROW_CAP, chartType, data.fields);
     },
 
-    _render: function (option, truncated) {
+    _render: function (option, truncated, chartType, fields) {
         this._clear();
 
         var host = document.createElement('div');
@@ -692,6 +707,51 @@ export default SplunkVisualizationBase.extend({
         // notMerge, or a previous series survives a token change and two
         // filters are drawn on top of each other.
         this.chart.setOption(option, { notMerge: true });
+
+        // Clicking a chart reports what was clicked, using the search's own
+        // field names. A treemap tile of a package is only useful if the
+        // dashboard can then ask for that package.
+        var self = this;
+        var names = (CLICK_FIELDS[chartType] || []);
+        this.chart.on('click', function (params) {
+            var values = [];
+            if (chartType === 'heatmap' && params.value) {
+                // Heatmap data is [xIndex, yIndex, value], so the labels have
+                // to come back out of the axis rather than off the point.
+                var opt = self.chart.getOption();
+                values = [
+                    (opt.xAxis[0].data || [])[params.value[0]],
+                    (opt.yAxis[0].data || [])[params.value[1]],
+                ];
+            } else if (chartType === 'sankey') {
+                values = params.dataType === 'edge'
+                    ? [params.data.source, params.data.target]
+                    : [params.name];
+            } else if (names.length > 1) {
+                values = [params.name, params.seriesName];
+            } else {
+                values = [params.name];
+            }
+
+            var payload = {};
+            names.forEach(function (slot, i) {
+                var col = fields && fields[i] ? fields[i].name : slot;
+                if (values[i] === undefined) { return; }
+                // Both spellings, for the same reason the grid emits both:
+                // Splunk resolves $row.<field>$ from the bare name.
+                payload[col] = values[i];
+                payload['row.' + col] = values[i];
+            });
+            payload['click.name'] = (fields && fields[0]) ? fields[0].name : 'label';
+            payload['click.value'] = values[0];
+            payload.name = payload['click.name'];
+            payload.value = payload['click.value'];
+
+            self.drilldown({
+                action: SplunkVisualizationBase.FIELD_VALUE_DRILLDOWN,
+                data: payload,
+            }, params.event && params.event.event);
+        });
     },
 
     _opt: function (config, name) {

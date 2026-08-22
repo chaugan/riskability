@@ -1,0 +1,54 @@
+/*
+ * Styles Splunk loads on every page of this app.
+ *
+ * These were living in riskability_admin.css, which is attached to the admin
+ * dashboard alone -- so the callouts on Overview, Findings, MITRE, Coverage and
+ * Remediation rendered as unstyled paragraphs. Every one of those blocks exists
+ * to stop a number being misread ("an empty panel is not a clean fleet"), and a
+ * caveat that does not look like a caveat is one people skim past. Shared
+ * styling belongs in application.css, which Splunk includes app-wide.
+ */
+
+/* Callouts. The colour carries the same meaning everywhere: grey explains,
+   amber cautions, red is a problem. */
+.rk-status {
+    border-left: 3px solid #708794;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: #1a1d21;
+    line-height: 1.5;
+    font-size: 12px;
+    color: #d5d8dc;
+}
+.rk-status b { display: block; margin-bottom: 2px; color: #f2f4f5; }
+.rk-status code {
+    background: #23272e; color: #d5d8dc; padding: 1px 5px;
+    border-radius: 2px; font-size: 11px;
+}
+.rk-good { border-left-color: #53a051; }
+.rk-good b { color: #6db56b; }
+.rk-warn { border-left-color: #f8be34; }
+.rk-warn b { color: #f8be34; }
+.rk-bad  { border-left-color: #dc4e41; }
+.rk-bad b { color: #e26d63; }
+.rk-bad-text { color: #e26d63; }
+.rk-dim { color: #9aa4ae; font-size: 12px; line-height: 1.5; }
+
+/* Drilldown toolbar: what a click filtered, and how to undo it. A dashboard
+   that quietly stays filtered is worse than one that never filters, because
+   the next number read is wrong and looks right. */
+.rk-drill-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 6px 2px; font-size: 12px; color: #9aa4ae;
+}
+.rk-drill-hint { max-width: 620px; }
+.rk-drill-state {
+    margin-left: auto; color: #f8be34;
+    border: 1px solid #4a4326; background: #2c2f34;
+    padding: 3px 10px; border-radius: 12px;
+}
+.rk-drill-clear {
+    color: #d5d8dc; border: 1px solid #46474a; background: #2c2f34;
+    padding: 3px 12px; border-radius: 3px; text-decoration: none;
+}
+.rk-drill-clear:hover { border-color: #6b6f76; color: #f2f4f5; text-decoration: none; }

@@ -1,4 +1,4 @@
-<form version="1.1" theme="dark">
+<form version="1.1" theme="dark" stylesheet="application.css">
   <label>MITRE ATT&amp;CK</label>
   <description>Which adversary techniques the fleet's open vulnerabilities could enable.</description>
   <fieldset submitButton="false" autoRun="true">
@@ -13,6 +13,22 @@
       <choice value="confidence=*">All</choice>
       <default>confidence=high</default>
       <initialValue>confidence=high</initialValue>
+    </input>
+    <!-- Drilldown state. A search token cannot be conditional, so each filter
+         has an "everything" default that the drilldown replaces. Splunk unsets
+         nothing on load, so these have to exist from the start or the detail
+         panel's search is malformed until something is clicked. -->
+    <input type="hidden" token="tech_filter">
+      <default>technique=*</default>
+    </input>
+    <input type="hidden" token="cwe_filter">
+      <default>cwe=*</default>
+    </input>
+    <input type="hidden" token="tech_label">
+      <default>each technique</default>
+    </input>
+    <input type="hidden" token="cwe_label">
+      <default></default>
     </input>
   </fieldset>
 
@@ -54,6 +70,13 @@
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No tactic data. The matrix needs the ATT&amp;CK tactic mapping, which older feed bundles do not carry — rebuild the bundle with --mitre and import it. Until then this panel is blank because the mapping is missing, not because nothing is exposed.</option>
         <option name="height">520</option>
+        <drilldown>
+          <set token="tech_name_tok">$row.technique_name$</set>
+          <set token="tech_filter">technique_name="$row.technique_name$"</set>
+          <set token="tech_label">$row.technique_name$</set>
+          <set token="any_filter">1</set>
+          <unset token="tech_tok"></unset>
+        </drilldown>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -89,7 +112,11 @@
          peak_epss AS "Peak EPSS"</query>
         </search>
         <drilldown>
-          <link target="_blank">https://attack.mitre.org/techniques/$row.Technique$/</link>
+          <set token="tech_tok">$row.Technique$</set>
+          <set token="tech_name_tok">$row.Name$</set>
+          <set token="tech_filter">technique="$row.Technique$"</set>
+          <set token="tech_label">$row.Technique$</set>
+          <set token="any_filter">1</set>
         </drilldown>
         <option name="drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE, so this is usually a gap in the mapping rather than an absence of exposure.</option>
@@ -112,6 +139,12 @@
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk — see the coverage panel beside it.</option>
         <option name="height">400</option>
+        <drilldown>
+          <set token="cwe_tok">$row.cwe$</set>
+          <set token="cwe_filter">cwe="$row.cwe$"</set>
+          <set token="cwe_label"> and $row.cwe$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
       </viz>
     </panel>
     <panel>
@@ -201,12 +234,42 @@
 
   <row>
     <panel>
-      <title>Findings behind each technique</title>
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Click a technique above, a matrix cell, or a CWE tile to
+            narrow the table below.</span>
+          <span class="rk-drill-state" depends="$any_filter$">
+            Filtered by $tech_label$$cwe_label$
+          </span>
+          <a class="rk-drill-clear" depends="$any_filter$"
+             href="riskability_mitre?form.host_tok=$host_tok$&amp;form.conf_tok=$conf_tok$">Clear</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Findings behind $tech_label$</title>
+      <html depends="$tech_tok$">
+        <div class="rk-status" style="margin:0 0 8px">
+          <b>Showing only $tech_tok$ — $tech_name_tok$.</b>
+          <span>
+            These are the findings that put this technique on the matrix. Every one is a real
+            vulnerability; the technique is what MITRE says this class of weakness could enable,
+            not something anyone observed.
+            <a href="https://attack.mitre.org/techniques/$tech_tok$/" target="_blank"
+               rel="noopener">Read the technique on attack.mitre.org</a> (needs internet).
+          </span>
+        </div>
+      </html>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
+| search $tech_filter$ $cwe_filter$
 | eval root = if(scope_id!="", scope_id, "host")
+| eval installed_version = last_version
 | table technique, technique_name, cve_id, package, installed_version, fixed_version,
         hostname, root, cwe, via_capec, epss
 | sort technique, - epss

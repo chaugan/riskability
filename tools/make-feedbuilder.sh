@@ -66,6 +66,11 @@ def cmd_sources(args):
     print("  --mitre        MITRE CWE -> CAPEC -> ATT&CK mapping")
     print("  --kev          CISA known-exploited catalogue")
     print("  --epss         FIRST exploitation-probability scores")
+    print("")
+    print("  --kev-file PATH   use a downloaded copy instead of fetching. CISA serves")
+    print("                    KEV behind a CDN that refuses many datacentre ranges, so")
+    print("                    this is often the only way to get it onto a build host.")
+    print("  --epss-file PATH  same, for the EPSS csv or csv.gz")
     print("\nHosts contacted: " + ", ".join(buildlib.NETWORK_HOSTS))
     if not args.check:
         print("\n(pass --check to query live sizes)")
@@ -73,7 +78,8 @@ def cmd_sources(args):
 
 
 def cmd_build(args):
-    if not (args.ecosystem or args.nvd or args.mitre or args.kev or args.epss):
+    if not (args.ecosystem or args.nvd or args.mitre or args.kev or args.epss
+            or args.kev_file or args.epss_file):
         print("error: choose at least one source (see 'sources')", file=sys.stderr)
         return 2
     try:
@@ -81,6 +87,7 @@ def cmd_build(args):
             args.out,
             ecosystems=args.ecosystem or [],
             nvd=args.nvd, mitre=args.mitre, kev=args.kev, epss=args.epss,
+            kev_file=args.kev_file, epss_file=args.epss_file,
             version=args.version,
             log=lambda m: print(m, file=sys.stderr),
         )
@@ -116,6 +123,14 @@ def main(argv=None):
     b.add_argument("--mitre", action="store_true")
     b.add_argument("--kev", action="store_true")
     b.add_argument("--epss", action="store_true")
+    # CISA serves KEV behind a CDN that refuses whole datacentre ranges, so a
+    # build host can be well connected and still never fetch it. Download it on
+    # a workstation and pass the file.
+    b.add_argument("--kev-file", dest="kev_file", default="", metavar="PATH",
+                   help="use a downloaded known_exploited_vulnerabilities.json "
+                        "instead of fetching it")
+    b.add_argument("--epss-file", dest="epss_file", default="", metavar="PATH",
+                   help="use a downloaded EPSS csv or csv.gz instead of fetching it")
     b.add_argument("--version", default="")
     b.set_defaults(func=cmd_build)
 

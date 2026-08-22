@@ -1,4 +1,4 @@
-<dashboard version="1.1" theme="dark" stylesheet="riskability_start.css">
+<dashboard version="1.1" theme="dark" stylesheet="application.css,riskability_start.css">
   <label>Start here</label>
   <description>What this app does, what its numbers mean, and what they do not.</description>
 
