@@ -311,7 +311,14 @@ def build_bundle(
                 say(f"  {len(technique_meta)} techniques, "
                     f"{len(tactic_rows)} tactics from ATT&CK")
             except Exception as exc:
+                # Not fatal, but say what it costs. The build still emits a full
+                # set of CWE -> technique rows, so the bundle looks complete and
+                # imports cleanly; what it silently lacks is which tactic each
+                # technique belongs to, and the only symptom is that the ATT&CK
+                # matrix is blank while every other MITRE panel works.
                 failed("MITRE ATT&CK tactics", exc)
+                say("  WARNING: no tactic mapping. The ATT&CK matrix will be "
+                    "empty in this bundle; every other MITRE panel still works.")
 
             rows = feedlib.build_attack_rows(cwe_capec, capec_attack, technique_meta)
             for row in rows:

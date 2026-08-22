@@ -62,6 +62,11 @@ NVD_FIRST_YEAR = 2002
 # MITRE's own catalogues. Small, and each hop is a published mapping.
 CWE_URL = "https://cwe.mitre.org/data/csv/1000.csv.zip"
 CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
+# The only published source for which tactic a technique belongs to. CAPEC gives
+# CWE -> technique; it says nothing about where a technique sits in an attack,
+# and the ATT&CK matrix needs both.
+ATTACK_STIX_URL = ("https://raw.githubusercontent.com/mitre-attack/attack-stix-data"
+                   "/master/enterprise-attack/enterprise-attack.json")
 
 # Ecosystems worth offering, with the swinv package types they answer for.
 KNOWN_ECOSYSTEMS = {
@@ -192,7 +197,8 @@ def _fetch_csv(url: str) -> str:
 
 def cmd_build(args) -> int:
     ecosystems = args.ecosystem or []
-    if not ecosystems and not (args.kev or args.epss or args.nvd or args.mitre):
+    if not ecosystems and not (args.kev or args.kev_file or args.epss
+                               or args.nvd or args.mitre):
         print("error: name at least one --ecosystem (see 'riskability-feed sources')",
               file=sys.stderr)
         return 2
@@ -289,7 +295,15 @@ def cmd_build(args) -> int:
                         "fetched_at": int(time.time()), "records": n_cve,
                         "licence": "NIST/NVD; US Government work. Not endorsed by NVD."})
 
-    # MITRE: the CWE -> CAPEC -> ATT&CK chain, each hop a published mapping.
+    # MITRE: the CWE -> CAPEC -> ATT&CK chain, each hop a published mapping,
+    # plus the ATT&CK STIX bundle for the tactic each technique belongs to.
+    #
+    # The STIX half is not optional decoration. Without it every attack row is
+    # written with no tactics, the bundle imports perfectly happily, every
+    # technique panel works -- and the ATT&CK matrix is blank, because a matrix
+    # needs both axes. This tool omitted it entirely for a while, so every
+    # bundle built the documented way had an empty matrix and the only clue was
+    # a panel that looked like it was reporting no exposure.
     if args.mitre:
         print(f"fetching MITRE CWE    {CWE_URL}", file=sys.stderr)
         try:
@@ -298,7 +312,27 @@ def cmd_build(args) -> int:
             print(f"fetching MITRE CAPEC  {CAPEC_URL}", file=sys.stderr)
             capec_attack = feedlib.parse_capec_attack(_fetch_csv(CAPEC_URL))
             print(f"  {len(capec_attack)} CAPECs mapped to ATT&CK", file=sys.stderr)
-            rows = feedlib.build_attack_rows(cwe_capec, capec_attack)
+
+            technique_meta, tactic_rows = {}, []
+            print(f"fetching ATT&CK STIX  {ATTACK_STIX_URL}", file=sys.stderr)
+            try:
+                with _open(ATTACK_STIX_URL) as r:
+                    technique_meta, tactic_rows = feedlib.parse_attack_stix(
+                        r.read().decode("utf-8"))
+                for row in tactic_rows:
+                    writer.add_tactic(row)
+                print(f"  {len(technique_meta)} techniques, {len(tactic_rows)} tactics",
+                      file=sys.stderr)
+                sources.append({"name": "mitre-attack-tactics", "url": ATTACK_STIX_URL,
+                                "fetched_at": int(time.time()), "records": len(tactic_rows),
+                                "licence": "MITRE ATT&CK; see MITRE terms of use"})
+            except Exception as exc:
+                print(f"  ERROR {exc}", file=sys.stderr)
+                print("  WARNING: no tactic mapping. The ATT&CK matrix will be empty "
+                      "in this bundle; every other MITRE panel still works.",
+                      file=sys.stderr)
+
+            rows = feedlib.build_attack_rows(cwe_capec, capec_attack, technique_meta)
             for row in rows:
                 writer.add_attack(row)
             print(f"  {len(rows)} CWE -> ATT&CK technique mappings", file=sys.stderr)
@@ -310,7 +344,19 @@ def cmd_build(args) -> int:
 
     # Overlays enrich advisories that already exist; they never create findings.
     kev: Dict[str, dict] = {}
-    if args.kev:
+    if args.kev_file:
+        # CISA blocks automated clients from some networks -- a plain 403, on a
+        # catalogue that is US-government public domain and free to download in
+        # a browser. Rather than lose the single strongest signal the app has
+        # over a user-agent policy, take the file somebody downloaded by hand.
+        print(f"reading KEV           {args.kev_file}", file=sys.stderr)
+        with open(args.kev_file, encoding="utf-8") as fh:
+            kev = feedlib.normalize_kev(json.load(fh))
+        print(f"  {len(kev)} known-exploited CVEs", file=sys.stderr)
+        sources.append({"name": "cisa-kev", "url": os.path.abspath(args.kev_file),
+                        "fetched_at": int(time.time()), "records": len(kev),
+                        "licence": "US Government work, public domain"})
+    elif args.kev:
         print(f"fetching KEV          {KEV_URL}", file=sys.stderr)
         try:
             with _open(KEV_URL) as r:
@@ -321,6 +367,9 @@ def cmd_build(args) -> int:
                             "licence": "US Government work, public domain"})
         except Exception as exc:
             print(f"  ERROR {exc} - continuing without KEV", file=sys.stderr)
+            print("  Download the catalogue in a browser from "
+                  "https://www.cisa.gov/known-exploited-vulnerabilities-catalog "
+                  "and pass it with --kev-file.", file=sys.stderr)
 
     epss: Dict[str, dict] = {}
     if args.epss:
@@ -396,6 +445,10 @@ def main(argv=None) -> int:
     b.add_argument("--mitre", action="store_true",
                    help="include the MITRE CWE->CAPEC->ATT&CK mapping")
     b.add_argument("--kev", action="store_true", help="include CISA KEV")
+    b.add_argument("--kev-file", default="",
+                   help="read the CISA KEV catalogue from a local JSON file instead of "
+                        "downloading it. Use this when CISA returns 403 to automated "
+                        "clients, which it does from some networks.")
     b.add_argument("--epss", action="store_true", help="include EPSS scores")
     b.add_argument("--version", default="", help="bundle version label")
     b.add_argument("--include-withdrawn", action="store_true",

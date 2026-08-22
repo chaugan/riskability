@@ -175,12 +175,35 @@
              ["Imported by", feed.imported_by || "unknown"],
              ["Advisories", (feed.advisory_count || 0).toLocaleString()],
              ["Affected ranges", (feed.range_count || 0).toLocaleString()],
-             ["Vendor “not affected”", (feed.notaffected_count || 0).toLocaleString()]
+             ["Vendor “not affected”", (feed.notaffected_count || 0).toLocaleString()],
+             ["CWE → ATT&CK mappings", (feed.attack_count || 0).toLocaleString()],
+             ["…with a tactic", (feed.attack_with_tactics || 0).toLocaleString()]
             ].forEach(function (pair) {
                 dl.appendChild(el("dt", null, pair[0]));
                 dl.appendChild(el("dd", null, pair[1]));
             });
             card.appendChild(dl);
+
+            // A bundle whose ATT&CK tactic fetch failed still carries a full
+            // set of CWE -> technique rows, so it imports cleanly and every
+            // count looks healthy. The only thing missing is which tactic each
+            // technique belongs to, and the only symptom is that the ATT&CK
+            // matrix is blank -- which reads as "nothing is exposed" rather
+            // than "the mapping never arrived". Say it here, where somebody is
+            // already looking at the feed, instead of leaving it to be found.
+            if ((feed.attack_count || 0) > 0 && !(feed.attack_with_tactics || 0)) {
+                var noTac = el("div", "rk-status rk-warn");
+                noTac.appendChild(el("b", null,
+                    "This bundle has no ATT&CK tactic mapping."));
+                noTac.appendChild(el("span", null,
+                    "The " + (feed.attack_count || 0).toLocaleString() + " CWE-to-technique " +
+                    "mappings are here, so the technique panels work, but nothing says which " +
+                    "tactic each technique belongs to \u2014 so the ATT&CK matrix on the MITRE " +
+                    "page is blank. That is a gap in the bundle, not an absence of exposure. " +
+                    "It happens when the build host could not reach the ATT&CK STIX data; " +
+                    "rebuild the bundle on a host that can and import it again."));
+                card.appendChild(noTac);
+            }
 
             if (feed.sources && feed.sources.length) {
                 card.appendChild(el("h4", null, "Sources in this bundle"));

@@ -242,6 +242,12 @@ def import_bundle(
     eco_ranges: Dict[str, int] = {}
     eco_exact = True
     eco_seen = 0
+    # How many ATT&CK rows actually say which tactic their technique belongs to.
+    # A bundle whose STIX fetch failed still carries a full set of attack rows;
+    # they simply have no tactics, and the matrix has nothing to plot. Counting
+    # it here is the difference between noticing at import and noticing when
+    # somebody opens the page and finds it blank.
+    attack_with_tactics = 0
     try:
         for kind, collection in COLLECTIONS.items():
             member = MEMBER_FOR[kind]
@@ -254,6 +260,10 @@ def import_bundle(
             for batch in _batches(feedlib.iter_member(path, member), new_gen):
                 _save_batch(data, batch)
                 n += len(batch)
+                if kind == "attack":
+                    for rec in batch:
+                        if rec.get("tactics"):
+                            attack_with_tactics += 1
                 if kind == "ranges":
                     for rec in batch:
                         eco = rec.get("ecosystem") or ""
@@ -320,6 +330,8 @@ def import_bundle(
         "range_count": counts.get("ranges", 0),
         "notaffected_count": counts.get("notaffected", 0),
         "attack_count": counts.get("attack", 0),
+        "attack_with_tactics": attack_with_tactics,
+        "tactic_count": counts.get("tactics", 0),
         "schema": manifest.get("schema", ""),
         "previous_bundle_version": previous.get("bundle_version", ""),
     }
