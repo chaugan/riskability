@@ -58,6 +58,17 @@ MEMBER_FOR = {
     "tactics": feedlib.TACTICS_MEMBER,
 }
 
+# Per-ecosystem package counts, derived while streaming ranges rather than
+# recomputed later. Not in COLLECTIONS because no bundle member produces it.
+ECO_COLLECTION = "riskability_feedeco"
+
+# Above this many distinct (ecosystem, package) pairs the exact set is
+# abandoned. A feed that large makes the set itself a memory problem on a
+# search head, and this figure exists to answer "is this ecosystem covered at
+# all", which does not need the last digit. The row says so when it happens
+# rather than quietly reporting a number that stopped counting.
+ECO_DISTINCT_CAP = 8_000_000
+
 STATE_COLLECTION = "riskability_feedstate"
 STATE_KEY = "current"
 STATUS_KEY = "import_status"
@@ -183,6 +194,14 @@ def import_bundle(
                   loaded_ranges=0, loaded_advisories=0, loaded_notaffected=0)
 
     counts: Dict[str, int] = {}
+    # ecosystem -> set of package names, and ecosystem -> row count. Built from
+    # the rows already in hand; the alternative is a dc(package) over the whole
+    # range table on every Coverage load, which is measured in tens of seconds
+    # and grows with the feed.
+    eco_packages: Dict[str, set] = {}
+    eco_ranges: Dict[str, int] = {}
+    eco_exact = True
+    eco_seen = 0
     try:
         for kind, collection in COLLECTIONS.items():
             member = MEMBER_FOR[kind]
@@ -195,6 +214,17 @@ def import_bundle(
             for batch in _batches(feedlib.iter_member(path, member), new_gen):
                 data.batch_save(*batch)
                 n += len(batch)
+                if kind == "ranges":
+                    for rec in batch:
+                        eco = rec.get("ecosystem") or ""
+                        eco_ranges[eco] = eco_ranges.get(eco, 0) + 1
+                        if eco_exact:
+                            bucket = eco_packages.setdefault(eco, set())
+                            bucket.add(rec.get("package") or "")
+                            eco_seen += 1
+                            if eco_seen > ECO_DISTINCT_CAP:
+                                eco_exact = False
+                                eco_packages.clear()
                 if progress:
                     progress(kind, n)
                 # A threshold, not "n % PROGRESS_EVERY == 0": batches are sized
@@ -230,6 +260,8 @@ def import_bundle(
                "the upstream feeds; rebuild the bundle and check its output.")
         _write_status(kvstore, state="failed", generation=old_gen, error=msg)
         raise ImportError_(msg)
+
+    _write_eco_summary(kvstore, new_gen, eco_packages, eco_ranges, eco_exact)
 
     state = {
         "_key": STATE_KEY,
@@ -280,9 +312,37 @@ def import_bundle(
     return state
 
 
+def _write_eco_summary(kvstore, generation: int, eco_packages: Dict[str, set],
+                       eco_ranges: Dict[str, int], exact: bool) -> None:
+    """Store one row per ecosystem describing what the feed knows about it.
+
+    Best effort. A feed that imported correctly but whose summary failed to
+    write is still a usable feed, and Coverage saying "unknown" about an
+    ecosystem is a far smaller problem than an import that refuses to flip.
+    """
+    rows = []
+    for eco in sorted(set(eco_ranges) | set(eco_packages)):
+        rows.append({
+            "_key": f"{generation}|{eco}",
+            "gen": generation,
+            "ecosystem": eco,
+            "feed_packages": len(eco_packages.get(eco, ())) if exact else -1,
+            "feed_ranges": eco_ranges.get(eco, 0),
+            "exact": "1" if exact else "0",
+        })
+    if not rows:
+        return
+    try:
+        data = kvstore[ECO_COLLECTION].data
+        for i in range(0, len(rows), MAX_DOCS_PER_BATCH):
+            data.batch_save(*rows[i:i + MAX_DOCS_PER_BATCH])
+    except Exception:
+        pass
+
+
 def _delete_generation(kvstore, generation: int) -> None:
     """Remove every row of one generation. Safe to interrupt and re-run."""
-    for collection in COLLECTIONS.values():
+    for collection in list(COLLECTIONS.values()) + [ECO_COLLECTION]:
         try:
             kvstore[collection].data.delete(json.dumps({"gen": generation}))
         except Exception:

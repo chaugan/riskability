@@ -102,13 +102,19 @@
   </row>
 
   <row>
-    <panel>
+    <panel rejects="$rem_any_filter$">
       <html>
         <div class="rk-drill-bar">
           <span class="rk-drill-hint">Click a box above to narrow the two tables below to that
             severity.</span>
-          <span class="rk-drill-state" depends="$rem_any_filter$">Filtered by $rem_sev_label$</span>
-          <a class="rk-drill-clear" depends="$rem_any_filter$"
+        </div>
+      </html>
+    </panel>
+    <panel depends="$rem_any_filter$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-state">Filtered by $rem_sev_label$</span>
+          <a class="rk-drill-clear"
              href="riskability_remediation?form.host_tok=$host_tok$">Clear</a>
         </div>
       </html>

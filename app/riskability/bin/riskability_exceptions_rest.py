@@ -427,6 +427,21 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
 
             row = _validate(payload)
             if action == "create":
+                # Two active exceptions with the same match key are two records
+                # of one decision. The reconciler takes the most specific hit
+                # and would apply either, so the duplicate is invisible in the
+                # findings; it only surfaces when somebody withdraws one and
+                # the finding stays suppressed with no reason on screen. The
+                # dialog disables the button when every selected row is already
+                # accepted, but that is a courtesy -- this is the boundary.
+                clash = self._active_with_key(data, row["match_key"], _now())
+                if clash:
+                    raise BadRequest(
+                        "this is already accepted: "
+                        + (clash.get("scope_label") or clash.get("match_key", ""))
+                        + ", by " + (clash.get("created_by") or "someone")
+                        + ". Change or withdraw that entry on the Risk exceptions page "
+                        "rather than recording a second decision for the same finding.")
                 key = uuid.uuid4().hex
                 row.update({"exception_key": key, "created_by": user,
                             "created_at": str(now), "updated_by": user,
@@ -466,6 +481,22 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             })
 
         raise BadRequest(f"unknown action {action!r}")
+
+    def _active_with_key(self, data, match_key: str, now: int):
+        """An exception already in force covering exactly this scope, if any.
+
+        Expired and revoked entries do not count: re-accepting something whose
+        review date passed is a legitimate new decision, and that is the point
+        of letting them lapse rather than deleting them.
+        """
+        try:
+            rows = data.query(query=json.dumps({"match_key": match_key}), limit=200)
+        except Exception:
+            return None
+        for row in rows:
+            if self._state_of(row, now) == "active":
+                return row
+        return None
 
     @staticmethod
     def _one(data, key: str) -> dict:

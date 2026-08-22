@@ -102,6 +102,26 @@
         var cves = distinct(selection, "CVE");
         var hosts = distinct(selection, "Host");
 
+        // Rows the Findings table already marks as accepted. Offering to accept
+        // them again produces a second register entry covering the same
+        // finding, which is not a stricter decision -- it is two people's
+        // justifications for one thing, and withdrawing either leaves the
+        // finding still suppressed by the other with no visible reason why.
+        var already = selection.filter(function (r) {
+            return String(r.Accepted || "").toLowerCase() === "accepted";
+        });
+
+        if (already.length === selection.length) {
+            summary.textContent = selection.length === 1
+                ? "This finding is already accepted. Change or withdraw that decision on the "
+                  + "Risk exceptions page \u2014 accepting it twice records one decision twice."
+                : "All " + selection.length + " selected findings are already accepted. "
+                  + "Manage them on the Risk exceptions page.";
+            summary.className = "rk-exc-summary rk-exc-bad";
+            button.disabled = true;
+            return;
+        }
+
         if (cves.length > 1) {
             // Refused rather than silently split into several exceptions. One
             // justification covering several unrelated vulnerabilities is how
@@ -116,7 +136,9 @@
 
         summary.textContent = selection.length + " finding" + (selection.length === 1 ? "" : "s") +
             " · " + cves[0] + " · " + hosts.length + " host" +
-            (hosts.length === 1 ? "" : "s");
+            (hosts.length === 1 ? "" : "s") +
+            (already.length ? " \u00b7 " + already.length + " already accepted, keeping the "
+                            + "decision already on record" : "");
         summary.className = "rk-exc-summary rk-exc-ok";
         button.disabled = false;
     }

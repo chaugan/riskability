@@ -4,28 +4,75 @@
   <fieldset submitButton="false" autoRun="true">
     <input type="dropdown" token="hostname" searchWhenChanged="true">
       <label>Host</label>
+      <choice value="*">All hosts</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
       <fieldForLabel>hostname</fieldForLabel>
       <fieldForValue>hostname</fieldForValue>
+      <!-- From the hourly host snapshot, not from the inventory index. The
+           index holds one event per component per scan per host; reading it to
+           populate a dropdown costs the whole fleet's inventory on every page
+           load, and it is the first thing to fall over on a real fleet. The
+           snapshot is one row per host. -->
       <search>
-        <query>index=riskability_inventory sourcetype=riskability:swinv | stats count BY hostname | fields hostname</query>
+        <query>| inputlookup riskability_hoststate_lookup | where hostname!="__meta" | sort hostname | fields hostname</query>
+        <earliest>0</earliest>
+        <latest>now</latest>
       </search>
     </input>
     <input type="hidden" token="sev_filter"><default>sev=*</default></input>
     <input type="hidden" token="eco_filter"><default>ecosystem=*</default></input>
     <input type="hidden" token="host_drill_label"><default>everything</default></input>
+    <input type="hidden" token="host_note"><default></default></input>
   </fieldset>
 
   <row>
     <panel>
-      <title>Host</title>
+      <title>Fleet</title>
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Every host that has reported an inventory. Click one to
+            narrow the whole page to it; the picker above puts it back to all hosts.</span>
+        </div>
+      </html>
       <viz type="riskability.riskability_grid">
+        <!-- Entirely from KV Store snapshots: one row per host from the host
+             snapshot, component counts from the match checkpoint, findings from
+             the finding state. No raw index search, so this costs the same on a
+             fleet of five thousand as on a fleet of two. -->
         <search>
-          <query>index=riskability_inventory sourcetype=riskability:swinv hostname=$hostname|s$
-| stats latest(os_id) AS os, latest(os_version_id) AS release, latest(architecture) AS arch,
-        latest(machine_id) AS machine_id, count AS components, latest(_time) AS last_scan BY hostname
-| eval last_scan = strftime(last_scan, "%Y-%m-%d %H:%M:%S")</query>
+          <query>| inputlookup riskability_hoststate_lookup
+| where hostname!="__meta"
+| search hostname=$hostname|s$
+| lookup riskability_matchstate_lookup hostname OUTPUT n_components, matched_at
+| join type=left hostname
+    [| `riskability_open_findings`
+     | stats dc(cve_id) AS cves, count AS findings,
+             sum(eval(if(isnotnull(kev_added) AND kev_added!="", 1, 0))) AS kev,
+             max(epss) AS top_epss BY hostname]
+| fillnull value=0 cves, findings, kev
+| eval top_epss = if(isnotnull(top_epss), round(top_epss * 100, 1), null())
+| eval last_scan = strftime(tonumber(host_last_scan), "%Y-%m-%d %H:%M")
+| eval quiet_for = if(isnull(host_last_scan), "never reported",
+                      tostring(round(now() - tonumber(host_last_scan)), "duration"))
+| sort - kev, - cves
+| table hostname, os, release, arch, n_components, findings, cves, kev, top_epss, last_scan, quiet_for
+| rename hostname AS "Host", os AS "OS", release AS "Release", arch AS "Arch",
+         n_components AS "Components", findings AS "Open findings", cves AS "CVEs",
+         kev AS "KEV", top_epss AS "Top EPSS %", last_scan AS "Last scan",
+         quiet_for AS "Silent for"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
         </search>
-        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No host has reported an inventory yet. Until swinv data reaches the index there is nothing to assess.</option>
+        <option name="height">300</option>
+        <drilldown>
+          <!-- form.hostname, not hostname: setting the bare token narrows the
+               panels but leaves the picker above still reading "All hosts", so
+               the page and its own control disagree about what is shown. -->
+          <set token="form.hostname">$row.Host$</set>
+          <set token="hostname">$row.Host$</set>
+        </drilldown>
       </viz>
     </panel>
   </row>
@@ -35,16 +82,22 @@
       <title>Components by ecosystem</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>index=riskability_inventory sourcetype=riskability:swinv hostname=$hostname|s$
-| stats dc(name) AS components BY type | sort - components | head 25</query>
+          <query>| inputlookup riskability_hostecostate_lookup
+| where hostname!="__meta"
+| search hostname=$hostname|s$
+| stats sum(components) AS components BY type
+| sort - components | head 25</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
         </search>
         <option name="riskability.riskability_chart.chartType">bar</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
-        <option name="riskability.riskability_chart.emptyText">This host has reported no inventory. Nothing about it can be assessed.</option>
+        <option name="riskability.riskability_chart.emptyText">No inventory reported. Nothing here can be assessed.</option>
         <option name="height">360</option>
         <drilldown>
           <set token="eco_filter">ecosystem="$row.type$"</set>
           <set token="host_drill_label">$row.type$</set>
+          <set token="host_note">$row.type$</set>
           <set token="host_any_filter">1</set>
         </drilldown>
       </viz>
@@ -68,6 +121,7 @@
         <drilldown>
           <set token="sev_filter">sev="$row.sev$"</set>
           <set token="host_drill_label">$row.sev$</set>
+          <set token="host_note">$row.sev$ severity</set>
           <set token="host_any_filter">1</set>
         </drilldown>
       </viz>
@@ -94,6 +148,7 @@
           <set token="sev_filter">sev="$row.sev$"</set>
           <set token="eco_filter">ecosystem="$row.ecosystem$"</set>
           <set token="host_drill_label">$row.sev$ / $row.ecosystem$</set>
+          <set token="host_note">$row.sev$ severity in $row.ecosystem$</set>
           <set token="host_any_filter">1</set>
         </drilldown>
       </viz>
@@ -102,13 +157,16 @@
 
   <row>
     <panel>
-      <title>Findings on this host — $host_drill_label$</title>
-      <html>
+      <title>Findings on $hostname$ — $host_drill_label$</title>
+      <html rejects="$host_any_filter$">
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a cell in the heatmap above to narrow this table.</span>
-          <span class="rk-drill-state" depends="$host_any_filter$">Filtered by $host_drill_label$</span>
-          <a class="rk-drill-clear" depends="$host_any_filter$"
-             href="riskability_hosts?form.hostname=$hostname$">Clear</a>
+          <span class="rk-drill-hint">Click a bar or a heatmap cell above to narrow this table.</span>
+        </div>
+      </html>
+      <html depends="$host_any_filter$">
+        <div class="rk-drill-bar">
+          <span class="rk-drill-state">Filtered by $host_drill_label$</span>
+          <a class="rk-drill-clear" href="riskability_hosts?form.hostname=$hostname$">Clear</a>
         </div>
       </html>
       <viz type="riskability.riskability_grid">
@@ -124,7 +182,8 @@
 | sort - epss</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No open findings for this host, or it has not reported inventory recently.</option>
+        <option name="riskability.riskability_grid.emptyText">No open findings, or nothing has reported inventory recently.</option>
+        <option name="riskability.riskability_grid.filterNote">$host_note$</option>
       </viz>
     </panel>
   </row>

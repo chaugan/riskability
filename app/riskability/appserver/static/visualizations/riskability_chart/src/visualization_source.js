@@ -681,6 +681,19 @@ export default SplunkVisualizationBase.extend({
     _render: function (option, truncated, chartType, fields) {
         this._clear();
 
+        // Same reasoning as the table: a chart that has been narrowed by a
+        // drilldown looks exactly like a chart of a quiet fleet.
+        var note = String(this._opt(this._config || {}, 'filterNote') || '').trim();
+        if (note) {
+            var fb = document.createElement('div');
+            fb.className = 'rk-viz-filtered';
+            var lab = document.createElement('b');
+            lab.textContent = 'Filtered';
+            fb.appendChild(lab);
+            fb.appendChild(document.createTextNode(' \u00b7 ' + note));
+            this.el.appendChild(fb);
+        }
+
         var host = document.createElement('div');
         host.className = 'rk-viz-canvas';
 

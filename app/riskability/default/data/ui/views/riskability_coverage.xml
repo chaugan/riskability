@@ -1,6 +1,12 @@
-<dashboard version="1.1" theme="dark" stylesheet="application.css">
+<form version="1.1" theme="dark" stylesheet="application.css">
   <label>Coverage</label>
   <description>What the feed can and cannot say anything about. Read this before trusting a low finding count.</description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="hidden" token="eco_filter"><default>type=*</default></input>
+    <input type="hidden" token="eco_label"><default></default></input>
+    <input type="hidden" token="eco_name"><default>*</default></input>
+  </fieldset>
 
   <row>
     <panel>
@@ -28,12 +34,37 @@
         <option name="riskability.riskability_chart.chartType">treemap</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
         <option name="riskability.riskability_chart.emptyText">No inventory has been received. Nothing can be assessed until swinv data reaches the index.</option>
-        <!-- Illustrative rather than navigational: a click here has nowhere
-             useful to go, and Splunk's default for a drilldown with no target
-             is to abandon the dashboard for a raw search. -->
-        <option name="riskability.riskability_chart.drilldown">disabled</option>
         <option name="height">380</option>
+        <!-- Navigational, not illustrative: a click narrows the two tables
+             below to that ecosystem. Splunk's default for a drilldown with no
+             target is to abandon the dashboard for a raw search, so a chart
+             either gets a destination on this page or gets drilldown disabled;
+             it never gets left on the default. -->
+        <drilldown>
+          <set token="eco_filter">type="$row.type$"</set>
+          <set token="eco_label">$row.type$</set>
+          <set token="eco_name">$row.type$</set>
+          <set token="eco_any">1</set>
+        </drilldown>
       </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel rejects="$eco_any$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Click an ecosystem above to narrow everything below it to that ecosystem.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$eco_any$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-state">Showing only $eco_label$</span>
+          <a class="rk-drill-clear" href="riskability_coverage">Show every ecosystem</a>
+        </div>
+      </html>
     </panel>
   </row>
 
@@ -43,7 +74,8 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
-| eval has_identifier = if(isnotnull(purl) OR isnotnull(cpes), 1, 0)
+| search $eco_filter$
+| eval has_identifier = if((isnotnull(purl) AND purl!="") OR (isnotnull(cpe_list) AND cpe_list!=""), 1, 0)
 | stats count AS components, sum(has_identifier) AS with_identifier BY type
 | eval without_identifier = components - with_identifier
 | eval identifier_pct = round(with_identifier * 100 / components, 1)
@@ -54,6 +86,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+        <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>
     <panel>
@@ -61,6 +94,7 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings`
+| search ecosystem=$eco_name|s$
 | eval root = if(scope_id!="", scope_id, "host")
 | stats dc(package) AS packages, dc(cve_id) AS cves BY root, hostname
 | sort - packages
@@ -68,6 +102,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+        <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>
   </row>
@@ -78,20 +113,35 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>`riskability_latest_inventory`
-| stats count AS components BY type
-| join type=left type
-    [| inputlookup riskability_ranges_lookup | stats dc(package) AS feed_packages BY ecosystem | rename ecosystem AS type]
-| eval feed_packages = coalesce(feed_packages, 0)
-| eval status = case(feed_packages > 0, "covered",
-                     type IN ("linux-kernel-module","linux-kernel","github-action","github-action-workflow","binary"), "no feed exists for this type",
-                     1=1, "add this ecosystem to the bundle")
+| search $eco_filter$
+| eval cpe_ident = if(isnotnull(cpe_list) AND cpe_list!="", 1, 0)
+| stats count AS components, sum(cpe_ident) AS cpe_ident BY type
+| append [| `riskability_feed_ecosystems` | rename ecosystem AS type]
+| eventstats max(eval(if(type=="cpe", feed_ranges, null()))) AS cpe_ranges
+| stats max(components) AS components, max(cpe_ident) AS cpe_ident,
+        max(feed_packages) AS feed_packages, max(feed_ranges) AS feed_ranges,
+        max(cpe_ranges) AS cpe_ranges BY type
+| where isnotnull(components)
+| eval feed_packages = coalesce(feed_packages, 0), feed_ranges = coalesce(feed_ranges, 0)
+| eval status = case(
+        feed_ranges &gt; 0, "covered",
+        cpe_ident &gt; 0 AND cpe_ranges &gt; 0, "covered through CPE",
+        type IN ("linux-kernel-module","linux-kernel","github-action","github-action-workflow","binary","hotfix"), "no feed exists for this type",
+        1=1, "add this ecosystem to the bundle")
+| eval reach = case(feed_ranges &gt; 0, tostring(feed_ranges, "commas"),
+                    cpe_ident &gt; 0 AND cpe_ranges &gt; 0, tostring(cpe_ranges, "commas") . " CPE ranges",
+                    1=1, "0")
+| eval feed_packages = if(feed_packages &lt; 0, "counted approximately", tostring(feed_packages, "commas"))
 | sort - components
 | rename type AS "Ecosystem", components AS "Components in fleet",
-         feed_packages AS "Packages in feed", status AS "Status"</query>
+         feed_packages AS "Packages in feed", reach AS "Version ranges reachable",
+         status AS "Status"
+| fields "Ecosystem", "Components in fleet", "Packages in feed", "Version ranges reachable", "Status"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">Every ecosystem in the fleet is covered by the imported feed. This is the one empty table here that is genuinely good news.</option>
+        <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>
   </row>
-</dashboard>
+</form>

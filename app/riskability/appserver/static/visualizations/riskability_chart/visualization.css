@@ -32,3 +32,11 @@
    where :has() is unsupported the rule is ignored and both messages show,
    which is untidy but not wrong. */
 .splunk-view:has(.riskability-chart) > .splunk-message-container { display: none; }
+
+/* A chart narrowed by a drilldown looks like a chart of a quiet fleet. */
+.riskability-chart .rk-viz-filtered {
+    margin: 4px 12px 0; padding: 6px 11px;
+    border-left: 3px solid #4a9fd8; background: #1d2733;
+    font-size: 11px; color: #cfe3f2; line-height: 1.5;
+}
+.riskability-chart .rk-viz-filtered b { color: #7cc0ec; }

@@ -1,7 +1,21 @@
 <dashboard version="1.1" theme="dark" stylesheet="application.css,riskability_start.css">
+  <!-- The same test the "pipeline did not complete" alert makes, deliberately.
+       This used to ask the checkpoint whether folded_run was set, which is a
+       different question: a host that has simply not been re-matched lately has
+       no acknowledgement either, and the banner accused the pipeline of being
+       behind whenever the matcher had correctly skipped an unchanged host. The
+       condition that matters is a receipt saying findings were produced with no
+       state rows carrying that run. -->
   <search>
-    <query>| inputlookup riskability_matchstate_lookup
-| where isnull(folded_run) OR folded_run="" OR tonumber(folded_run) &lt; tonumber(matched_at) - 300
+    <query>index=riskability_findings sourcetype=riskability:findings
+    record_type="match_receipt"
+    earliest=0 latest=+10y
+    _index_earliest=`riskability_lifecycle_window` _index_latest=now
+| stats max(match_run) AS match_run, sum(findings_produced) AS findings_produced BY hostname
+| where findings_produced &gt; 0
+| lookup riskability_matchstate_lookup hostname OUTPUT folded_run
+| eval acknowledged = if(isnotnull(folded_run) AND abs(tonumber(folded_run) - match_run) &lt; 300, 1, 0)
+| where acknowledged == 0
 | stats count AS stale</query>
     <earliest>0</earliest>
     <latest>now</latest>
@@ -118,19 +132,45 @@
     </panel>
   </row>
 
-  <row>
+  <row depends="$pipeline_stale$">
     <panel>
       <html>
-        <div class="rk-status rk-bad" depends="$pipeline_stale$">
+        <div class="rk-status rk-bad">
           <b>Some hosts have been matched but their results have not been folded in.</b>
           <span>
             The open counts on this page are stale-high for those hosts, and closing is being
             withheld for them until the fold completes. Nothing here is under-reporting risk;
-            it may be over-reporting it. See the "Riskability - pipeline did not complete"
-            alert for which hosts.
+            it may be over-reporting it. The hosts are listed below. This normally clears by
+            itself within the hour; if it does not, the pipeline has stopped and
+            <a href="riskability_admin">Admin</a> shows which job.
           </span>
         </div>
       </html>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>index=riskability_findings sourcetype=riskability:findings
+    record_type="match_receipt"
+    earliest=0 latest=+10y
+    _index_earliest=`riskability_lifecycle_window` _index_latest=now
+| stats max(match_run) AS match_run, sum(findings_produced) AS findings_produced BY hostname
+| where findings_produced &gt; 0
+| lookup riskability_matchstate_lookup hostname OUTPUT folded_run
+| eval acknowledged = if(isnotnull(folded_run) AND abs(tonumber(folded_run) - match_run) &lt; 300, 1, 0)
+| where acknowledged == 0
+| eval matched = strftime(match_run, "%Y-%m-%d %H:%M:%S")
+| eval folded = if(isnull(folded_run) OR folded_run="", "never",
+                   strftime(tonumber(folded_run), "%Y-%m-%d %H:%M:%S"))
+| eval waiting = tostring(round(now() - match_run), "duration")
+| table hostname, matched, findings_produced, folded, waiting
+| rename hostname AS "Host", matched AS "Matched at",
+         findings_produced AS "Findings the matcher reported",
+         folded AS "Last folded in", waiting AS "Waiting"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="height">160</option>
+      </viz>
     </panel>
   </row>
 

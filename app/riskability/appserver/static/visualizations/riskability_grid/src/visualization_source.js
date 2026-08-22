@@ -56,7 +56,7 @@ var VALUE_COLOR = {
     // Deliberately not a severity colour. An accepted risk is not less severe
     // than it was -- somebody decided to carry it -- so it reads as a state
     // somebody put it in rather than as a level on the same scale.
-    accepted: '#8a6fbf',
+    accepted: '#c98a2e',
 };
 
 /* Columns whose values are worth colouring. Matched case-insensitively against
@@ -162,6 +162,22 @@ export default SplunkVisualizationBase.extend({
         }
 
         this._clear();
+
+        // A drilldown filter is invisible from inside the table: the row count
+        // changes, but nothing says why, and the reader is left inferring it
+        // from data they may never have seen unfiltered. The banner says it
+        // where the numbers are, not only in a chip at the top of the page.
+        var note = String(this._opt(config, 'filterNote') || '').trim();
+        if (note) {
+            var fb = document.createElement('div');
+            fb.className = 'rk-grid-filtered';
+            var lab = document.createElement('b');
+            lab.textContent = 'Filtered';
+            fb.appendChild(lab);
+            fb.appendChild(document.createTextNode(' \u00b7 ' + note +
+                ' \u00b7 this table is showing part of the data'));
+            this.el.appendChild(fb);
+        }
 
         var truncated = rows.length >= ROW_CAP;
         if (truncated) {
@@ -309,6 +325,23 @@ export default SplunkVisualizationBase.extend({
                 : shown.toLocaleString() + ' of ' + rows.length.toLocaleString() + ' rows shown';
         }
         setCount(rows.length);
+
+        // Redraw once the table has actually been built.
+        //
+        // fitColumns divides the width Tabulator can see, and it measures
+        // before the virtual renderer knows how many rows there are -- so on a
+        // table long enough to need a vertical scrollbar it hands out the full
+        // width, the scrollbar then takes about fifteen pixels of it, and the
+        // difference becomes a horizontal scrollbar under a table that fits.
+        // The symptom is maddening to chase because it depends on row count
+        // against panel height, so the same table scrolls on one dashboard and
+        // not another. Redrawing after the layout has settled measures the
+        // width that actually exists.
+        this.table.on('tableBuilt', function () {
+            requestAnimationFrame(function () {
+                try { self.table.redraw(true); } catch (e) { /* torn down */ }
+            });
+        });
         this.table.on('dataFiltered', function (filters, filteredRows) {
             setCount(filteredRows ? filteredRows.length : rows.length);
         });
