@@ -192,6 +192,44 @@
         if (d && d.parentNode) { d.parentNode.removeChild(d); }
     }
 
+    // Put a dialog into "working" and take it out again.
+    //
+    // Accepting a risk is one REST call per host, and each one rewrites every
+    // finding it covers, so several seconds is normal rather than a sign of
+    // trouble. For that whole time the dialog stayed fully live: Cancel worked,
+    // the overlay closed on a stray click, and the fields still accepted
+    // typing. Cancelling does not cancel anything -- the requests are already
+    // in flight -- so the dialog would vanish while the writes continued, and
+    // the operator had no way to tell whether their decision had been recorded.
+    // Everything locks, and it says what it is doing.
+    function busyState(overlay, box) {
+        return function setBusy(on, label) {
+            overlay.dataset.busy = on ? "1" : "";
+            box.classList.toggle("rk-exc-busy", !!on);
+            box.querySelectorAll("input, select, textarea, button").forEach(function (c) {
+                if (on) {
+                    if (c.disabled) { c.dataset.wasDisabled = "1"; }
+                    c.disabled = true;
+                } else if (!c.dataset.wasDisabled) {
+                    c.disabled = false;
+                }
+            });
+            var bar = box.querySelector(".rk-exc-working");
+            if (on) {
+                if (!bar) {
+                    bar = el("div", "rk-exc-working");
+                    bar.appendChild(el("span", "rk-exc-spinner"));
+                    bar.appendChild(el("span", "rk-exc-working-text"));
+                    box.appendChild(bar);
+                }
+                bar.querySelector(".rk-exc-working-text").textContent = label ||
+                    "Working\u2026 this can take a few seconds. Do not close this window.";
+            } else if (bar) {
+                bar.parentNode.removeChild(bar);
+            }
+        };
+    }
+
     function field(parent, labelText, control, help) {
         var wrap = el("div", "rk-exc-field");
         var label = el("label", null, labelText);
@@ -355,9 +393,12 @@
         box.appendChild(msg);
 
         var actions = el("div", "rk-exc-actions");
+        var setBusy = busyState(overlay, box);
         var cancel = el("button", "rk-exc-btn", "Cancel");
         cancel.type = "button";
-        cancel.addEventListener("click", closeDialog);
+        cancel.addEventListener("click", function () {
+            if (!overlay.dataset.busy) { closeDialog(); }
+        });
         var submit = el("button", "rk-exc-btn rk-exc-btn-primary",
             mode === "create" ? "Accept risk" : mode === "reactivate" ? "Re-accept" : "Save changes");
         submit.type = "button";
@@ -372,9 +413,13 @@
                 msg.className = "rk-exc-msg rk-exc-bad";
                 return;
             }
-            submit.disabled = true;
-            msg.textContent = "Saving…";
+            msg.textContent = "";
             msg.className = "rk-exc-msg";
+            setBusy(true, mode === "create"
+                ? "Recording the decision and applying it to every finding it covers. "
+                  + "This can take a few seconds. Do not close this window."
+                : "Saving the change and reapplying it. This can take a few seconds. "
+                  + "Do not close this window.");
 
             var scope = scopeSel.value;
             var expires = expiry.value
@@ -403,12 +448,14 @@
                           "; they leave the risk numbers within the hour."
                         : "Saved. The change is in the audit trail below.";
                     msg.className = "rk-exc-msg rk-exc-ok";
+                    setBusy(false);
                     submit.disabled = true;
+                    cancel.disabled = true;
                     setTimeout(function () { closeDialog(); window.location.reload(); }, 2500);
                 }).catch(function (err) {
                     msg.textContent = String(err.message || err);
                     msg.className = "rk-exc-msg rk-exc-bad";
-                    submit.disabled = false;
+                    setBusy(false);
                 });
                 return;
             }
@@ -450,18 +497,20 @@
                     ". They disappear from the risk numbers within the hour, once the " +
                     "reconciler runs.";
                 msg.className = "rk-exc-msg rk-exc-ok";
+                setBusy(false);
                 submit.disabled = true;
+                cancel.disabled = true;
                 setTimeout(closeDialog, 4000);
             }).catch(function (err) {
                 msg.textContent = String(err.message || err);
                 msg.className = "rk-exc-msg rk-exc-bad";
-                submit.disabled = false;
+                setBusy(false);
             });
         });
 
         overlay.appendChild(box);
         overlay.addEventListener("click", function (e) {
-            if (e.target === overlay) { closeDialog(); }
+            if (e.target === overlay && !overlay.dataset.busy) { closeDialog(); }
         });
         document.body.appendChild(overlay);
         control.focus();
@@ -481,22 +530,30 @@
         var msg = el("div", "rk-exc-msg");
         box.appendChild(msg);
         var actions = el("div", "rk-exc-actions");
+        var setBusy = busyState(overlay, box);
         var cancel = el("button", "rk-exc-btn", "Cancel");
         cancel.type = "button";
-        cancel.addEventListener("click", closeDialog);
+        cancel.addEventListener("click", function () {
+            if (!overlay.dataset.busy) { closeDialog(); }
+        });
         var go = el("button", "rk-exc-btn rk-exc-btn-primary", "Return to risk pool");
         go.type = "button";
         go.addEventListener("click", function () {
-            go.disabled = true;
-            msg.textContent = "Withdrawing…";
+            msg.textContent = "";
+            msg.className = "rk-exc-msg";
+            setBusy(true, "Withdrawing the exception and returning its findings to the risk "
+                        + "pool. This can take a few seconds. Do not close this window.");
             post({ action: "revoke", exception_key: row.Key }).then(function () {
                 msg.textContent = "Withdrawn.";
                 msg.className = "rk-exc-msg rk-exc-ok";
+                setBusy(false);
+                go.disabled = true;
+                cancel.disabled = true;
                 setTimeout(function () { closeDialog(); window.location.reload(); }, 1800);
             }).catch(function (err) {
                 msg.textContent = String(err.message || err);
                 msg.className = "rk-exc-msg rk-exc-bad";
-                go.disabled = false;
+                setBusy(false);
             });
         });
         actions.appendChild(cancel);
@@ -504,7 +561,7 @@
         box.appendChild(actions);
         overlay.appendChild(box);
         overlay.addEventListener("click", function (e) {
-            if (e.target === overlay) { closeDialog(); }
+            if (e.target === overlay && !overlay.dataset.busy) { closeDialog(); }
         });
         document.body.appendChild(overlay);
     }

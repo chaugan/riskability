@@ -57,3 +57,29 @@
     border-left: 3px solid #f8be34; background: #2c2f34; border-radius: 3px;
     color: #f8be34; font-size: 11px; line-height: 1.5;
 }
+
+/* Working state. The dialog stays on screen while several REST calls run, so
+   it has to look occupied rather than merely unresponsive. */
+.rk-exc-dialog.rk-exc-busy input,
+.rk-exc-dialog.rk-exc-busy select,
+.rk-exc-dialog.rk-exc-busy textarea,
+.rk-exc-dialog.rk-exc-busy button { opacity: .5; cursor: not-allowed; }
+
+.rk-exc-working {
+    display: flex; align-items: center; gap: 10px;
+    margin: 12px 0 0; padding: 10px 12px;
+    border-left: 3px solid #4a9fd8; background: #1d2733;
+    font-size: 12px; color: #cfe3f2; line-height: 1.5;
+}
+.rk-exc-spinner {
+    flex: none; width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid #33475b; border-top-color: #7cc0ec;
+    animation: rk-exc-spin .8s linear infinite;
+}
+@keyframes rk-exc-spin { to { transform: rotate(360deg); } }
+
+/* Respects a stated preference not to see motion: the border stays, the
+   spinning stops, and the text still says what is happening. */
+@media (prefers-reduced-motion: reduce) {
+    .rk-exc-spinner { animation: none; border-top-color: #7cc0ec; }
+}

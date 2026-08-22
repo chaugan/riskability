@@ -16,7 +16,14 @@
 # exactly what happened here.
 #
 # Bumping by hand is the kind of step that gets forgotten, so it is done here,
-# automatically, and only when the built artefact actually changes.
+# automatically, and only when a served asset actually changes.
+#
+# "A served asset" means everything under appserver/static, not just the two
+# visualization bundles. The dashboards' own scripts and stylesheets sit behind
+# the same cache key, and for a while this script watched only the bundles --
+# so a fix to riskability_exceptions.js shipped without a bump and browsers
+# that had the old copy kept it. The symptom is a bug report about behaviour
+# that was fixed, which is a bad way to spend an afternoon.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -51,11 +58,28 @@ for name in riskability_chart riskability_grid; do
   fi
 done
 
+# Everything Splunk serves from this app under the year-long cache key. src/
+# and node_modules/ are inputs to the build rather than served files, so a
+# change there only matters if it changed the bundle, which the hash of the
+# bundle already reflects.
+asset_hash() {
+  find "$ROOT/app/riskability/appserver/static" -type f \
+       \( -name '*.js' -o -name '*.css' -o -name '*.html' \) \
+       -not -path '*/node_modules/*' -not -path '*/src/*' \
+    | sort | xargs sha256sum | sha256sum | cut -d' ' -f1
+}
+
+HASHFILE="$ROOT/tools/.asset-hash"
+now_hash=$(asset_hash)
+was_hash=$(cat "$HASHFILE" 2>/dev/null || echo "")
+if [ "$now_hash" != "$was_hash" ]; then changed=1; fi
+
 if [ "$changed" -eq 0 ]; then
-  echo "  visualizations unchanged (build $(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF"))"
+  echo "  static assets unchanged (build $(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF"))"
   exit 0
 fi
 
+printf '%s\n' "$now_hash" > "$HASHFILE"
 current=$(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF")
 next=$((current + 1))
 # Portable in-place edit: sed -i differs between GNU and BSD.

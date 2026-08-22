@@ -30,6 +30,12 @@
     <input type="hidden" token="cwe_label">
       <default></default>
     </input>
+    <!-- Empty by default, unlike tech_label, which reads "every technique" so
+         panel titles stay grammatical. A filter note has to be blank when
+         nothing is filtered, or every panel claims to be showing a subset. -->
+    <input type="hidden" token="drill_note">
+      <default></default>
+    </input>
   </fieldset>
 
   <row>
@@ -74,6 +80,7 @@
           <set token="tech_name_tok">$row.technique_name$</set>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
           <set token="tech_label">$row.technique_name$</set>
+          <set token="drill_note">technique $row.technique_name$</set>
           <set token="any_filter">1</set>
           <unset token="tech_tok"></unset>
         </drilldown>
@@ -116,6 +123,7 @@
           <set token="tech_name_tok">$row.Name$</set>
           <set token="tech_filter">technique="$row.Technique$"</set>
           <set token="tech_label">$row.Technique$</set>
+          <set token="drill_note">technique $row.Technique$</set>
           <set token="any_filter">1</set>
         </drilldown>
         <option name="drilldown">all</option>
@@ -137,6 +145,7 @@
 | head 40</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
+        <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk — see the coverage panel beside it.</option>
         <option name="height">400</option>
@@ -144,6 +153,7 @@
           <set token="cwe_tok">$row.cwe$</set>
           <set token="cwe_filter">cwe="$row.cwe$"</set>
           <set token="cwe_label"> and $row.cwe$</set>
+          <set token="drill_note">weakness $row.cwe$</set>
           <set token="any_filter">1</set>
         </drilldown>
       </viz>
@@ -181,6 +191,7 @@
 | head 25</query>
         </search>
         <option name="riskability.riskability_chart.chartType">sankey</option>
+        <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">Nothing to map. No open finding has a CWE that MITRE links to a technique.</option>
         <option name="height">460</option>
@@ -189,6 +200,7 @@
           <set token="cwe_label"> and $row.cwe$</set>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
           <set token="tech_label">$row.technique_name$</set>
+          <set token="drill_note">$row.cwe$ leading to $row.technique_name$</set>
           <set token="any_filter">1</set>
         </drilldown>
       </viz>
@@ -224,12 +236,14 @@
 | fields technique_name, lo, q1, med, q3, hi</query>
         </search>
         <option name="riskability.riskability_chart.chartType">boxplot</option>
+        <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">EPSS</option>
         <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to show a distribution. EPSS comes from the feed; if it was not included in the bundle there is nothing to plot.</option>
         <option name="height">420</option>
         <drilldown>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
           <set token="tech_label">$row.technique_name$</set>
+          <set token="drill_note">technique $row.technique_name$</set>
           <set token="any_filter">1</set>
         </drilldown>
       </viz>
@@ -303,6 +317,7 @@
          fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
          cwe AS "CWE", via_capec AS "Via CAPEC", epss AS "EPSS"</query>
         </search>
+        <option name="riskability.riskability_grid.filterNote">$drill_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No findings map to a technique at the current confidence filter.</option>
       </viz>
