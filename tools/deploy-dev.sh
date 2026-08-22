@@ -46,6 +46,19 @@ if [ "${RESTART:-0}" = "1" ]; then
     --accept-license --answer-yes --no-prompt >/dev/null
   echo "splunk restarted"
 else
-  docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "admin:$SPLUNK_PASSWORD" >/dev/null 2>&1 || true
+  # The dev portal proxies to Splunk under a share prefix, which means Splunk has
+# to serve from that prefix. It lives in the etc volume, so recreating the
+# container loses it and the only symptom is that the shared link 404s while
+# localhost:8000 works fine. Restored here so a rebuild does not silently take
+# the environment away from whoever is using the link.
+SHARE_PREFIX="${RISKABILITY_SHARE_PREFIX:-/share/REDACTED}"
+if [ -n "$SHARE_PREFIX" ]; then
+  docker exec -u splunk "$CONTAINER" sh -c \
+    "grep -q 'root_endpoint = $SHARE_PREFIX' /opt/splunk/etc/system/local/web.conf 2>/dev/null || \
+     printf '[settings]\nroot_endpoint = %s\n' '$SHARE_PREFIX' > /opt/splunk/etc/system/local/web.conf" \
+    >/dev/null 2>&1 || true
+fi
+
+docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "admin:$SPLUNK_PASSWORD" >/dev/null 2>&1 || true
   echo "deployed (pass RESTART=1 for a full restart when conf files change)"
 fi
