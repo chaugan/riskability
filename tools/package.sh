@@ -88,6 +88,45 @@ need() {  # need <package> <path-inside> <why>
     printf '  MISS  %-52s %s\n' "$1: $2" "$3"; fail=1
   fi
 }
+# Every dashboard must actually parse, and every conf file the app declares a
+# search command for must exist.
+#
+# Splunk does not validate either at install time. A malformed view renders as a
+# broken page for the one dashboard affected and nothing anywhere says why, and
+# the trap that produced it twice here is subtle: a double hyphen is ILLEGAL
+# inside an XML comment, so writing a perfectly ordinary "-- like this" aside
+# into a comment silently breaks the whole file. A dangling commands.conf
+# filename is worse -- it is a hard Splunkbase certification rejection, and the
+# submission is refused before a human looks at it.
+structure() {
+  local root="$1"
+  python3 - "$root" <<'PYEOF' || fail=1
+import glob, os, sys, xml.dom.minidom
+import configparser
+root = sys.argv[1]
+bad = False
+for f in sorted(glob.glob(os.path.join(root, "default", "data", "ui", "**", "*.xml"), recursive=True)):
+    try:
+        xml.dom.minidom.parse(f)
+        print(f"  ok    xml parses: {os.path.relpath(f, root)}")
+    except Exception as exc:
+        print(f"  BAD   xml is malformed: {os.path.relpath(f, root)}: {exc}")
+        bad = True
+cmds = os.path.join(root, "default", "commands.conf")
+if os.path.exists(cmds):
+    cp = configparser.ConfigParser(strict=False)
+    cp.read(cmds)
+    for stanza in cp.sections():
+        fn = cp.get(stanza, "filename", fallback="")
+        if fn and not os.path.exists(os.path.join(root, "bin", fn)):
+            print(f"  BAD   commands.conf [{stanza}] names bin/{fn}, which does not exist")
+            bad = True
+        elif fn:
+            print(f"  ok    command [{stanza}] -> bin/{fn}")
+sys.exit(1 if bad else 0)
+PYEOF
+}
+
 forbid() {
   if grep -qF "$2" "$LISTS/$1.txt"; then
     printf '  BAD   %-52s %s\n' "$1: contains $2" "$3"; fail=1
@@ -97,6 +136,8 @@ forbid() {
 }
 
 # The search-head app: everything the dashboards and matcher need at runtime.
+structure "$ROOT/app/riskability"
+
 need riskability "riskability/default/app.conf"                    "app identity"
 need riskability "riskability/default/collections.conf"            "KV Store collections and their indexes"
 need riskability "riskability/default/transforms.conf"             "lookup definitions"

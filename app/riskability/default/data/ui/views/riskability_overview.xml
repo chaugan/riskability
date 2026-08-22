@@ -273,8 +273,8 @@
       <!-- kev_due and epss are aggregated, not grouped by. Splunk's stats
            silently discards a row whose BY field is null, so grouping on them
            dropped any known-exploited CVE the feed had no due date or no EPSS
-           score for -- out of the one panel that exists to make a CVE
-           impossible to miss. -->
+           score for, out of the one panel that exists to make a CVE impossible
+           to miss. -->
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings`
