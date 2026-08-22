@@ -46,16 +46,32 @@ if [ "${RESTART:-0}" = "1" ]; then
     --accept-license --answer-yes --no-prompt >/dev/null
   echo "splunk restarted"
 else
-  # The dev portal proxies to Splunk under a share prefix, which means Splunk has
-# to serve from that prefix. It lives in the etc volume, so recreating the
-# container loses it and the only symptom is that the shared link 404s while
-# localhost:8000 works fine. Restored here so a rebuild does not silently take
-# the environment away from whoever is using the link.
+  # The dev portal reverse-proxies Splunk under a share prefix, and Splunk builds
+# absolute asset URLs, so it has to be told to serve from that same prefix.
+# The prefix belongs to a portal SHARE, which targets a registered service by
+# name -- so the service has to keep the name the share was minted against.
+# Renaming it leaves the share pointing at nothing.
+# The setting lives in the etc volume: recreating the container drops it, and
+# the only symptom is that the portal link breaks while localhost:8000 works
+# perfectly -- which reads as the portal being at fault. Restored here so a
+# rebuild does not silently take the environment away from whoever is using it.
+#
+# tools.proxy.on matters as much as the prefix. Without it Splunk answers every
+# redirect with an absolute URL built from the Host header it was proxied with,
+# so the first navigation throws the browser from the portal to
+# http://127.0.0.1:8000/... -- which is unreachable for anybody not sitting on
+# this machine. With it, Splunk honours X-Forwarded-Host and redirects back to
+# the portal's own hostname.
+#
+# Register the service the way the portal's own guide says, once:
+#   curl -X POST http://localhost:3300/api/services -H "Authorization: Bearer $TOKEN" \
+#        -d '{"name":"riskability","target":"http://localhost:8000"}'
 SHARE_PREFIX="${RISKABILITY_SHARE_PREFIX:-/share/REDACTED}"
+PROXY_BASE="${RISKABILITY_PROXY_BASE:-proxy.example.invalid:443}"
 if [ -n "$SHARE_PREFIX" ]; then
   docker exec -u splunk "$CONTAINER" sh -c \
     "grep -q 'root_endpoint = $SHARE_PREFIX' /opt/splunk/etc/system/local/web.conf 2>/dev/null || \
-     printf '[settings]\nroot_endpoint = %s\n' '$SHARE_PREFIX' > /opt/splunk/etc/system/local/web.conf" \
+     printf '[settings]\nroot_endpoint = %s\ntools.proxy.on = True\ntools.proxy.base = %s\n' '$SHARE_PREFIX' '$PROXY_BASE' > /opt/splunk/etc/system/local/web.conf" \
     >/dev/null 2>&1 || true
 fi
 
