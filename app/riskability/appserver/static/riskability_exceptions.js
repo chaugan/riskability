@@ -136,10 +136,15 @@
     }
 
     document.addEventListener(SELECTION_EVENT, function (e) {
-        var rows = (e.detail && e.detail.rows) || [];
-        // Tell the grids apart by what they carry. An exception row has a Key
-        // and an "Applies to"; a finding row has a Host and a Package.
-        var isException = rows.length && ("Applies to" in rows[0]);
+        var detail = e.detail || {};
+        var rows = detail.rows || [];
+        // Attribute the event by its COLUMNS, not by its rows. An empty
+        // selection carries no rows to inspect, and that is exactly the case
+        // that has to be handled: deselecting the last row is what clears the
+        // buttons. Identifying the grid from row contents meant an empty
+        // selection could not be attributed at all, so nothing was cleared and
+        // the toolbar kept offering to edit a row that was no longer selected.
+        var columns = detail.columns || (rows.length ? Object.keys(rows[0]) : []);
         var onRegisterPage = !!document.getElementById("rk-exc-reg-toolbar");
 
         if (!onRegisterPage) {
@@ -147,8 +152,8 @@
             summarise();
             return;
         }
-        if (!isException) { return; }
-        if ("State" in rows[0]) {
+        if (columns.indexOf("Applies to") === -1) { return; }
+        if (columns.indexOf("State") !== -1) {
             expSelection = rows;
             summariseRegister(rows, "rk-exc-exp-summary", ["rk-exc-exp-reaccept"], "re-accept");
         } else {

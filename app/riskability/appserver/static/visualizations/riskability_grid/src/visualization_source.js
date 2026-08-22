@@ -53,11 +53,16 @@ var VALUE_COLOR = {
     informational: '#5c6773', unrated: '#5c6773', unknown: '#f8be34',
     open: '#dc4e41', mitigated: '#53a051', removed: '#708794',
     yes: '#dc4e41', true: '#dc4e41',
+    // Deliberately not a severity colour. An accepted risk is not less severe
+    // than it was -- somebody decided to carry it -- so it reads as a state
+    // somebody put it in rather than as a level on the same scale.
+    accepted: '#8a6fbf',
 };
 
 /* Columns whose values are worth colouring. Matched case-insensitively against
  * the column title, so it survives the SPL renaming its headers. */
-var COLOURED = ['confidence', 'severity', 'kev', 'status', 'authority'];
+var COLOURED = ['confidence', 'severity', 'kev', 'status', 'authority', 'accepted',
+                'reason', 'state'];
 
 function isColoured(title) {
     var t = String(title || '').toLowerCase();
@@ -322,8 +327,17 @@ export default SplunkVisualizationBase.extend({
                     for (var i = 0; i < fields.length; i++) { o[fields[i].name] = d['c' + i]; }
                     return o;
                 });
+                // Column names travel with EVERY event, including the empty
+                // one. A page with two selectable grids has to know which of
+                // them just cleared, and an empty row list says nothing about
+                // where it came from -- so deselecting left the other grid's
+                // buttons armed and its summary on screen.
                 self.el.dispatchEvent(new CustomEvent('riskability-grid-selection', {
-                    bubbles: true, detail: { rows: picked },
+                    bubbles: true,
+                    detail: {
+                        rows: picked,
+                        columns: fields.map(function (f) { return f.name; }),
+                    },
                 }));
             };
             this.table.on('rowSelectionChanged', emit);

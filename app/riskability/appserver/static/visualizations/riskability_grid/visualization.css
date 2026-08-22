@@ -20,8 +20,19 @@
 /* Values that carry severity are tagged rather than merely coloured: colour
    alone is not readable for everyone, so the outline gives a second cue. */
 .riskability-grid .rk-grid-tag {
-    display: inline-block; padding: 1px 7px; border: 1px solid;
-    border-radius: 10px; font-size: 11px; line-height: 1.5;
+    display: inline-block; padding: 1px 8px; border: 1px solid;
+    border-radius: 10px; font-size: 11px; line-height: 1.6;
+    font-weight: 600; letter-spacing: 0.2px;
+    /* A faint wash of the same colour, so the pill reads as a state at a
+       glance rather than as coloured text that happens to be in a box. */
+    background: currentColor;
+    background-blend-mode: normal;
+}
+/* currentColor as a background would hide the text, so the text is repainted
+   over it with a mix that keeps the label legible on any of the palette. */
+.riskability-grid .rk-grid-tag {
+    background: transparent;
+    box-shadow: inset 0 0 0 999px rgba(255, 255, 255, 0.06);
 }
 
 .riskability-grid .rk-grid-msg {

@@ -25,7 +25,7 @@
       <default>cwe=*</default>
     </input>
     <input type="hidden" token="tech_label">
-      <default>each technique</default>
+      <default>every technique</default>
     </input>
     <input type="hidden" token="cwe_label">
       <default></default>
@@ -131,6 +131,7 @@
         <search>
           <query>| `riskability_finding_cwes`
 | search hostname=$host_tok|s$
+| search $cwe_filter$
 | stats dc(cve_id) AS cves BY cwe
 | sort - cves
 | head 40</query>
@@ -169,11 +170,12 @@
 
   <row>
     <panel>
-      <title>Which weaknesses lead to which techniques</title>
+      <title>Which weaknesses lead to which techniques — $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
+| search $tech_filter$ $cwe_filter$
 | stats dc(cve_id) AS cves BY cwe, technique_name
 | sort - cves
 | head 25</query>
@@ -207,11 +209,12 @@
 
   <row>
     <panel>
-      <title>Exploitation likelihood per technique (EPSS distribution)</title>
+      <title>Exploitation likelihood — $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_attack_surface`
 | search hostname=$host_tok|s$ $conf_tok$
+| search $tech_filter$ $cwe_filter$
 | stats min(epss) AS lo, perc25(epss) AS q1, median(epss) AS med,
         perc75(epss) AS q3, max(epss) AS hi, dc(cve_id) AS cves
         BY technique_name
@@ -244,16 +247,26 @@
     </panel>
   </row>
 
+  <!-- depends/rejects belong on the PANEL. On an <html> element inside a panel
+       they are ignored, so the "filtered by" chip rendered even with nothing
+       selected and announced "Filtered by each technique". -->
   <row>
-    <panel>
+    <panel rejects="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a technique above, a matrix cell, or a CWE tile to
-            narrow the table below.</span>
-          <span class="rk-drill-state" depends="$any_filter$">
-            Filtered by $tech_label$$cwe_label$
-          </span>
-          <a class="rk-drill-clear" depends="$any_filter$"
+          <span class="rk-drill-hint">Click a technique, a matrix cell, a CWE tile, a Sankey
+            ribbon or a box below to narrow this page to it.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$any_filter$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">This page is narrowed. The panels below show only what
+            matches; the matrix and the technique list stay whole so you can pick something
+            else.</span>
+          <span class="rk-drill-state">Filtered by $tech_label$$cwe_label$</span>
+          <a class="rk-drill-clear"
              href="riskability_mitre?form.host_tok=$host_tok$&amp;form.conf_tok=$conf_tok$">Clear</a>
         </div>
       </html>
