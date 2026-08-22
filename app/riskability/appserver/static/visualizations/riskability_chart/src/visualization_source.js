@@ -347,7 +347,7 @@ function buildBoxplot(rows, t, config) {
         // containLabel lets ECharts measure the rotated labels and reserve
         // room for them. With it false, long technique names ran off the
         // bottom of the panel and the axis name was clipped at the top.
-        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
+        grid: { left: 44, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: {
             type: 'category', data: cats,
             axisLabel: {
@@ -390,7 +390,7 @@ function buildBar(rows, t, config) {
             trigger: 'axis', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
         },
-        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
+        grid: { left: 44, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: {
             type: 'category', data: cats,
             axisLabel: {
@@ -505,7 +505,7 @@ function stacked(rows, t, config, horizontal) {
         // containLabel in both orientations: horizontal carries long category
         // names on the y axis, vertical carries rotated dates on the x, and
         // both were being clipped by fixed margins.
-        grid: { left: 12, right: 24, top: 40, bottom: 12, containLabel: true },
+        grid: { left: 44, right: 24, top: 40, bottom: 12, containLabel: true },
         xAxis: horizontal ? valAxis : catAxis,
         yAxis: horizontal ? catAxis : valAxis,
         series: series,
@@ -524,7 +524,7 @@ function buildLine(rows, t, config) {
     return {
         tooltip: { trigger: 'axis', backgroundColor: t.tooltipBg,
                    borderColor: t.axis, textStyle: { color: t.text } },
-        grid: { left: 12, right: 24, top: 34, bottom: 12, containLabel: true },
+        grid: { left: 44, right: 24, top: 34, bottom: 12, containLabel: true },
         xAxis: { type: 'category', data: xs, boundaryGap: false,
                  axisLabel: { color: t.muted, fontSize: 10, rotate: 30 },
                  axisLine: { lineStyle: { color: t.axis } } },
