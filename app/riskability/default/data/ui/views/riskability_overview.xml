@@ -184,8 +184,14 @@
       <title>Where the open findings are, by package</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_open_findings`
-| stats dc(cve_id) AS cves BY package
+          <!-- From the hourly dimension rollup. This used to read every open
+               finding to group them by package; an inputlookup is
+               single-threaded on the search head, so that is the one cost more
+               hardware does not reduce. -->
+          <query>| inputlookup riskability_openstate_dim_lookup
+| where dim="package"
+| rename value AS package
+| table package, cves
 | sort 50000 - cves
 | head 60</query>
         </search>
@@ -215,8 +221,9 @@
       <title>Findings by confidence</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_open_findings`
-| stats count AS findings BY confidence
+          <query>| inputlookup riskability_openstate_dim_lookup
+| where dim="confidence"
+| rename value AS confidence
 | eval sev = confidence
 | sort 50000 confidence
 | fields confidence, sev, findings</query>

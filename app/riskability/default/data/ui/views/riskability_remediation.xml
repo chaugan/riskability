@@ -73,11 +73,14 @@
       <title>How long findings stay open, by severity</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_open_findings`
-| eval sev = coalesce(severity, "unrated")
-| stats min(age_days) AS lo, perc25(age_days) AS q1, median(age_days) AS med,
-        perc75(age_days) AS q3, max(age_days) AS hi, dc(cve_id) AS cves
-        BY sev
+          <!-- Percentiles come from the hourly dimension rollup, computed
+               there because a percentile cannot be recomputed from an
+               aggregate afterwards. This panel used to read every open finding
+               to work them out. -->
+          <query>| inputlookup riskability_openstate_dim_lookup
+| where dim="severity"
+| rename value AS sev, age_lo AS lo, age_q1 AS q1, age_med AS med,
+         age_q3 AS q3, age_hi AS hi
 | where cves &gt;= 3
 | sort 50000 - cves
 | fields sev, lo, q1, med, q3, hi</query>
