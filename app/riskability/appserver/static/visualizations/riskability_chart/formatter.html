@@ -29,4 +29,13 @@
     <splunk-text-input name="display.visualizations.custom.riskability.riskability_chart.emptyText"
                        value=""></splunk-text-input>
   </splunk-control-group>
+
+  <splunk-control-group label="Click behaviour"
+                        help="Turn off where a click has nowhere useful to go. Splunk's default for a drilldown with no target is to leave the dashboard for a raw search.">
+    <splunk-select name="display.visualizations.custom.riskability.riskability_chart.drilldown"
+                   value="enabled">
+      <option value="enabled">Emits a drilldown</option>
+      <option value="disabled">Not clickable</option>
+    </splunk-select>
+  </splunk-control-group>
 </form>

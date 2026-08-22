@@ -28,6 +28,10 @@
         <option name="riskability.riskability_chart.chartType">treemap</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
         <option name="riskability.riskability_chart.emptyText">No inventory has been received. Nothing can be assessed until swinv data reaches the index.</option>
+        <!-- Illustrative rather than navigational: a click here has nowhere
+             useful to go, and Splunk's default for a drilldown with no target
+             is to abandon the dashboard for a raw search. -->
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
         <option name="height">380</option>
       </viz>
     </panel>

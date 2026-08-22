@@ -674,6 +674,7 @@ export default SplunkVisualizationBase.extend({
             return;
         }
 
+        this._config = config;
         this._render(option, rows.length >= ROW_CAP, chartType, data.fields);
     },
 
@@ -712,6 +713,9 @@ export default SplunkVisualizationBase.extend({
         // field names. A treemap tile of a package is only useful if the
         // dashboard can then ask for that package.
         var self = this;
+        if (String(this._opt(this._config || {}, 'drilldown') || 'enabled') === 'disabled') {
+            return;
+        }
         var names = (CLICK_FIELDS[chartType] || []);
         this.chart.on('click', function (params) {
             var values = [];

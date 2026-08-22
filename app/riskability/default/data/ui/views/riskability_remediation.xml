@@ -183,6 +183,10 @@
         <option name="riskability.riskability_chart.chartType">stackedcolumn</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>
         <option name="riskability.riskability_chart.emptyText">No findings have been recorded yet. This chart fills in as scans accumulate.</option>
+        <!-- Illustrative rather than navigational: a click here has nowhere
+             useful to go, and Splunk's default for a drilldown with no target
+             is to abandon the dashboard for a raw search. -->
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
         <option name="height">380</option>
       </viz>
       <html>

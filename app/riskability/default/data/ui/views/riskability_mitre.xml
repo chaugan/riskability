@@ -182,6 +182,13 @@
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">Nothing to map. No open finding has a CWE that MITRE links to a technique.</option>
         <option name="height">460</option>
+        <drilldown>
+          <set token="cwe_filter">cwe="$row.cwe$"</set>
+          <set token="cwe_label"> and $row.cwe$</set>
+          <set token="tech_filter">technique_name="$row.technique_name$"</set>
+          <set token="tech_label">$row.technique_name$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -217,6 +224,11 @@
         <option name="riskability.riskability_chart.valueLabel">EPSS</option>
         <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to show a distribution. EPSS comes from the feed; if it was not included in the bundle there is nothing to plot.</option>
         <option name="height">420</option>
+        <drilldown>
+          <set token="tech_filter">technique_name="$row.technique_name$"</set>
+          <set token="tech_label">$row.technique_name$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">

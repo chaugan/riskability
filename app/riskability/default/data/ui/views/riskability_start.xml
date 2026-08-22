@@ -295,6 +295,10 @@
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open findings to trace through the chain.</option>
+        <!-- Illustrative rather than navigational: a click here has nowhere
+             useful to go, and Splunk's default for a drilldown with no target
+             is to abandon the dashboard for a raw search. -->
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
         <option name="height">280</option>
       </viz>
       <html>

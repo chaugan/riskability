@@ -181,6 +181,9 @@
         <option name="riskability.riskability_chart.valueLabel">findings</option>
         <option name="riskability.riskability_chart.emptyText">Nothing matched. With no feed imported the matcher has nothing to compare against.</option>
         <option name="height">300</option>
+        <drilldown>
+          <link target="_blank">/app/riskability/riskability_findings?form.confidence_tok=confidence%3D$row.confidence$&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
+        </drilldown>
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">
@@ -233,7 +236,6 @@
 | stats dc(hostname) AS hosts, values(package) AS packages BY cve_id, kev_added, kev_due, epss
 | sort - hosts</query>
         </search>
-        <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle — if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
         <option name="drilldown">all</option>
         <drilldown>
