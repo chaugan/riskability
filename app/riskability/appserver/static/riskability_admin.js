@@ -203,6 +203,75 @@
         }
         root.appendChild(card);
 
+        // ---- index names -------------------------------------------------
+        //
+        // Plenty of organisations mandate an index naming scheme, and an app
+        // that hardcodes four names either gets forked locally or does not get
+        // installed. The names live in macros so every dashboard, saved search
+        // and the matcher follow from one place.
+        var idx = el("div", "rk-card");
+        idx.appendChild(el("h3", null, "Index names"));
+        idx.appendChild(el("p", "rk-dim",
+            "Change these if your site has its own naming scheme. Everything the app " +
+            "searches follows from here. Two things do not, because they are not this " +
+            "app's to change: the indexes have to exist on your indexers, and the " +
+            "forwarder has to send inventory to the name you choose."));
+
+        var idxInputs = {};
+        var idxTbl = el("table", "rk-table");
+        (state.indexes || []).forEach(function (row) {
+            var tr = el("tr");
+            var lab = el("td");
+            lab.appendChild(el("div", null, row.description));
+            if (row.value !== row.default) {
+                lab.appendChild(el("div", "rk-dim", "ships as " + row.default));
+            }
+            tr.appendChild(lab);
+            var td = el("td");
+            var input = el("input", "rk-input");
+            input.type = "text";
+            input.value = row.value;
+            input.spellcheck = false;
+            idxInputs[row.macro] = input;
+            td.appendChild(input);
+            tr.appendChild(td);
+            idxTbl.appendChild(tr);
+        });
+        idx.appendChild(idxTbl);
+
+        var idxMsg = el("div", "rk-status");
+        idxMsg.style.display = "none";
+        var idxBtn = el("button", "rk-btn", "Save index names");
+        idxBtn.type = "button";
+        idxBtn.addEventListener("click", function () {
+            var body = {};
+            Object.keys(idxInputs).forEach(function (k) { body[k] = idxInputs[k].value; });
+            idxBtn.disabled = true;
+            idxMsg.style.display = "";
+            idxMsg.className = "rk-status";
+            idxMsg.textContent = "Saving\u2026";
+            request("POST", { action: "set_indexes", indexes: body }).then(function (r) {
+                idxMsg.className = "rk-status rk-warn";
+                idxMsg.textContent = "";
+                idxMsg.appendChild(el("b", null,
+                    r.changed && r.changed.length
+                        ? "Saved. " + r.changed.length + " name" +
+                          (r.changed.length === 1 ? "" : "s") + " changed."
+                        : "Saved. Nothing changed."));
+                (r.reminder || []).forEach(function (line) {
+                    idxMsg.appendChild(el("span", null, line));
+                });
+                idxBtn.disabled = false;
+            }).catch(function (err) {
+                idxMsg.className = "rk-status rk-bad";
+                idxMsg.textContent = String(err.message || err);
+                idxBtn.disabled = false;
+            });
+        });
+        idx.appendChild(idxBtn);
+        idx.appendChild(idxMsg);
+        root.appendChild(idx);
+
         // ---- staged bundles ---------------------------------------------
         var staged = el("div", "rk-card");
         staged.appendChild(el("h3", null, "Staged bundles"));

@@ -7,7 +7,7 @@
        condition that matters is a receipt saying findings were produced with no
        state rows carrying that run. -->
   <search>
-    <query>index=riskability_findings sourcetype=riskability:findings
+    <query>index=`riskability_index_findings` sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
     _index_earliest=`riskability_stuck_window` _index_latest=now
@@ -148,7 +148,7 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>index=riskability_findings sourcetype=riskability:findings
+          <query>index=`riskability_index_findings` sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
     _index_earliest=`riskability_stuck_window` _index_latest=now

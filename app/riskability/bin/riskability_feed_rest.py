@@ -48,6 +48,35 @@ from riskability import importer  # noqa: E402
 SPLUNK_HOME = os.environ.get("SPLUNK_HOME", "/opt/splunk")
 INCOMING_DIR = os.path.join(SPLUNK_HOME, "var", "run", "riskability", "incoming")
 
+# The four index names, held in macros so SPL picks them up by expansion and a
+# site can use its own naming scheme without forking the app. Order is the
+# order they appear on the setup page.
+INDEX_MACROS = (
+    ("riskability_index_inventory", "riskability_inventory",
+     "Software inventory from swinv."),
+    ("riskability_index_findings", "riskability_findings",
+     "Findings the matcher produces, and its per-host receipts."),
+    ("riskability_index_archive", "riskability_findings_archive",
+     "Findings retired out of the live state collection."),
+    ("riskability_index_audit", "riskability_audit",
+     "Who accepted which risk, when, and what they said was in place instead."),
+)
+
+
+def _index_names(service) -> list:
+    """What each index is currently called, and what it ships as."""
+    out = []
+    for name, shipped, blurb in INDEX_MACROS:
+        current = shipped
+        try:
+            current = (service.confs["macros"][name].content.get("definition")
+                       or shipped).strip() or shipped
+        except Exception:
+            pass
+        out.append({"macro": name, "value": current, "default": shipped,
+                    "description": blurb})
+    return out
+
 # A direct upload arrives base64-encoded in a JSON body and is held in memory
 # whole. Anything larger belongs in the staged-file flow.
 MAX_DIRECT_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -101,6 +130,60 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             port=meta.get("server", {}).get("port") or 8089,
             scheme="https",
         )
+
+    def _set_indexes(self, service, body):
+        """Point the app at differently-named indexes.
+
+        Writes the macros to the app's local layer. It deliberately does not
+        create the indexes or touch any forwarder: creating indexes on someone
+        else's indexer tier is not an app's decision, and the forwarder is not
+        reachable from here. Both are named in the reply so the operator is told
+        what is still theirs to do, rather than finding out from an empty
+        dashboard.
+        """
+        wanted = body.get("indexes") or {}
+        shipped = {m: d for m, d, _ in INDEX_MACROS}
+        changed, unknown = [], []
+        for macro, value in wanted.items():
+            if macro not in shipped:
+                unknown.append(macro)
+                continue
+            value = str(value or "").strip()
+            if not value:
+                value = shipped[macro]
+            # Splunk index names: letters, digits, underscore and hyphen, not
+            # starting with an underscore (that namespace is Splunk's own).
+            if not re.match(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,255}$", value):
+                raise ValueError(
+                    f"{value!r} is not a usable index name. Splunk allows letters, "
+                    "digits, underscores and hyphens, and a leading underscore is "
+                    "reserved for Splunk's own indexes.")
+            try:
+                conf = service.confs["macros"]
+                if macro in conf:
+                    conf[macro].update(definition=value)
+                else:
+                    conf.create(macro, definition=value, iseval=0)
+            except Exception as exc:
+                raise ValueError(
+                    f"could not write the {macro} macro: {exc}. The app directory "
+                    "is probably not writable by the user splunkd runs as -- see "
+                    "the README's install notes.")
+            changed.append({"macro": macro, "value": value})
+        if unknown:
+            raise ValueError("unknown index setting(s): " + ", ".join(sorted(unknown)))
+        return _reply(200, {
+            "ok": True,
+            "changed": changed,
+            "indexes": _index_names(service),
+            "reminder": [
+                "Create these indexes on the indexers if they do not exist. "
+                "TA-riskability-indexes creates the four default names only.",
+                "Point the forwarder's inputs.conf at the same inventory index, "
+                "or no data will arrive.",
+                "Data already written to the previous indexes stays there.",
+            ],
+        })
 
     def _list_incoming(self):
         os.makedirs(INCOMING_DIR, exist_ok=True)
@@ -170,6 +253,7 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             "incoming": self._list_incoming(),
             "incoming_dir": INCOMING_DIR,
             "schema": feedlib.SCHEMA_VERSION,
+            "indexes": _index_names(service),
         }
         # Only verify when nothing is mid-flight: during an import the counts
         # legitimately disagree, and counting millions of rows is not free.
@@ -196,6 +280,8 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             return self._import(request, body)
         if action == "delete":
             return self._delete(body)
+        if action == "set_indexes":
+            return self._set_indexes(self._service(request), body)
         if action == "online_check":
             return self._online_check()
         if action == "fetch":

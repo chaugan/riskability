@@ -218,7 +218,7 @@ class FeedWorker(Script):
             else:
                 raise ValueError(f"unknown action {action!r}")
 
-            self._mark_configured(service)
+            self._mark_configured(service, ew)
             ew.log("INFO", "riskability: feed operation complete")
 
         except Exception as exc:
@@ -251,8 +251,11 @@ class FeedWorker(Script):
             service.post("/servicesNS/nobody/riskability/apps/local/riskability",
                          configured=1)
             ew.log("INFO", "riskability: a feed is present; cleared the setup gate")
-        except Exception:
-            pass
+        except Exception as exc:
+            ew.log("WARN", f"riskability: a feed is imported but the setup gate could "
+                           f"not be cleared ({exc}). The app directory is probably not "
+                           "writable by the user splunkd runs as; fix with: "
+                           "chown -R splunk:splunk $SPLUNK_HOME/etc/apps/riskability")
 
     def _expire_archived_findings(self, kv, ew) -> None:
         """Delete state rows that have already been written to the archive.
@@ -343,12 +346,27 @@ class FeedWorker(Script):
             raise ValueError(f"no staged bundle named {name!r}")
         return full
 
-    def _mark_configured(self, service):
+    def _mark_configured(self, service, ew=None):
+        """Clear Splunk's first-run setup gate now that a feed exists.
+
+        Reports a failure rather than swallowing it. The usual cause is that
+        the app directory is not writable by the user splunkd runs as, which is
+        what installing by untarring the package as root leaves behind. The
+        symptom is that "this app has not been fully configured yet" keeps
+        interrupting every navigation forever, with a fully imported feed
+        sitting behind it and nothing anywhere saying why -- and Splunk's own
+        answer to the write, "Could not find writer for .../is_configured", is
+        invisible unless somebody is watching this log.
+        """
         try:
             service.post("/servicesNS/nobody/riskability/apps/local/riskability",
                          configured=1)
-        except Exception:
-            pass
+        except Exception as exc:
+            if ew is not None:
+                ew.log("WARN", f"riskability: could not clear the setup gate ({exc}). "
+                               "The app directory is probably not writable by the user "
+                               "splunkd runs as; fix with: chown -R splunk:splunk "
+                               "$SPLUNK_HOME/etc/apps/riskability")
 
 
 if __name__ == "__main__":

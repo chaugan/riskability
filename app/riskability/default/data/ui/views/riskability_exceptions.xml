@@ -161,7 +161,7 @@
       <title>Audit trail</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>index=riskability_audit sourcetype=riskability:exception:audit
+          <query>index=`riskability_index_audit` sourcetype=riskability:exception:audit
 | eval at = strftime(coalesce(when, _time), "%Y-%m-%d %H:%M:%S")
 | eval covered = coalesce(findings_affected, "")
 | sort - _time

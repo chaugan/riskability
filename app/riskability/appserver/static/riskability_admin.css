@@ -141,3 +141,12 @@
     background: #1a1d21; color: #f2f4f5; padding: 1px 5px;
     border-radius: 2px; font-size: 11px;
 }
+
+/* Index-name fields on the setup page. */
+.rk-input {
+    width: 100%; min-width: 220px; box-sizing: border-box;
+    padding: 6px 9px; font-family: inherit; font-size: 13px;
+    background: #12181f; color: #dce6f0;
+    border: 1px solid #3a4a5a; border-radius: 3px;
+}
+.rk-input:focus { outline: none; border-color: #7cc0ec; }

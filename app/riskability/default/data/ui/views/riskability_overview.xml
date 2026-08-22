@@ -7,7 +7,7 @@
        condition that matters is a receipt saying findings were produced with no
        state rows carrying that run. -->
   <search>
-    <query>index=riskability_findings sourcetype=riskability:findings
+    <query>index=`riskability_index_findings` sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
     _index_earliest=`riskability_stuck_window` _index_latest=now
@@ -56,7 +56,7 @@
       <title>Hosts reporting</title>
       <single>
         <search>
-          <query>index=riskability_inventory sourcetype=riskability:swinv earliest=-7d
+          <query>index=`riskability_index_inventory` sourcetype=riskability:swinv earliest=-7d
 | stats dc(hostname) AS hosts</query>
         </search>
         <option name="drilldown">none</option>
@@ -92,7 +92,7 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>index=riskability_findings sourcetype=riskability:findings
+          <query>index=`riskability_index_findings` sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
     _index_earliest=`riskability_stuck_window` _index_latest=now

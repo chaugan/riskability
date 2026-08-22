@@ -37,7 +37,27 @@ from splunk.persistconn.application import PersistentServerConnectionApplication
 
 EXCEPTIONS_COLLECTION = "riskability_exceptions"
 FINDINGS_STATE_COLLECTION = "riskability_findings_state"
-AUDIT_INDEX = "riskability_audit"
+AUDIT_INDEX_DEFAULT = "riskability_audit"
+AUDIT_INDEX_MACRO = "riskability_index_audit"
+
+
+def _audit_index(service) -> str:
+    """The index the audit trail is written to, as configured.
+
+    Index names are a macro so a site can use its own naming scheme; SPL picks
+    them up by expansion, but Python has to ask. Falls back to the shipped name
+    rather than failing: losing the audit record is worse than writing it to
+    the default index, and the alternative is an accept-risk request that
+    errors after the decision has already been applied.
+    """
+    try:
+        macro = service.confs["macros"][AUDIT_INDEX_MACRO]
+        name = (macro.content.get("definition") or "").strip()
+        if name:
+            return name
+    except Exception:
+        pass
+    return AUDIT_INDEX_DEFAULT
 AUDIT_SOURCETYPE = "riskability:exception:audit"
 
 # An exception says one of three things, and which one has to be stated rather
@@ -233,7 +253,7 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
             # was one host or four hundred.
             event["findings_affected"] = finding_count
         try:
-            service.indexes[AUDIT_INDEX].submit(
+            service.indexes[_audit_index(service)].submit(
                 json.dumps(event, sort_keys=True), sourcetype=AUDIT_SOURCETYPE)
         except Exception:
             # An audit that cannot be written must not silently succeed, but it
