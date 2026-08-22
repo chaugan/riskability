@@ -179,7 +179,7 @@
       <title>Open findings</title>
       <single>
         <search>
-          <query>| `riskability_open_findings` | stats dc(finding_key) AS n</query>
+          <query>| inputlookup riskability_openstate_host_lookup | stats sum(findings) AS n</query>
         </search>
         <option name="underLabel">excluding accepted risks</option>
         <option name="rangeColors">["0x708794","0xf8be34","0xdc4e41"]</option>
@@ -192,7 +192,7 @@
       <title>Accepted risks</title>
       <single>
         <search>
-          <query>| `riskability_accepted_findings` | stats dc(finding_key) AS n</query>
+          <query>| inputlookup riskability_openstate_host_lookup | stats sum(accepted) AS n</query>
         </search>
         <option name="underLabel">excluded on purpose, with a recorded reason</option>
         <option name="drilldown">none</option>

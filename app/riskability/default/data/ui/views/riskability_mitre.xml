@@ -9,10 +9,12 @@
     </input>
     <input type="dropdown" token="conf_tok" searchWhenChanged="true">
       <label>Confidence</label>
-      <choice value="confidence=high">High only</choice>
-      <choice value="confidence=*">All</choice>
-      <default>confidence=high</default>
-      <initialValue>confidence=high</initialValue>
+      <!-- Bare values, not SPL fragments, so they can be pushed into the KV
+           Store's own where clause instead of filtering after the read. -->
+      <choice value="high">High only</choice>
+      <choice value="*">All</choice>
+      <default>high</default>
+      <initialValue>high</initialValue>
     </input>
     <!-- Drilldown state. A search token cannot be conditional, so each filter
          has an "everything" default that the drilldown replaces. Splunk unsets
@@ -63,8 +65,7 @@
       <title>ATT&amp;CK matrix — where open findings sit in an attack</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_attack_matrix`
-| search hostname=$host_tok|s$ $conf_tok$
+          <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
 | stats dc(cve_id) AS cves BY tactic_name, tactic_order, technique_name
 | eventstats max(cves) AS peak BY technique_name
 | sort 50000 - peak
@@ -107,8 +108,7 @@
       <title>Techniques enabled by open findings, most exposed first</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_attack_surface`
-| search hostname=$host_tok|s$ $conf_tok$
+          <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
 | stats dc(cve_id) AS cves, dc(hostname) AS hosts, dc(package) AS packages,
         values(cwe) AS weaknesses, max(epss) AS peak_epss
         BY technique, technique_name
@@ -137,8 +137,7 @@
       <title>Weakness classes present in the fleet (CWE)</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_finding_cwes`
-| search hostname=$host_tok|s$
+          <query>| `riskability_finding_cwes_for($host_tok|s$, "*")`
 | stats dc(cve_id) AS cves BY cwe
 | sort 50000 - cves
 | head 40</query>
@@ -167,8 +166,7 @@
       <title>Coverage of the mapping itself</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_open_findings`
-| search hostname=$host_tok|s$
+          <query>| `riskability_open_findings_for($host_tok|s$)`
 | lookup riskability_advisory_lookup cve_id OUTPUT cwes
 | eval mapped = case(isnull(cwes) OR cwes=="", "no CWE recorded for this CVE", 1=1, "has a CWE")
 | stats dc(cve_id) AS cves BY mapped
@@ -188,8 +186,7 @@
       <title>Which weaknesses lead to which techniques — $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_attack_surface`
-| search hostname=$host_tok|s$ $conf_tok$
+          <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
 | search $tech_filter$ $cwe_filter$
 | stats dc(cve_id) AS cves BY cwe, technique_name
 | sort 50000 - cves
@@ -229,8 +226,7 @@
       <title>Exploitation likelihood — $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_attack_surface`
-| search hostname=$host_tok|s$ $conf_tok$
+          <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
 | search $tech_filter$ $cwe_filter$
 | stats min(epss) AS lo, perc25(epss) AS q1, median(epss) AS med,
         perc75(epss) AS q3, max(epss) AS hi, dc(cve_id) AS cves
@@ -310,7 +306,7 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_attack_surface_detail`
-| search hostname=$host_tok|s$ $conf_tok$
+| search hostname=$host_tok|s$ confidence=$conf_tok|s$
 | search $tech_filter$ $cwe_filter$
 | eval root = if(scope_id!="", scope_id, "host")
 | eval installed_version = last_version
