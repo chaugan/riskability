@@ -265,16 +265,35 @@
           <span>
             CISA lists them as known-exploited, which is a stronger signal than any severity
             score: it is not a prediction. Click a row to see every finding for that CVE.
-          </span>
+            Where several advisories describe the same CVE, the shortest description is shown:
+            a distribution's one-line summary says what the flaw is, where NVD's runs to a
+            paragraph about affected versions.</span>
         </div>
       </html>
+      <!-- kev_due and epss are aggregated, not grouped by. Splunk's stats
+           silently discards a row whose BY field is null, so grouping on them
+           dropped any known-exploited CVE the feed had no due date or no EPSS
+           score for -- out of the one panel that exists to make a CVE
+           impossible to miss. -->
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings`
 | where confidence!="informational"
 | where isnotnull(kev_added) AND kev_added!=""
-| stats dc(hostname) AS hosts, values(package) AS packages BY cve_id, kev_added, kev_due, epss
-| sort - hosts</query>
+| eval tlen = len(title)
+| eventstats min(tlen) AS shortest BY cve_id
+| eval short_title = if(tlen == shortest, title, null())
+| stats dc(hostname) AS hosts, values(package) AS packages,
+        values(kev_added) AS kev_added, values(kev_due) AS kev_due,
+        max(epss) AS epss, values(short_title) AS title
+        BY cve_id
+| eval title = mvindex(title, 0)
+| eval epss_pct = if(isnotnull(epss), round(epss * 100, 1), null())
+| sort - hosts
+| table cve_id, title, hosts, packages, kev_added, kev_due, epss_pct
+| rename cve_id AS "CVE", title AS "What it is", hosts AS "Hosts",
+         packages AS "Packages", kev_added AS "Added to KEV",
+         kev_due AS "Remediate by", epss_pct AS "EPSS %"</query>
         </search>
         <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle — if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
         <option name="drilldown">all</option>
