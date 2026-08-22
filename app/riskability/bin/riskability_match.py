@@ -44,8 +44,10 @@ CPE_ECOSYSTEM = "cpe"
 
 # KV Store refuses to return more than this per query (limits.conf
 # [kvstore] max_rows_per_query, default 50000), so paginate rather than
-# silently truncating a package with many advisories.
-KV_PAGE = 5000
+# silently truncating a package with many advisories. Paging AT the cap rather
+# than well under it: at 5,000 a hot package cost ten round trips to fetch what
+# one could carry, and every round trip is HTTP to Mongo.
+KV_PAGE = 50000
 
 
 @Configuration()
@@ -67,6 +69,22 @@ class RiskabilityMatchCommand(EventingCommand):
         super().__init__()
         self._advisory_cache: Dict[str, dict] = {}
         self._generation = None
+        # Caches that live for the whole command invocation rather than for one
+        # protocol chunk. Splunk hands a chunked command 50,000 rows at a time,
+        # so on a large fleet transform() is called many times -- and every one
+        # of those calls used to re-fetch openssl's ranges from KV Store.
+        self._range_cache: Dict[Tuple[str, str], List[dict]] = {}
+        self._na_cache: Dict[Tuple[str, str], List[dict]] = {}
+        self._fetched: set = set()
+        # Deliberately NOT caching verdicts by component identity, though a
+        # gold-image fleet would benefit enormously. match_component bakes the
+        # hostname into finding_key, and applies host-scoped suppressions, so a
+        # shared verdict carries the first host's identity to every other host
+        # -- silently, and worst on exactly the homogeneous fleets the sharing
+        # is meant to help. Doing it safely means separating the host-
+        # independent verdict from the host-stamped identity inside match.py,
+        # which is a change to the matching contract, not a cache.
+        self._stats = {"kv_queries": 0}
 
     # -- KV Store access ---------------------------------------------------
 
@@ -99,28 +117,31 @@ class RiskabilityMatchCommand(EventingCommand):
             skip += KV_PAGE
         return out
 
-    def _candidates(self, wanted: Dict[str, set]) -> Tuple[Dict, Dict]:
-        """Fetch ranges and not-affected rows for the (ecosystem, packages) seen.
+    def _candidates(self, wanted: Dict[str, set]) -> None:
+        """Fetch ranges and not-affected rows for identities not already held.
 
         One query per ecosystem with an ``$in`` on the package names, rather
-        than one query per inventory row.
+        than one query per inventory row -- and only for names this command has
+        not already asked about. A name that returned nothing is remembered too:
+        most installed packages have no advisory at all, and re-asking for them
+        on every chunk was the bulk of the KV traffic.
         """
-        ranges: Dict[Tuple[str, str], List[dict]] = {}
-        notaffected: Dict[Tuple[str, str], List[dict]] = {}
-
         for ecosystem, packages in wanted.items():
-            if not packages:
+            names = sorted(n for n in packages if (ecosystem, n) not in self._fetched)
+            if not names:
                 continue
-            names = sorted(packages)
             for i in range(0, len(names), 1000):
                 batch = names[i:i + 1000]
                 q = {"gen": self._gen(), "ecosystem": ecosystem,
                      "package": {"$in": batch}}
+                self._stats["kv_queries"] += 2
                 for row in self._query_all(RANGES_COLLECTION, q):
-                    ranges.setdefault((ecosystem, row.get("package", "")), []).append(row)
+                    self._range_cache.setdefault(
+                        (ecosystem, row.get("package", "")), []).append(row)
                 for row in self._query_all(NOTAFFECTED_COLLECTION, q):
-                    notaffected.setdefault((ecosystem, row.get("package", "")), []).append(row)
-        return ranges, notaffected
+                    self._na_cache.setdefault(
+                        (ecosystem, row.get("package", "")), []).append(row)
+            self._fetched.update((ecosystem, n) for n in names)
 
     def _advisories(self, advisory_ids: Sequence[str]) -> Dict[str, dict]:
         missing = [a for a in set(advisory_ids) if a not in self._advisory_cache]
@@ -165,7 +186,7 @@ class RiskabilityMatchCommand(EventingCommand):
                 wanted.setdefault(CPE_ECOSYSTEM, set()).add(key)
 
         try:
-            ranges, notaffected = self._candidates(wanted)
+            self._candidates(wanted)
         except Exception as exc:
             # A KV Store failure must be visible, not an empty result set that
             # reads as "no vulnerabilities".
@@ -180,10 +201,10 @@ class RiskabilityMatchCommand(EventingCommand):
             cand_ranges: List[dict] = []
             cand_notaffected: List[dict] = []
             for name in matchlib._candidate_names(r):
-                cand_ranges.extend(ranges.get((eco, name), ()))
-                cand_notaffected.extend(notaffected.get((eco, name), ()))
+                cand_ranges.extend(self._range_cache.get((eco, name), ()))
+                cand_notaffected.extend(self._na_cache.get((eco, name), ()))
             for key in matchlib.cpe_candidate_keys(r):
-                cand_ranges.extend(ranges.get((CPE_ECOSYSTEM, key), ()))
+                cand_ranges.extend(self._range_cache.get((CPE_ECOSYSTEM, key), ()))
             if not cand_ranges:
                 continue
             for finding in matchlib.match_component(r, cand_ranges, cand_notaffected):
