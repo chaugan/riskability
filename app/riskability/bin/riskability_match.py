@@ -65,6 +65,12 @@ class RiskabilityMatchCommand(EventingCommand):
         require=False, default=True, validate=Boolean(),
     )
 
+    emit_receipts = Option(
+        doc="Also emit one record per host saying the match completed for it, "
+            "including hosts with no findings at all. Default false.",
+        require=False, default=False, validate=Boolean(),
+    )
+
     def __init__(self):
         super().__init__()
         self._advisory_cache: Dict[str, dict] = {}
@@ -194,8 +200,11 @@ class RiskabilityMatchCommand(EventingCommand):
             return
 
         all_findings = []
+        host_counts: Dict[str, int] = {}
+        produced_by_host: Dict[str, int] = {}
         for r in prepared:
             eco = (r.get("type") or "").strip().lower()
+            host_counts[r.get("hostname", "")] = host_counts.get(r.get("hostname", ""), 0) + 1
             if not eco:
                 continue
             cand_ranges: List[dict] = []
@@ -226,6 +235,8 @@ class RiskabilityMatchCommand(EventingCommand):
                 finding["os_version_id"] = r.get("os_version_id", "")
                 finding["purl"] = r.get("purl", "")
                 all_findings.append(finding)
+                h = r.get("hostname", "")
+                produced_by_host[h] = produced_by_host.get(h, 0) + 1
 
         if self.enrich and all_findings:
             try:
@@ -247,6 +258,34 @@ class RiskabilityMatchCommand(EventingCommand):
 
         for f in all_findings:
             yield f
+
+        # A receipt per host, INCLUDING hosts that produced nothing.
+        #
+        # Without this, "no findings arrived for host H" is indistinguishable
+        # from "the matcher never got to H" -- and the lifecycle reads the
+        # first as "everything on H was fixed". That is exactly how a silent
+        # fold-in failure closed 4,846 open findings and left a green
+        # dashboard. A host that matched clean has to be able to SAY so.
+        #
+        # Emitted per chunk rather than once at the end: a chunked command is
+        # called repeatedly and has no reliable last-call hook, so the counts
+        # are per chunk and the consumer sums them by host.
+        if self.emit_receipts:
+            for host, seen in host_counts.items():
+                # gen_record, not a bare dict.
+                #
+                # splunklib fixes the output field names from the FIRST record
+                # it writes and silently drops any key a later record adds --
+                # so a receipt emitted after the findings arrived as a row with
+                # every field blank, which is worse than not arriving at all:
+                # the consumer sees a record and learns nothing from it.
+                # gen_record registers the extra names so they survive.
+                yield self.gen_record(
+                    record_type="match_receipt",
+                    hostname=host,
+                    components_matched=seen,
+                    findings_produced=produced_by_host.get(host, 0),
+                )
 
 
 dispatch(RiskabilityMatchCommand, sys.argv, sys.stdin, sys.stdout, __name__)

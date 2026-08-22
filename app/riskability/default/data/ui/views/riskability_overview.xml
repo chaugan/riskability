@@ -1,4 +1,21 @@
 <dashboard version="1.1" theme="dark" stylesheet="application.css">
+  <search>
+    <query>| inputlookup riskability_matchstate_lookup
+| where isnull(folded_run) OR folded_run="" OR tonumber(folded_run) &lt; tonumber(matched_at) - 300
+| stats count AS stale</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.stale$ &gt; 0">
+        <set token="pipeline_stale">1</set>
+      </condition>
+      <condition>
+        <unset token="pipeline_stale"></unset>
+      </condition>
+    </done>
+  </search>
+
+
   <label>Fleet overview</label>
   <description>Vulnerability posture across every host reporting a swinv inventory.</description>
 
@@ -47,13 +64,29 @@
 
   <row>
     <panel>
+      <html>
+        <div class="rk-status rk-bad" depends="$pipeline_stale$">
+          <b>Some hosts have been matched but their results have not been folded in.</b>
+          <span>
+            The open counts on this page are stale-high for those hosts, and closing is being
+            withheld for them until the fold completes. Nothing here is under-reporting risk;
+            it may be over-reporting it. See the "Riskability - pipeline did not complete"
+            alert for which hosts.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Open findings</title>
       <single>
         <search>
           <query>| `riskability_open_findings` | stats dc(finding_key) AS n</query>
         </search>
         <option name="underLabel">excluding accepted risks</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeColors">["0x708794","0xf8be34","0xdc4e41"]</option>
         <option name="rangeValues">[1,100]</option>
         <option name="useColors">1</option>
         <option name="drilldown">none</option>
