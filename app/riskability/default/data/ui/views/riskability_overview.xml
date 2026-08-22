@@ -67,8 +67,12 @@
       <title>Components tracked</title>
       <single>
         <search>
-          <query>`riskability_latest_inventory`
-| stats count AS components</query>
+          <!-- From the hourly ecosystem snapshot. The Start page has always
+               read this from a lookup; this panel was still scanning the raw
+               inventory index on every page load for the same number. -->
+          <query>| inputlookup riskability_hostecostate_lookup
+| where hostname="__fleet__"
+| stats sum(instances) AS components</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">latest state, all hosts</option>
@@ -190,7 +194,7 @@
         <option name="riskability.riskability_chart.emptyText">No open findings. If no feed has been imported this means the app cannot assess anything yet, not that the fleet is clean — check the Feed administration page.</option>
         <option name="height">420</option>
         <drilldown>
-          <link target="_blank">/app/riskability/riskability_findings?form.package_tok=$row.package$&amp;form.confidence_tok=confidence%3D*&amp;form.host_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
+          <link target="_blank">/app/riskability/riskability_findings?form.package_tok=$row.package$&amp;form.confidence_tok=*&amp;form.host_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
         </drilldown>
       </viz>
       <html>
@@ -222,7 +226,7 @@
         <option name="riskability.riskability_chart.emptyText">Nothing matched. With no feed imported the matcher has nothing to compare against.</option>
         <option name="height">300</option>
         <drilldown>
-          <link target="_blank">/app/riskability/riskability_findings?form.confidence_tok=confidence%3D$row.confidence$&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
+          <link target="_blank">/app/riskability/riskability_findings?form.confidence_tok=$row.confidence$&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
         </drilldown>
       </viz>
       <html>
@@ -298,7 +302,7 @@
         <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle — if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
         <option name="drilldown">all</option>
         <drilldown>
-          <link target="_blank">/app/riskability/riskability_findings?form.cve_tok=$row.cve_id$&amp;form.confidence_tok=confidence%3D*&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.scope_tok=scope%3D*</link>
+          <link target="_blank">/app/riskability/riskability_findings?form.cve_tok=$row.cve_id$&amp;form.confidence_tok=*&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.scope_tok=scope%3D*</link>
         </drilldown>
       </viz>
     </panel>

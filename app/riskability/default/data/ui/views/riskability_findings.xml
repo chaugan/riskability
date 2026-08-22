@@ -8,11 +8,15 @@
          the filter would match nothing at all. -->
     <input type="dropdown" token="confidence_tok" searchWhenChanged="true">
       <label>Confidence</label>
-      <choice value="confidence=high">High only</choice>
-      <choice value="confidence=*">All</choice>
-      <choice value="confidence=low">Low only</choice>
-      <choice value="confidence=informational">Informational only</choice>
-      <default>confidence=high</default>
+      <!-- A bare value, not the SPL fragment this used to carry, so it can be
+           pushed into the KV Store's own where clause instead of being applied
+           by Splunk after every row has been read. The three inbound links on
+           Fleet overview pass the same bare form. -->
+      <choice value="high">High only</choice>
+      <choice value="*">All</choice>
+      <choice value="low">Low only</choice>
+      <choice value="informational">Informational only</choice>
+      <default>high</default>
       <initialValue>confidence=high</initialValue>
     </input>
     <input type="dropdown" token="scope_tok" searchWhenChanged="true">
@@ -64,9 +68,8 @@
       <title>Findings, ranked by exploitation likelihood (EPSS) rather than CVSS</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_open_findings_all`
-| search hostname=$host_tok|s$ package=$package_tok|s$ cve_id=$cve_tok|s$
-| search $confidence_tok$ $scope_tok$
+          <query>| `riskability_open_findings_all_for($host_tok|s$, $package_tok|s$, $cve_tok|s$, $confidence_tok|s$)`
+| search $scope_tok$
 | eval installed_version = last_version
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")

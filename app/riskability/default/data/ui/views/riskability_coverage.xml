@@ -26,8 +26,13 @@
       <title>Assessable surface by ecosystem</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>`riskability_latest_inventory`
-| stats dc(name) AS components BY type
+          <!-- The fleet totals come from the hourly ecosystem snapshot, not
+               from the inventory index. Reading the index here cost one event
+               per component per scan per host on every page load, for a number
+               that job already computes. -->
+          <query>| inputlookup riskability_hostecostate_lookup
+| where hostname="__fleet__"
+| table type, components
 | sort 50000 - components
 | head 40</query>
         </search>
@@ -73,10 +78,11 @@
       <title>Assessable components by ecosystem</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
+          <query>| inputlookup riskability_hostecostate_lookup
+| where hostname="__fleet__"
 | search $eco_filter$
-| eval has_identifier = if((isnotnull(purl) AND purl!="") OR (isnotnull(cpe_list) AND cpe_list!=""), 1, 0)
-| stats count AS components, sum(has_identifier) AS with_identifier BY type
+| rename instances AS components
+| stats sum(components) AS components, sum(with_identifier) AS with_identifier BY type
 | eval without_identifier = components - with_identifier
 | eval identifier_pct = round(with_identifier * 100 / components, 1)
 | sort 50000 - components
@@ -112,10 +118,10 @@
       <title>Feed coverage, ecosystem by ecosystem</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>`riskability_latest_inventory`
+          <query>| inputlookup riskability_hostecostate_lookup
+| where hostname="__fleet__"
 | search $eco_filter$
-| eval cpe_ident = if(isnotnull(cpe_list) AND cpe_list!="", 1, 0)
-| stats count AS components, sum(cpe_ident) AS cpe_ident BY type
+| stats sum(instances) AS components, sum(cpe_ident) AS cpe_ident BY type
 | append [| `riskability_feed_ecosystems` | rename ecosystem AS type]
 | eventstats max(eval(if(type=="cpe", feed_ranges, null()))) AS cpe_ranges
 | stats max(components) AS components, max(cpe_ident) AS cpe_ident,

@@ -116,8 +116,7 @@
       <title>Findings by root</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_open_findings`
-| search hostname=$hostname|s$
+          <query>| `riskability_open_findings_for($hostname|s$)`
 | where confidence!="informational"
 | eval root = if(scope_id!="", scope_id, "host")
 | eval sev = coalesce(severity, "unrated")
@@ -144,8 +143,7 @@
       <title>Severity against ecosystem</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_open_findings`
-| search hostname=$hostname|s$
+          <query>| `riskability_open_findings_for($hostname|s$)`
 | eval sev = coalesce(severity, "unrated")
 | stats dc(cve_id) AS cves BY sev, ecosystem
 | sort 50000 - cves
@@ -182,8 +180,7 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_open_findings`
-| search hostname=$hostname|s$
+          <query>| `riskability_open_findings_for($hostname|s$)`
 | where confidence!="informational"
 | eval sev = coalesce(severity, "unrated")
 | search $sev_filter$ $eco_filter$
