@@ -132,6 +132,35 @@
     </panel>
   </row>
 
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status" style="margin:0">
+          <b>A host reporting nothing new is not a host that stopped reporting.</b>
+          <span>
+            swinv sends a small <b>heartbeat</b> every scan &#8212; a digest of the machine's
+            component list and nothing else &#8212; and sends the full list only when that digest
+            changes. On a fleet that is not being patched every hour, most scans are a few hundred
+            bytes rather than a few megabytes, and the app re-matches only the hosts whose
+            software actually moved.
+          </span>
+          <span>
+            So <b>Last inventory</b> above tracks heartbeats, not full scans: it answers "is this
+            machine still talking to us", which is the question that matters for trusting a low
+            finding count. A host whose software has not changed in a month is silent in one sense
+            and perfectly healthy in another, and those must not look alike.
+          </span>
+          <span>
+            The findings themselves come from the last full component list a host sent, which may
+            be older than its last heartbeat and is still current &#8212; the digest is how the app
+            knows nothing has changed since. A collector that does not send heartbeats at all
+            works exactly as before: the app computes the digest itself from the component list.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
   <row depends="$pipeline_stale$">
     <panel>
       <html>
