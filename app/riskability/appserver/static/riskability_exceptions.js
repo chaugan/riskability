@@ -14,7 +14,14 @@
     "use strict";
 
     var SELECTION_EVENT = "riskability-grid-selection";
+
+    // Findings selected on the Findings page.
     var selection = [];
+    // Exception rows selected on the register page. Two grids there, so the
+    // selection is tracked per grid: choosing a row in one must not leave a
+    // stale selection arming the other one's buttons.
+    var regSelection = [];
+    var expSelection = [];
 
     function splunkRoot() {
         var path = window.location.pathname;
@@ -114,9 +121,41 @@
         button.disabled = false;
     }
 
+    function summariseRegister(rows, summaryId, buttonIds, verb) {
+        var summary = document.getElementById(summaryId);
+        if (!summary) { return; }
+        var ok = rows.length === 1;
+        summary.textContent = !rows.length ? ""
+            : (ok ? rows[0].CVE + " · " + (rows[0]["Applies to"] || "")
+                  : rows.length + " selected — " + verb + " one at a time, so each keeps its own justification.");
+        summary.className = "rk-exc-summary " + (ok ? "rk-exc-ok" : (rows.length ? "rk-exc-bad" : ""));
+        buttonIds.forEach(function (id) {
+            var b = document.getElementById(id);
+            if (b) { b.disabled = !ok; }
+        });
+    }
+
     document.addEventListener(SELECTION_EVENT, function (e) {
-        selection = (e.detail && e.detail.rows) || [];
-        summarise();
+        var rows = (e.detail && e.detail.rows) || [];
+        // Tell the grids apart by what they carry. An exception row has a Key
+        // and an "Applies to"; a finding row has a Host and a Package.
+        var isException = rows.length && ("Applies to" in rows[0]);
+        var onRegisterPage = !!document.getElementById("rk-exc-reg-toolbar");
+
+        if (!onRegisterPage) {
+            selection = rows;
+            summarise();
+            return;
+        }
+        if (!isException) { return; }
+        if ("State" in rows[0]) {
+            expSelection = rows;
+            summariseRegister(rows, "rk-exc-exp-summary", ["rk-exc-exp-reaccept"], "re-accept");
+        } else {
+            regSelection = rows;
+            summariseRegister(rows, "rk-exc-reg-summary",
+                              ["rk-exc-reg-edit", "rk-exc-reg-revoke"], "edit");
+        }
     });
 
     // ---- the dialog --------------------------------------------------------
@@ -136,17 +175,33 @@
         return control;
     }
 
-    function openDialog() {
+    /* mode: "create" from Findings, or "edit"/"reactivate" from the register. */
+    function openDialog(mode, existing) {
         closeDialog();
-        var cve = distinct(selection, "CVE")[0];
-        var hosts = distinct(selection, "Host");
-        var kev = selection.some(function (r) { return String(r.KEV || "").toLowerCase() === "yes"; });
+        mode = mode || "create";
+        var editing = mode !== "create";
+        var cve = editing ? existing.CVE : distinct(selection, "CVE")[0];
+        var hosts = editing ? [] : distinct(selection, "Host");
+        var kev = !editing && selection.some(function (r) {
+            return String(r.KEV || "").toLowerCase() === "yes";
+        });
 
         var overlay = el("div", "rk-exc-overlay");
         overlay.id = "rk-exc-dialog";
         var box = el("div", "rk-exc-dialog");
 
-        box.appendChild(el("h3", null, "Accept risk — " + cve));
+        box.appendChild(el("h3", null,
+            (mode === "create" ? "Accept risk — " :
+             mode === "reactivate" ? "Re-accept — " : "Edit exception — ") + cve));
+
+        if (editing) {
+            var ctx = el("div", "rk-exc-help");
+            ctx.style.marginBottom = "12px";
+            ctx.textContent = "Applies to " + (existing["Applies to"] || "") +
+                ". Created by " + (existing.By || "unknown") + ". Editing keeps one record " +
+                "for this decision; the change is recorded in the audit trail.";
+            box.appendChild(ctx);
+        }
 
         if (kev) {
             // Allowed, but never by accident. A KEV finding is one CISA says is
@@ -162,6 +217,7 @@
         }
 
         var scopeSel = el("select", "rk-exc-input");
+        if (editing) { scopeSel.disabled = true; }
         [["host_cve", "This CVE on " + (hosts.length === 1 ? hosts[0] : hosts.length + " selected hosts")],
          ["finding", "Only the " + selection.length + " selected finding" +
                      (selection.length === 1 ? "" : "s") + " (exact path)"],
@@ -171,10 +227,19 @@
             opt.value = o[0];
             scopeSel.appendChild(opt);
         });
+        if (editing) {
+            var fixed = el("option", null, existing["Applies to"] || existing.Scope || "");
+            fixed.value = existing.Scope || "host_cve";
+            scopeSel.innerHTML = "";
+            scopeSel.appendChild(fixed);
+        }
         field(box, "What is being accepted", scopeSel,
-              "Host-and-CVE is the usual choice: it survives a rebuild that moves the package, " +
-              "and one entry covers every copy on that host. Fleet-wide also covers hosts that " +
-              "do not exist yet.");
+              editing
+                ? "Fixed. Changing what an exception covers is a different decision — withdraw " +
+                  "this one and accept the new scope, so the trail shows both."
+                : "Host-and-CVE is the usual choice: it survives a rebuild that moves the " +
+                  "package, and one entry covers every copy on that host. Fleet-wide also " +
+                  "covers hosts that do not exist yet.");
 
         var reasonSel = el("select", "rk-exc-input");
         [["compensating_control", "A compensating control is in place"],
@@ -191,6 +256,7 @@
 
         var control = el("textarea", "rk-exc-input rk-exc-area");
         control.rows = 3;
+        if (editing) { control.value = existing["Control in place"] || ""; }
         control.placeholder = "e.g. Host is on an isolated VLAN with no inbound 443, and the " +
                               "service is not reachable from user networks.";
         field(box, "What is in place instead (required)", control,
@@ -208,6 +274,7 @@
 
         var notes = el("textarea", "rk-exc-input rk-exc-area");
         notes.rows = 2;
+        if (editing) { notes.value = existing.Notes || ""; }
         notes.placeholder = "Ticket reference, who agreed it, anything else worth keeping.";
         field(box, "Notes", notes);
 
@@ -218,7 +285,8 @@
         var cancel = el("button", "rk-exc-btn", "Cancel");
         cancel.type = "button";
         cancel.addEventListener("click", closeDialog);
-        var submit = el("button", "rk-exc-btn rk-exc-btn-primary", "Accept risk");
+        var submit = el("button", "rk-exc-btn rk-exc-btn-primary",
+            mode === "create" ? "Accept risk" : mode === "reactivate" ? "Re-accept" : "Save changes");
         submit.type = "button";
         actions.appendChild(cancel);
         actions.appendChild(submit);
@@ -239,6 +307,38 @@
             var expires = expiry.value
                 ? Math.floor(new Date(expiry.value).getTime() / 1000)
                 : null;
+
+            if (editing) {
+                // One record per decision. Editing and re-accepting both update
+                // the row that already exists, so the history of a decision
+                // stays on one line rather than becoming a pile of near
+                // duplicates nobody can follow.
+                post({
+                    action: mode === "reactivate" ? "reactivate" : "update",
+                    exception_key: existing.Key,
+                    // scope_kind, cve_id, hostname and finding_key are not sent:
+                    // the endpoint takes them from the stored record, so what an
+                    // exception covers cannot be changed by an edit.
+                    reason_kind: reasonSel.value,
+                    control: control.value.trim(),
+                    notes: notes.value.trim(),
+                    expires_at: expires,
+                }).then(function (r) {
+                    msg.textContent = mode === "reactivate"
+                        ? "Back in force. It covers " + r.findings_affected +
+                          " finding" + (r.findings_affected === 1 ? "" : "s") +
+                          "; they leave the risk numbers within the hour."
+                        : "Saved. The change is in the audit trail below.";
+                    msg.className = "rk-exc-msg rk-exc-ok";
+                    submit.disabled = true;
+                    setTimeout(function () { closeDialog(); window.location.reload(); }, 2500);
+                }).catch(function (err) {
+                    msg.textContent = String(err.message || err);
+                    msg.className = "rk-exc-msg rk-exc-bad";
+                    submit.disabled = false;
+                });
+                return;
+            }
 
             // One request per rule. A host-scoped accept over several hosts is
             // several rules with the same justification, not one rule that
@@ -294,25 +394,74 @@
         control.focus();
     }
 
+    function confirmRevoke() {
+        var row = regSelection[0];
+        if (!row) { return; }
+        var overlay = el("div", "rk-exc-overlay");
+        overlay.id = "rk-exc-dialog";
+        var box = el("div", "rk-exc-dialog");
+        box.appendChild(el("h3", null, "Return to the risk pool — " + row.CVE));
+        box.appendChild(el("div", "rk-exc-help",
+            "The findings this covers start counting again immediately, and will reappear in " +
+            "every risk number within the hour. The record is kept and marked withdrawn, not " +
+            "deleted, so the trail still shows it was once accepted and by whom."));
+        var msg = el("div", "rk-exc-msg");
+        box.appendChild(msg);
+        var actions = el("div", "rk-exc-actions");
+        var cancel = el("button", "rk-exc-btn", "Cancel");
+        cancel.type = "button";
+        cancel.addEventListener("click", closeDialog);
+        var go = el("button", "rk-exc-btn rk-exc-btn-primary", "Return to risk pool");
+        go.type = "button";
+        go.addEventListener("click", function () {
+            go.disabled = true;
+            msg.textContent = "Withdrawing…";
+            post({ action: "revoke", exception_key: row.Key }).then(function () {
+                msg.textContent = "Withdrawn.";
+                msg.className = "rk-exc-msg rk-exc-ok";
+                setTimeout(function () { closeDialog(); window.location.reload(); }, 1800);
+            }).catch(function (err) {
+                msg.textContent = String(err.message || err);
+                msg.className = "rk-exc-msg rk-exc-bad";
+                go.disabled = false;
+            });
+        });
+        actions.appendChild(cancel);
+        actions.appendChild(go);
+        box.appendChild(actions);
+        overlay.appendChild(box);
+        overlay.addEventListener("click", function (e) {
+            if (e.target === overlay) { closeDialog(); }
+        });
+        document.body.appendChild(overlay);
+    }
+
+    function bind(id, handler) {
+        var b = document.getElementById(id);
+        if (!b || b.dataset.rkWired) { return false; }
+        b.dataset.rkWired = "1";
+        b.addEventListener("click", handler);
+        return true;
+    }
+
     function wire() {
-        var button = document.getElementById("rk-exc-accept");
-        if (!button || button.dataset.rkWired) { return; }
-        button.dataset.rkWired = "1";
-        button.addEventListener("click", openDialog);
-        summarise();
+        var any = false;
+        any = bind("rk-exc-accept", function () { openDialog("create"); }) || any;
+        any = bind("rk-exc-reg-edit", function () { openDialog("edit", regSelection[0]); }) || any;
+        any = bind("rk-exc-reg-revoke", confirmRevoke) || any;
+        any = bind("rk-exc-exp-reaccept", function () {
+            openDialog("reactivate", expSelection[0]);
+        }) || any;
+        if (any) { summarise(); }
+        return any;
     }
 
     // The html panel is rendered by Splunk after this script runs, so wait for
     // the button rather than assuming it exists.
-    if (document.getElementById("rk-exc-accept")) {
-        wire();
-    } else {
-        var observer = new MutationObserver(function () {
-            if (document.getElementById("rk-exc-accept")) {
-                wire();
-                observer.disconnect();
-            }
-        });
-        observer.observe(document.body, { childList: true, subtree: true });
-    }
+    // Splunk renders html panels after this script runs, and the register page
+    // has three buttons across two panels that appear at different moments, so
+    // the observer keeps binding rather than disconnecting on the first hit.
+    wire();
+    var observer = new MutationObserver(wire);
+    observer.observe(document.body, { childList: true, subtree: true });
 })();

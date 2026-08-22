@@ -107,6 +107,7 @@ need riskability "riskability/default/restmap.conf"                "admin REST e
 need riskability "riskability/default/web.conf"                    "exposes the endpoint to Splunk Web"
 need riskability "riskability/default/inputs.conf"                 "the feed worker input"
 need riskability "riskability/default/savedsearches.conf"          "scheduled searches"
+need riskability "riskability/default/data/ui/views/riskability_exceptions.xml" "the risk-exception register"
 need riskability "riskability/README/inputs.conf.spec"             "without it the modular input is never introspected"
 need riskability "riskability/metadata/default.meta"               "permissions"
 need riskability "riskability/bin/riskability_feedworker.py"       "performs imports"

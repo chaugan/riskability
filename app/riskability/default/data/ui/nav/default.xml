@@ -5,6 +5,7 @@
   <view name="riskability_mitre"/>
   <view name="riskability_hosts"/>
   <view name="riskability_coverage"/>
+  <view name="riskability_exceptions"/>
   <view name="riskability_admin"/>
   <view name="search"/>
 </nav>

@@ -316,8 +316,24 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
                                      "state": self._state_of(row, _now())})
 
         if action in ("create", "update", "reactivate"):
-            row = _validate(payload)
             now = _now()
+            if action != "create":
+                # Scope is taken from the record, never from the request.
+                #
+                # What an exception covers is the decision itself; changing it
+                # is a different decision and should be a withdrawal and a new
+                # entry, so the trail shows both. The dialog disables the
+                # control, but a disabled control in a browser is a courtesy,
+                # not an authorisation boundary.
+                key = _require(payload, "exception_key")
+                before = self._one(data, key)
+                payload = dict(payload)
+                for field_name in ("scope_kind", "hostname", "cve_id", "finding_key"):
+                    payload[field_name] = before.get(field_name, "")
+                if "expires_at" not in payload:
+                    payload["expires_at"] = before.get("expires_at", "")
+
+            row = _validate(payload)
             if action == "create":
                 key = uuid.uuid4().hex
                 row.update({"exception_key": key, "created_by": user,
@@ -326,8 +342,6 @@ class ExceptionsHandler(PersistentServerConnectionApplication):
                             "revoked_by": ""})
                 before = None
             else:
-                key = _require(payload, "exception_key")
-                before = self._one(data, key)
                 row.update({"exception_key": key,
                             "created_by": before.get("created_by", user),
                             "created_at": before.get("created_at", str(now)),

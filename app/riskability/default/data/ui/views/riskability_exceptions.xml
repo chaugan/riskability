@@ -1,0 +1,193 @@
+<form version="1.1" theme="dark" script="riskability_exceptions.js" stylesheet="riskability_exceptions.css">
+  <label>Risk exceptions</label>
+  <description>Findings somebody has looked at and decided to handle another way, with what that way is.</description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <input type="text" token="exc_host_tok" searchWhenChanged="true">
+      <label>Host (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0">
+          <b>An exception is a decision, not a measurement.</b>
+          <span>
+            Everything listed here is still a real vulnerability, still present on the host.
+            It has been taken out of the risk numbers because somebody recorded a reason and
+            a control. That decision is theirs and it is attributed; the counts on
+            <b>Fleet overview</b> always show how many findings are excluded this way, so a
+            quiet dashboard can never be mistaken for a clean fleet. Accepting a risk needs
+            the <code>riskability_accept_risk</code> capability.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Active</title>
+      <single>
+        <search>
+          <query>| `riskability_exceptions_now` | where exc_state="active" | stats count AS n</query>
+        </search>
+        <option name="underLabel">exceptions in force</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Findings excluded</title>
+      <single>
+        <search>
+          <query>| `riskability_accepted_findings` | stats dc(finding_key) AS n</query>
+        </search>
+        <option name="underLabel">taken out of every risk number</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Expired</title>
+      <single>
+        <search>
+          <query>| `riskability_exceptions_now` | where exc_state="expired" | stats count AS n</query>
+        </search>
+        <option name="underLabel">lapsed; findings are back in the pool</option>
+        <option name="rangeColors">["0x708794","0xf8be34"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Expiring within 14 days</title>
+      <single>
+        <search>
+          <query>| `riskability_exceptions_now`
+| where exc_state="active" AND expires_at!="" AND tonumber(expires_at) &lt; relative_time(now(), "+14d")
+| stats count AS n</query>
+        </search>
+        <option name="underLabel">review these before they lapse</option>
+        <option name="rangeColors">["0x708794","0xf8be34"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div id="rk-exc-reg-toolbar" class="rk-exc-toolbar">
+          <span class="rk-exc-hint">Select one entry to edit it or return it to the risk pool.</span>
+          <span id="rk-exc-reg-summary" class="rk-exc-summary"></span>
+          <button id="rk-exc-reg-edit" class="rk-exc-btn" type="button" disabled="disabled">Edit&#8230;</button>
+          <button id="rk-exc-reg-revoke" class="rk-exc-btn" type="button" disabled="disabled">Return to risk pool</button>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Active exceptions</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_exceptions_with_counts`
+| where exc_state="active"
+| search hostname=$exc_host_tok|s$ OR scope_kind="fleet_cve"
+| sort - created_at
+| table cve_id, scope_label, scope_kind, reason_kind, control, expires_label, findings_covered, hosts_covered, created_by, created_label, notes, exception_key
+| rename cve_id AS "CVE", scope_label AS "Applies to", scope_kind AS "Scope",
+         reason_kind AS "Reason", control AS "Control in place",
+         expires_label AS "Review by", findings_covered AS "Findings", hosts_covered AS "Hosts",
+         created_by AS "By", created_label AS "Created", notes AS "Notes",
+         exception_key AS "Key"</query>
+        </search>
+        <option name="riskability.riskability_grid.selectable">yes</option>
+        <option name="riskability.riskability_grid.hideColumns">Key</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No active exceptions. Every finding the matcher reports is counted in the risk numbers.</option>
+        <option name="height">380</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div id="rk-exc-exp-toolbar" class="rk-exc-toolbar">
+          <span class="rk-exc-hint">These have lapsed and their findings are counted again. Select
+            one to put it back in force with a new review date.</span>
+          <span id="rk-exc-exp-summary" class="rk-exc-summary"></span>
+          <button id="rk-exc-exp-reaccept" class="rk-exc-btn" type="button" disabled="disabled">Re-accept&#8230;</button>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Expired and revoked</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_exceptions_now`
+| where exc_state!="active"
+| search hostname=$exc_host_tok|s$ OR scope_kind="fleet_cve"
+| eval ended = if(exc_state="revoked", strftime(tonumber(revoked_at), "%Y-%m-%d %H:%M"), expires_label)
+| sort - created_at
+| table exc_state, cve_id, scope_label, reason_kind, control, ended, created_by, notes, exception_key
+| rename exc_state AS "State", cve_id AS "CVE", scope_label AS "Applies to",
+         reason_kind AS "Reason", control AS "Control in place", ended AS "Ended",
+         created_by AS "By", notes AS "Notes", exception_key AS "Key"</query>
+        </search>
+        <option name="riskability.riskability_grid.selectable">yes</option>
+        <option name="riskability.riskability_grid.hideColumns">Key</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing has lapsed or been withdrawn.</option>
+        <option name="height">320</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Audit trail</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>index=riskability_audit sourcetype=riskability:exception:audit
+| eval at = strftime(coalesce(when, _time), "%Y-%m-%d %H:%M:%S")
+| eval covered = coalesce(findings_affected, "")
+| sort - _time
+| table at, action, who, cve_id, hostname, scope_kind, covered, control, changed
+| rename at AS "When", action AS "Action", who AS "Who", cve_id AS "CVE",
+         hostname AS "Host", scope_kind AS "Scope", covered AS "Findings at the time",
+         control AS "Control in place", changed AS "Changed"</query>
+          <earliest>-2y</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No exception activity recorded. This trail is written to an index rather than to the register, so it survives the register being rewritten.</option>
+        <option name="height">340</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Why the trail lives in an index.</b>
+          <span>
+            A register that can be rewritten by whoever is allowed to write the register is not
+            an audit trail. These events are append-only and kept for five years, because
+            "who accepted this, when, and what did they say they had done instead" is asked
+            long after the finding itself is gone. Expiries are recorded here too, attributed
+            to the scheduler.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</form>
