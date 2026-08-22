@@ -20,17 +20,26 @@
     font-size: 12px;
     color: #d5d8dc;
 }
-.rk-status b { display: block; margin-bottom: 2px; color: #f2f4f5; }
+/* Only the callout's opening b is its heading. Every other b in a callout is
+   emphasis inside a sentence, and blocking all of them threw a word like
+   "Findings" onto a line of its own mid-paragraph on every page in the app. */
+.rk-status b { color: #f2f4f5; }
+.rk-status > b:first-child { display: block; margin-bottom: 2px; }
+/* A callout's spans are paragraphs. Left inline they run together into one
+   block of prose, which is how a caution written as two separate points ends
+   up read as one. */
+.rk-status > span { display: block; }
+.rk-status > span + span { margin-top: 7px; }
 .rk-status code {
     background: #23272e; color: #d5d8dc; padding: 1px 5px;
     border-radius: 2px; font-size: 11px;
 }
 .rk-good { border-left-color: #53a051; }
-.rk-good b { color: #6db56b; }
+.rk-good > b:first-child { color: #6db56b; }
 .rk-warn { border-left-color: #f8be34; }
-.rk-warn b { color: #f8be34; }
+.rk-warn > b:first-child { color: #f8be34; }
 .rk-bad  { border-left-color: #dc4e41; }
-.rk-bad b { color: #e26d63; }
+.rk-bad > b:first-child { color: #e26d63; }
 .rk-bad-text { color: #e26d63; }
 .rk-dim { color: #9aa4ae; font-size: 12px; line-height: 1.5; }
 

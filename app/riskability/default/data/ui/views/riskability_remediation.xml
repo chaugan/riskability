@@ -7,13 +7,24 @@
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
-    <input type="hidden" token="rem_sev_filter"><default>sev=*</default></input>
-    <input type="hidden" token="rem_sev_label"><default>every severity</default></input>
-    <!-- Blank by default, unlike rem_sev_label, which reads "every severity" so
-         panel titles stay grammatical. A note that a panel is filtered must say
-         nothing when it is not. -->
-    <input type="hidden" token="rem_note"><default></default></input>
   </fieldset>
+
+  <!-- Drilldown state, set here rather than by <input type="hidden">.
+       Splunk 9 has no hidden input. It renders one as an ordinary text box
+       labelled with the token's name, so this page used to open with its
+       internal filter tokens sitting in the filter bar as editable fields,
+       offering the reader a place to type SPL into someone else's search.
+       init sets the same tokens with nothing on screen.
+       Each filter still needs an "everything" value, because a search token
+       cannot be conditional: the panels are malformed until the token exists. -->
+  <init>
+    <set token="rem_sev_filter">sev=*</set>
+    <set token="rem_sev_label">every severity</set>
+    <!-- Blank, unlike rem_sev_label, which reads "every severity" so panel
+         titles stay grammatical. A note that a panel is filtered must say
+         nothing when it is not. -->
+    <set token="rem_note"></set>
+  </init>
 
   <row>
     <panel>

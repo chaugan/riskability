@@ -123,6 +123,12 @@ def component_scope(component: dict) -> Dict[str, str]:
     # currently treat a snap base as a separate root, so path classification
     # still does the work for those.
     root = (component.get("root") or "").strip()
+    # swinv names a container root as "container:<id>". That is not merely a
+    # nested filesystem: a container has a lifecycle, an image behind it and
+    # possibly a published port, and calling it "nested-root" throws all of that
+    # away at the one point the app could still keep it.
+    if root.startswith("container:"):
+        return {"scope": SCOPE_CONTAINER, "scope_id": root, "scope_release": ""}
     if root and root not in ("/", ""):
         return {"scope": SCOPE_NESTED, "scope_id": root.rstrip("/"),
                 "scope_release": ""}
@@ -155,6 +161,19 @@ def apply_scope(component: dict) -> dict:
 
     if info["scope"] == SCOPE_HOST:
         return out
+
+    # A container's own OS, as the collector read it from inside that container.
+    # This is not an inference from a path: swinv opened the container's
+    # os-release and its package database. Refusing to use it would leave every
+    # container unassessed -- which is the state this app was in until now, and
+    # which draws as a container with no vulnerabilities rather than as one
+    # nobody looked at.
+    if info["scope"] == SCOPE_CONTAINER:
+        root_os = (component.get("root_os_id") or "").strip()
+        if root_os:
+            out["os_id"] = root_os
+            out["os_version_id"] = (component.get("root_os_version_id") or "").strip()
+            return out
 
     if info["scope_release"]:
         out["os_version_id"] = info["scope_release"]

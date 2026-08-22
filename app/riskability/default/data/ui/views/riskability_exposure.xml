@@ -1,0 +1,346 @@
+<form version="1.1" theme="dark" stylesheet="application.css">
+  <label>Exposure</label>
+  <description>Which open findings the network can actually reach, and which of them sit inside containers.</description>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="text" token="host_tok" searchWhenChanged="true">
+      <label>Host (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    <!-- Defaults to All, unlike every other page in this app, and the difference
+         is deliberate. What answers a network port is usually a compiled binary,
+         and a binary match is the kind this app rates low-confidence: it can see
+         a Go or Rust executable is listening without being certain which module
+         versions it embeds. Filter those out by default and the reachable rows
+         empty out, and this page would open showing zeros in the one place it
+         exists to draw attention to. -->
+    <input type="dropdown" token="conf_tok" searchWhenChanged="true">
+      <label>Match confidence</label>
+      <choice value="*">All matches</choice>
+      <choice value="high">High only</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <!-- Drilldown state, set here rather than by <input type="hidden">.
+       Splunk 9 has no hidden input. It renders one as an ordinary text box
+       labelled with the token's name, so a page written this way opens with
+       "reach_filter" and "exploit_filter" sitting in the filter bar as editable
+       fields, offering the reader a place to type SPL into someone else's
+       search. init sets the same tokens with nothing on screen.
+       Each filter needs an "everything" value because a search token cannot be
+       conditional: the panels below are malformed until the token exists. -->
+  <init>
+    <set token="reach_filter">reach_class=*</set>
+    <set token="exploit_filter">exploit_class=*</set>
+    <set token="node_filter">rk_nodes=*</set>
+    <set token="drill_note"></set>
+  </init>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0">
+          <b>Reachability re-orders work. It does not remove any.</b>
+          <span>
+            Every finding on this page is still a real vulnerability. What this page adds is
+            the one thing EPSS and the KEV catalogue cannot know: whether <em>this</em> copy is
+            answering the network. A package with no listening port is not safe &#8212; it is
+            reached by something other than a socket, or by an attacker who is already inside
+            &#8212; but it is not the thing to fix tonight. Nothing here is ever coloured green,
+            because nothing here is finished.
+            <b>Read a quiet row as "later", never as "no".</b>
+          </span>
+          <span>
+            This page opens with <b>all matches</b> rather than high-confidence ones only. What
+            listens on a port is usually a compiled binary, and a binary is exactly what this app
+            matches least confidently &#8212; it can tell that a Go executable is serving and
+            still be unsure which module versions are inside it. Filtering those out would empty
+            the reachable rows and hide the finding you came for, so they are shown and labelled
+            instead: check the <b>Confidence</b> column before you act on one.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What to do first — open findings by reach and by exploit likelihood</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+| stats count AS findings BY exploit_class, reach_class, tier
+| fields exploit_class, reach_class, findings, tier</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">prioritymatrix</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either there are no open findings for this host filter, or the exposure snapshot has not run yet — see the assessment coverage panel below.</option>
+        <option name="height">460</option>
+        <!-- The chart reports a click under the SEARCH's field names, not under
+             the contract's slot names, so these are $row.reach_class$ and
+             $row.exploit_class$ rather than $row.y$ and $row.x$. -->
+        <drilldown>
+          <set token="reach_filter">reach_class="$row.reach_class$"</set>
+          <set token="exploit_filter">exploit_class="$row.exploit_class$"</set>
+          <set token="drill_note">$row.reach_class$, $row.exploit_class$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Colour is priority, not volume.</b>
+          <span>
+            The cell holding two known-exploited findings on a wildcard port is the darkest one
+            on the grid; the cell holding sixteen thousand unreachable ones is the coolest. That
+            inversion is the whole point &#8212; a chart that sized by count would draw the two
+            findings you must fix tonight as a hairline. Empty cells are drawn deliberately: a
+            row reading zero across is a statement, and a missing row would be an ambiguity.
+            The dashed row is <b>not assessed</b> &#8212; those findings are unranked because the
+            collector on that host never reported its listening ports, so treat them as unknown
+            risk rather than as low risk.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel rejects="$any_filter$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Click a matrix cell, a chain node or a container row to
+            narrow the detail table at the bottom of this page to it.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$any_filter$">
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">This page is narrowed. The matrix and the chain stay whole
+            so you can pick something else.</span>
+          <span class="rk-drill-state">Filtered by $drill_note$</span>
+          <a class="rk-drill-clear"
+             href="riskability_exposure?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How the network gets there — port, process, container, package, CVE</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_exposure_chain_for($host_tok|s$, $conf_tok|s$)`
+| eval rk_epss = coalesce(epss, 0)
+| stats max(rk_epss) AS rk_epss, max(is_kev) AS rk_kev, dc(cve_id) AS cves
+        BY source, source_kind, target, target_kind
+| eval rk_kev = coalesce(rk_kev, 0)
+| eval rk_cve = if(target_kind=="cve" OR target_kind=="cve-kev", 1, 0)
+| sort 20000 source, - rk_kev, - rk_epss
+| streamstats count AS rk_rank BY source, rk_cve
+| eval rk_drop = if(rk_cve==1 AND rk_kev!=1 AND rk_rank &gt; 3, 1, 0)
+| eventstats sum(rk_drop) AS rk_hidden BY source
+| where rk_drop = 0
+| appendpipe
+    [ stats max(rk_hidden) AS n BY source, source_kind
+    | where n &gt; 0
+    | eval target = n . " more in " . source, target_kind = "cve", cves = n ]
+| sort 5000 - cves
+| head 160
+| fields source, source_kind, target, target_kind, cves</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">chaingraph</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No chain to draw: no open finding is behind a listening port. That is a real answer, not a missing one — check the assessment coverage panel below to be sure the ports were measured at all.</option>
+        <option name="height">560</option>
+        <drilldown>
+          <set token="node_filter">rk_nodes="$row.node$"</set>
+          <set token="drill_note">$row.node_kind$ $row.node$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>Every hop here is measured, and the picture is still not the whole route.</b>
+          <span>
+            The collector saw the port, the process holding it and the packages inside; it did
+            not see your firewall, your reverse proxy or your network segmentation. A wildcard
+            bind means the process would answer any address that reaches the host &#8212; not
+            that the internet can. Bubble size is the largest number of CVEs reachable through
+            any single hop touching that node, so sibling sizes do not add up. Only the 160
+            busiest hops are drawn. A dashed node is a hole in what the collector could see
+            &#8212; a port answering with no process attributed to it &#8212; which is a
+            different thing from a hop that is known and harmless. Ports with no package behind
+            them never reach this graph at all, because nothing can be matched against them;
+            they are counted in <b>Ports with no package</b> below. Each package shows its known-exploited CVEs and its three highest-scoring
+            others by name; the rest are collected into a single "N more in &lt;package&gt;"
+            node rather than drawn as fifty unreadable bubbles. Only the twelve busiest nodes
+            in a column carry a label &#8212; hover any unlabelled one to read it.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Was exposure measured at all?</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_hosts_seen`
+| search hostname=$host_tok|s$
+| lookup riskability_exposure_hoststate_lookup hostname OUTPUT listeners, wildcard_listeners,
+    unattributed_listeners, packages_behind_ports, containers, assessed_at
+| eval status = if(isnull(assessed_at), "never reported a listening port", "assessed")
+| eval assessed = if(isnull(assessed_at), "never", strftime(assessed_at, "%Y-%m-%d %H:%M"))
+| eval listeners = coalesce(listeners, 0), wildcard_listeners = coalesce(wildcard_listeners, 0),
+       unattributed_listeners = coalesce(unattributed_listeners, 0),
+       packages_behind_ports = coalesce(packages_behind_ports, 0),
+       containers = coalesce(containers, 0)
+| table hostname, status, assessed, listeners, wildcard_listeners, unattributed_listeners,
+        packages_behind_ports, containers
+| sort 5000 status, - wildcard_listeners
+| rename hostname AS "Host", status AS "Exposure", assessed AS "Measured at",
+         listeners AS "Ports", wildcard_listeners AS "Any-address ports",
+         unattributed_listeners AS "Ports with no package", packages_behind_ports AS "Packages",
+         containers AS "Containers behind ports"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
+        <option name="height">240</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>A host that never reported ports is not a host with no ports.</b>
+          <span>
+            Older collectors report inventory but no exposure. Their findings land in the
+            <b>not assessed</b> row of the matrix rather than in the calm one, so that a fleet
+            does not look safer for being less well instrumented. "Ports with no package" is the
+            other honest gap: something is listening and the app cannot say what code is behind
+            it.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Containers — a stopped container is not a safe container</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_container_findings_for($host_tok|s$)`
+| stats dc(cve_id) AS cves, count AS findings, dc(package) AS packages,
+        max(epss) AS peak_epss, sum(if(isnotnull(kev_added) AND kev_added!="", 1, 0)) AS kev
+        BY hostname, container_label, image_label, state, published, ctr_tier
+| eval peak_epss = round(peak_epss, 4)
+| sort 5000 ctr_tier, - kev, - cves
+| table ctr_tier, hostname, container_label, image_label, state, published, cves, kev,
+        packages, peak_epss
+| rename ctr_tier AS "Priority", hostname AS "Host", container_label AS "Container",
+         image_label AS "Image", state AS "State", published AS "Ports",
+         cves AS "CVEs", kev AS "Known-exploited", packages AS "Packages",
+         peak_epss AS "Peak EPSS"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">all</option>
+        <option name="riskability.riskability_grid.emptyText">No open finding is scoped to a container. Either no containers were reported, or their images carry no matched vulnerability.</option>
+        <option name="height">320</option>
+        <drilldown>
+          <set token="ctr_tok">$row.Container$</set>
+          <set token="ctr_host_tok">$row.Host$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Why stopped containers are still listed.</b>
+          <span>
+            A stopped container is one <code>docker start</code> away from being a running one,
+            and its vulnerabilities are latent rather than absent. It is ranked last, not
+            removed. A container with no published port is ranked below one that publishes:
+            the image is identical, the reach is not.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row depends="$ctr_tok$">
+    <panel>
+      <title>Inside $ctr_tok$</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_container_findings_for($ctr_host_tok|s$)`
+| search container_label=$ctr_tok|s$
+| eval kev = if(isnotnull(kev_added) AND kev_added!="", "yes", "")
+| eval epss = round(epss, 4)
+| table cve_id, package, last_version, fixed_version, severity, kev, epss, image_label,
+        state, published
+| sort 5000 - epss
+| head 2000
+| rename cve_id AS "CVE", package AS "Package", last_version AS "Installed",
+         fixed_version AS "Fixed in", severity AS "Severity", kev AS "Known-exploited",
+         epss AS "EPSS", image_label AS "Image", state AS "State", published AS "Ports"</query>
+        </search>
+        <option name="riskability.riskability_grid.filterNote">container $ctr_tok$</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No findings inside this container.</option>
+        <option name="height">420</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>These findings are the image's, not the host's.</b>
+          <span>
+            They were matched against the operating system declared inside the container, which
+            is often a different distribution from the host it runs on. Fixing them means
+            rebuilding or replacing the image &#8212; patching the host will not move them.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>The findings behind this — $drill_note$</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+| search $reach_filter$ $exploit_filter$
+| eval rk_nodes = mvappend(package, cve_id, split(coalesce(ports_text, ""), ", "),
+        split(coalesce(listener_text, ""), ", "), split(coalesce(container_text, ""), ", "))
+| search $node_filter$
+| eval kev = if(isnotnull(kev_added) AND kev_added!="", "yes", "")
+| eval epss = round(epss, 4)
+| eval root = if(scope_id!="", scope_id, "host")
+| table tier, reach_class, exploit_class, confidence, cve_id, package, last_version,
+        fixed_version, hostname, root, ports_text, listener_text, listener_path_text,
+        container_text, kev, epss
+| sort 50000 - epss
+| head 2000
+| rename tier AS "Priority", reach_class AS "Reach", exploit_class AS "Exploit likelihood",
+         confidence AS "Confidence", cve_id AS "CVE", package AS "Package", last_version AS "Installed",
+         fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
+         ports_text AS "Listening on", listener_text AS "Held by",
+         listener_path_text AS "Executable", container_text AS "Container",
+         kev AS "Known-exploited", epss AS "EPSS"</query>
+        </search>
+        <option name="riskability.riskability_grid.filterNote">$drill_note$</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing matches the current selection.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Capped at 2,000 rows, highest EPSS first.</b>
+          <span>
+            This table is for reading a selection, not for exporting a fleet. Narrow it with the
+            matrix or the chain above, or use <b>Findings</b> for the full register. "Held by"
+            is the systemd unit or the executable's name; the full path is in its own column.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</form>

@@ -43,6 +43,33 @@ Tabulator.registerModule([
 
 var ROW_CAP = 10000;
 
+/* A floor under fitColumns, so a table with many columns is not squeezed into
+ * unreadable slivers. On Findings scrolling really is the right answer, and
+ * this is what forces it.
+ *
+ * It is a RANGE rather than one number, because a floor is a minimum that
+ * fitColumns obeys even when obeying it pushes the table past the box it sits
+ * in. Five columns at 90px is 450px; a half-width Splunk panel is about 438px
+ * of usable width once the vertical scrollbar is out of it, and Splunk stops
+ * narrowing panels below that however small the window gets. The table then
+ * overflowed by twelve pixels and grew a horizontal scrollbar under columns
+ * that visibly fit, scrolling twelve pixels of nothing. That is what the
+ * Coverage grid was doing at any window under about 1000px wide -- which
+ * includes a 1440px screen at 150% browser zoom, so it was not an exotic case.
+ *
+ * So the floor is the preferred width, relaxed as far as MIN but no further,
+ * to whatever an equal share of the width actually available comes to. A table
+ * with few enough columns to fit is always allowed to fit; one with genuinely
+ * too many still scrolls, with columns no narrower than MIN. */
+var PREF_COL_WIDTH = 90;
+var MIN_COL_WIDTH = 80;
+
+function columnFloor(available, count) {
+    if (!available || available < 0 || !count) { return PREF_COL_WIDTH; }
+    return Math.max(MIN_COL_WIDTH,
+                    Math.min(PREF_COL_WIDTH, Math.floor(available / count)));
+}
+
 /* The same semantic colours the charts use, so a "high" is the same red
  * wherever it appears. Keyed on the VALUE, not the column, because the same
  * words carry the same meaning in confidence, severity and status columns. */
@@ -110,6 +137,7 @@ export default SplunkVisualizationBase.extend({
         SplunkVisualizationBase.prototype.initialize.apply(this, arguments);
         this.el.classList.add('riskability-grid');
         this.table = null;
+        this._scrolledVertically = null;
     },
 
     getInitialDataParams: function () {
@@ -130,6 +158,7 @@ export default SplunkVisualizationBase.extend({
             try { this.table.destroy(); } catch (e) { /* already gone */ }
             this.table = null;
         }
+        this._scrolledVertically = null;
         while (this.el.firstChild) { this.el.removeChild(this.el.firstChild); }
     },
 
@@ -238,6 +267,14 @@ export default SplunkVisualizationBase.extend({
             .split(',').map(function (x) { return x.trim().toLowerCase(); })
             .filter(Boolean);
 
+        // The exact floor is settled once the table exists and the holder can be
+        // measured (_fitColumnFloor below); this is the starting estimate, and
+        // it only has to be close.
+        var visibleCount = fields.filter(function (f, i) {
+            return hidden.indexOf(String(f.name).toLowerCase()) === -1;
+        }).length;
+        var floor = columnFloor(host.clientWidth - 2, visibleCount);
+
         var columns = fields.map(function (f, i) {
             var title = f.name;
             var numeric = looksNumeric(rows, i);
@@ -251,7 +288,7 @@ export default SplunkVisualizationBase.extend({
                 resizable: true,
                 headerTooltip: title,
                 sorter: numeric ? 'number' : 'string',
-                minWidth: 90,
+                minWidth: floor,
                 headerMenu: [{
                     label: 'Hide this column',
                     action: function (e, column) { column.hide(); },
@@ -338,22 +375,36 @@ export default SplunkVisualizationBase.extend({
 
         // Redraw once the table has actually been built.
         //
-        // fitColumns divides the width Tabulator can see, and it measures
-        // before the virtual renderer knows how many rows there are -- so on a
-        // table long enough to need a vertical scrollbar it hands out the full
-        // width, the scrollbar then takes about fifteen pixels of it, and the
-        // difference becomes a horizontal scrollbar under a table that fits.
-        // The symptom is maddening to chase because it depends on row count
-        // against panel height, so the same table scrolls on one dashboard and
-        // not another. Redrawing after the layout has settled measures the
-        // width that actually exists.
+        // fitColumns measures the row holder, and at construction time the
+        // virtual renderer has not yet said how tall the rows will be -- so on
+        // a table long enough to need a vertical scrollbar Tabulator hands out
+        // the full width, the scrollbar then takes about fifteen pixels of it,
+        // and the difference becomes a horizontal scrollbar under a table that
+        // fits. Redrawing after the layout has settled measures the width that
+        // actually exists, and is also the first point at which the column
+        // floor can be fitted to it.
         this.table.on('tableBuilt', function () {
             requestAnimationFrame(function () {
-                try { self.table.redraw(true); } catch (e) { /* torn down */ }
+                try {
+                    self._fitColumnFloor();
+                    self.table.redraw(true);
+                    var holder = self.el.querySelector('.tabulator-tableholder');
+                    self._scrolledVertically = !!holder &&
+                        holder.scrollHeight > holder.clientHeight;
+                } catch (e) { /* torn down */ }
             });
         });
         this.table.on('dataFiltered', function (filters, filteredRows) {
             setCount(filteredRows ? filteredRows.length : rows.length);
+            // Filtering can take the vertical scrollbar away, or bring it back,
+            // and that changes the width fitColumns had to divide by fifteen
+            // pixels. Tabulator does not re-run the layout for a filter, so the
+            // columns keep the width they were given and leave a strip of empty
+            // panel beside them -- or, the other way round, spill over the edge.
+            // Only redraw when the scrollbar actually changed state: a full
+            // redraw on every keystroke of a header filter is not free with ten
+            // thousand rows behind it.
+            requestAnimationFrame(function () { self._resyncWidth(); });
         });
 
         // Selection is published as a DOM event rather than handled here.
@@ -423,11 +474,63 @@ export default SplunkVisualizationBase.extend({
         }
     },
 
+    /* Redraw only if the vertical scrollbar has appeared or disappeared since
+     * the last layout, because that is the only thing that silently changes the
+     * width the columns were fitted to. */
+    _resyncWidth: function () {
+        if (!this.table) { return; }
+        var holder = this.el.querySelector('.tabulator-tableholder');
+        if (!holder) { return; }
+        var scrolls = holder.scrollHeight > holder.clientHeight;
+        if (scrolls === this._scrolledVertically) { return; }
+        this._scrolledVertically = scrolls;
+        try {
+            this._fitColumnFloor();
+            this.table.redraw(true);
+        } catch (e) { /* torn down */ }
+    },
+
+    /* Re-fit the per-column floor to the width the table actually has.
+     *
+     * minWidth is a column property, not a layout-time calculation, so it has
+     * to be recomputed whenever the panel changes width -- a browser resize, a
+     * zoom change, Splunk reflowing the dashboard. Left at the width it was
+     * built for, a table that fitted at 1440px overflows by a few pixels at
+     * 960px and grows the same pointless scrollbar. */
+    _fitColumnFloor: function () {
+        if (!this.table) { return; }
+        var holder = this.el.querySelector('.tabulator-tableholder');
+        if (!holder || !holder.clientWidth) { return; }
+
+        var flex = [], fixed = 0;
+        this.table.getColumns().forEach(function (c) {
+            if (!c.isVisible()) { return; }
+            var def = c.getDefinition() || {};
+            // A column with a declared width (the selection checkbox) does not
+            // take a share of what is left; it takes its width off the top.
+            if (def.width) { fixed += parseInt(def.width, 10) || 0; }
+            else { flex.push(c); }
+        });
+        if (!flex.length) { return; }
+
+        var want = columnFloor(holder.clientWidth - fixed, flex.length);
+        flex.forEach(function (c) {
+            var col = c._getSelf ? c._getSelf() : null;
+            if (col && col.minWidth !== want) { col.setMinWidth(want); }
+        });
+    },
+
     reflow: function () {
         // A panel initialised while hidden measures 0x0, and Tabulator's
         // virtual renderer then believes no rows are visible.
         if (this.table) {
-            try { this.table.redraw(true); } catch (e) { /* not built yet */ }
+            try {
+                this._fitColumnFloor();
+                this.table.redraw(true);
+                var holder = this.el.querySelector('.tabulator-tableholder');
+                this._scrolledVertically = !!holder &&
+                    holder.scrollHeight > holder.clientHeight;
+            } catch (e) { /* not built yet */ }
         }
     },
 

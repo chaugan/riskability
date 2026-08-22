@@ -90,13 +90,13 @@
 }
 .riskability-grid .rk-grid-filtered b { color: #7cc0ec; }
 
-/* Reserve the vertical scrollbar's width whether or not it is showing.
-   fitColumns divides the width the browser reports, and the vertical scrollbar
-   appears only once there are more rows than fit -- so the columns are sized
-   against a width about fifteen pixels wider than they end up having, and the
-   difference becomes a horizontal scrollbar under a table that fits perfectly.
-   The symptom depends on row count against panel height, so the same table
-   scrolls on one dashboard and not another, and a table that was fine gains a
-   scrollbar when the fleet grows by one host. Reserving the gutter makes the
-   width the same in both cases. */
-.riskability-grid .tabulator-tableholder { scrollbar-gutter: stable; }
+/* There is deliberately no `scrollbar-gutter: stable` on .tabulator-tableholder.
+   Reserving the gutter looks like the obvious cure for "columns sized before
+   the vertical scrollbar appeared", but it causes the very bug it is meant to
+   prevent. Tabulator's fitColumns takes the holder's getBoundingClientRect()
+   width and subtracts the vertical scrollbar only when the rows actually
+   overflow (scrollHeight > clientHeight). A reserved gutter is taken out of
+   clientWidth ALWAYS and subtracted only SOMETIMES -- so any table short
+   enough to need no vertical scrollbar got columns fifteen pixels wider than
+   the box they sit in, and a horizontal scrollbar under a table that plainly
+   fits. Tabulator's own accounting is correct; leave it alone. */

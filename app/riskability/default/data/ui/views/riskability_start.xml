@@ -287,6 +287,20 @@
                  <b>unknown</b>. Silence is never counted as success.</p>
             </div>
           </div>
+          <div class="rk-step">
+            <div class="rk-step-n">5</div>
+            <div>
+              <b>Reach decides the order of the work</b>
+              <p>The collector also records what is <em>listening</em> on each machine, which
+                 process holds the socket, and which containers are running behind it. That
+                 supplies the one thing an offline CVE feed cannot: whether this copy answers
+                 the network. On this fleet it separates a few findings that are reachable
+                 from tens of thousands that are not &#8212; see <b>Exposure</b>. It changes the
+                 order, never the list: an unreachable vulnerability is still a
+                 vulnerability, and a host whose collector is too old to report ports is
+                 shown as <b>not assessed</b> rather than quietly counted as safe.</p>
+            </div>
+          </div>
         </div>
       </html>
     </panel>
@@ -396,6 +410,10 @@
           <div class="rk-guide-item"><b>MITRE ATT&amp;CK</b>
             <span>Lossy classification of what your open findings could enable. Context, not
               evidence.</span></div>
+          <div class="rk-guide-item"><b>Exposure</b>
+            <span>Which findings the network can actually reach, and which sit inside containers.
+              The one axis EPSS and the KEV catalogue cannot supply: whether <em>this</em> copy is
+              answering a socket. It re-orders the work; it never removes any of it.</span></div>
           <div class="rk-guide-item"><b>Hosts</b>
             <span>One machine at a time, split by the filesystem root each component came
               from.</span></div>

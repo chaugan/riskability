@@ -4,6 +4,7 @@
   <view name="riskability_findings"/>
   <view name="riskability_remediation"/>
   <view name="riskability_mitre"/>
+  <view name="riskability_exposure"/>
   <view name="riskability_hosts"/>
   <view name="riskability_coverage"/>
   <view name="riskability_exceptions"/>

@@ -16,29 +16,26 @@
       <default>high</default>
       <initialValue>high</initialValue>
     </input>
-    <!-- Drilldown state. A search token cannot be conditional, so each filter
-         has an "everything" default that the drilldown replaces. Splunk unsets
-         nothing on load, so these have to exist from the start or the detail
-         panel's search is malformed until something is clicked. -->
-    <input type="hidden" token="tech_filter">
-      <default>technique=*</default>
-    </input>
-    <input type="hidden" token="cwe_filter">
-      <default>cwe=*</default>
-    </input>
-    <input type="hidden" token="tech_label">
-      <default>every technique</default>
-    </input>
-    <input type="hidden" token="cwe_label">
-      <default></default>
-    </input>
-    <!-- Empty by default, unlike tech_label, which reads "every technique" so
-         panel titles stay grammatical. A filter note has to be blank when
-         nothing is filtered, or every panel claims to be showing a subset. -->
-    <input type="hidden" token="drill_note">
-      <default></default>
-    </input>
   </fieldset>
+
+  <!-- Drilldown state, set here rather than by <input type="hidden">.
+       Splunk 9 has no hidden input. It renders one as an ordinary text box
+       labelled with the token's name, so this page used to open with its
+       internal filter tokens sitting in the filter bar as editable fields,
+       offering the reader a place to type SPL into someone else's search.
+       init sets the same tokens with nothing on screen.
+       Each filter still needs an "everything" value, because a search token
+       cannot be conditional: the panels are malformed until the token exists. -->
+  <init>
+    <set token="tech_filter">technique=*</set>
+    <set token="cwe_filter">cwe=*</set>
+    <set token="tech_label">every technique</set>
+    <set token="cwe_label"></set>
+    <!-- Blank, unlike tech_label, which reads "every technique" so panel
+         titles stay grammatical. A note that a panel is filtered has to say
+         nothing when it is not, or every panel claims to show a subset. -->
+    <set token="drill_note"></set>
+  </init>
 
   <row>
     <panel>

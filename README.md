@@ -67,6 +67,17 @@ with the version change recorded), `removed`, or `unknown`.
 dashboard puts that in front of you, because a scanner silently blind to half a
 host is more dangerous than one that admits it.
 
+**It knows whether anything is listening.** EPSS says how likely the world is to
+exploit a vulnerability and the KEV catalogue says whether anyone already has;
+neither can know whether *this* copy answers a socket. swinv reports each host's
+listening ports, the process holding each one, and the containers behind them,
+and Riskability joins that to the findings. On the test fleet it splits 22,578
+open findings into 17 reachable from any network — two of them known-exploited —
+335 reachable only from the machine itself, and 22,226 with nothing listening at
+all. It is a re-ordering, never a filter: an unreachable vulnerability is still a
+vulnerability, and a host running a collector too old to report ports is shown as
+*not assessed* rather than counted as safe.
+
 **It reports one vulnerability once.** OSV routinely describes the same CVE in
 several advisories: on the test feed, 11,122 (package, CVE) pairs are covered by
 more than one advisory record, and the worst is described by nine. Keyed on
@@ -133,6 +144,24 @@ Three things are **not** app configuration and must be done on the deployment:
    good news.
 
 The KV Store must be running on the search head; the feed lives there.
+
+### What the app reads from the collector
+
+Every line the forwarder ships is one JSON object. The app reads four kinds,
+distinguished by `record_type`:
+
+| `record_type` | Carries | Without it |
+|---|---|---|
+| *(absent)* | one installed component | there is nothing to assess |
+| `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
+| `exposure` | one listening port, the process holding it, and the packages behind it | every finding is reported as **not assessed** on the Exposure page — never as safe |
+| `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
+
+The last two are what the **Exposure** page is built on. A collector that does
+not emit them leaves the page honest but empty: hosts appear under "never
+reported a listening port" and their findings sit in the dashed *not assessed*
+row of the matrix, which is deliberately not the same place as "nothing is
+listening".
 
 ### Configuring the universal forwarder
 
@@ -241,6 +270,7 @@ uncontroversial; redistributing one is your decision, not this app's.
 | **Fleet overview** | How stale is the feed, how many hosts report, where is the risk concentrated |
 | **Findings** | Every finding, ranked by EPSS (exploitation likelihood) rather than CVSS |
 | **Remediation** | What was actually fixed, and what merely stopped being reported |
+| **Exposure** | Which findings the network can reach, and which sit inside containers |
 | **Hosts** | Per-host detail, split by filesystem root |
 | **Coverage** | What the feed *cannot* say anything about |
 | **Feed administration** | Upload and import bundles |

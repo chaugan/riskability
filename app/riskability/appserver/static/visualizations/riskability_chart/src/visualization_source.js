@@ -15,7 +15,7 @@
  */
 import * as echarts from 'echarts/core';
 import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
-         PieChart, LineChart } from 'echarts/charts';
+         PieChart, LineChart, GraphChart } from 'echarts/charts';
 import {
     TooltipComponent,
     GridComponent,
@@ -31,7 +31,7 @@ import vizUtils from 'api/SplunkVisualizationUtils';
 
 echarts.use([
     TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
-    PieChart, LineChart,
+    PieChart, LineChart, GraphChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
     CalendarComponent, LegendComponent, CanvasRenderer,
 ]);
@@ -127,6 +127,8 @@ var CLICK_FIELDS = {
     boxplot: ['category'],
     sankey: ['source', 'target'],
     line: ['x'],
+    prioritymatrix: ['x', 'y'],
+    chaingraph: ['node', 'node_kind'],
 };
 
 var CONTRACTS = {
@@ -139,6 +141,10 @@ var CONTRACTS = {
     stackedcolumn: ['category', 'series', 'value'],
     line: ['x', 'value'],
     donut: ['label', 'value'],
+    // x = how likely the world is to exploit it, y = whether this copy answers
+    // the network, value = findings, tier = what to do about it.
+    prioritymatrix: ['x', 'y', 'value', 'tier'],
+    chaingraph: ['source', 'source_kind', 'target', 'target_kind', 'value'],
 };
 
 /* Fixed colours for the values that carry meaning rather than magnitude.
@@ -152,6 +158,30 @@ var CATEGORY_COLOR = {
     low: '#708794',
     informational: '#5c6773', unrated: '#5c6773', unknown: '#5c6773',
     open: '#dc4e41', mitigated: '#53a051', removed: '#708794',
+    // Reachability. Nothing here is green: green means fixed, and none of these
+    // mean fixed. The calmest is a cool teal that reads as "later", not "fine".
+    'answers any address': '#a4302a', 'answers one address': '#dc4e41',
+    'loopback only': '#f8be34', 'no listening port': '#3f7d7a',
+    'not assessed': '#6b5a2a',
+    // Container lifecycle. Stopped is grey for parked, never green: a stopped
+    // container is one docker start from being a running one.
+    '1. running and published': '#a4302a',
+    '2. running, not published': '#dc4e41',
+    '4. stopped, still vulnerable': '#708794',
+};
+
+/* What to do about a cell, as opposed to how big it is.
+ *
+ * The priority matrix colours by TIER rather than by magnitude, and that
+ * inversion is the whole point of it. Colouring by count would paint the
+ * known-exploited-and-answering-the-internet cell the palest colour on the
+ * panel, because it holds the smallest number. */
+var TIER = {
+    'act-now':      { fill: '#a4302a', text: '#ffffff' },
+    'act-soon':     { fill: '#dc4e41', text: '#ffffff' },
+    'plan':         { fill: '#f8be34', text: '#1a1d21' },
+    'watch':        { fill: '#3f7d7a', text: '#f2f4f5' },
+    'unknown-risk': { fill: '#6b5a2a', text: '#f8be34', dashed: true },
 };
 function categoryColor(name, fallback) {
     return CATEGORY_COLOR[String(name).toLowerCase()] || fallback;
@@ -563,6 +593,340 @@ function buildLine(rows, t, config) {
     };
 }
 
+/* Node/cell keys join two fields, so they need a separator that cannot occur
+ * inside a package name, a container name or a CVE id. Unit Separator is the
+ * character that exists for exactly this and nothing else. */
+var RK_SEP = String.fromCharCode(31);
+
+/* The priority matrix: what to do, not how much there is.
+ *
+ * Reachability and exploit likelihood are orthogonal -- EPSS and KEV say how
+ * likely the world is to exploit something, reachability says whether this
+ * copy answers the network -- so the natural shape is a matrix.
+ *
+ * The decisive property is what it does with 16,417 against 6. Every
+ * area-based encoding -- sankey ribbon, treemap tile, pie wedge -- draws six
+ * findings as a sub-pixel hairline beside sixteen thousand: a panel built to
+ * make six findings visible that renders them invisible. In a matrix area
+ * encodes nothing, both numbers are typeset the same size, and the six sits in
+ * a maroon cell at the top while the sixteen thousand sits in a cool one at the
+ * bottom. Visual weight runs against volume, which is the whole argument.
+ *
+ * Axes come from fixed lists, so a row is drawn even when it is empty. "No
+ * known-exploited CVE answers the network" is worth seeing; a missing row is
+ * an ambiguity.
+ */
+/* Severity order, used only to resolve a collision. Each cell of the matrix
+ * should carry exactly one tier -- the SPL derives tier from reach and exploit
+ * class, so two rows landing in the same cell with different tiers means the
+ * search changed. Keeping the worse one is the only safe way to lose that
+ * argument: a cell that should read act-now must never be drawn as watch
+ * because a calmer row happened to arrive second. */
+var TIER_RANK = { 'act-now': 5, 'act-soon': 4, 'unknown-risk': 3, 'plan': 2, 'watch': 1 };
+
+var REACH_ROWS = ['answers any address', 'answers one address', 'loopback only',
+                  'no listening port', 'not assessed'];
+var EXPLOIT_COLS = ['KEV', 'EPSS 50%+', 'EPSS 10-50%', 'EPSS 1-10%',
+                    'EPSS under 1%', 'unscored'];
+
+function buildPriorityMatrix(rows, t, config) {
+    var xs = EXPLOIT_COLS.slice(), ys = REACH_ROWS.slice(), cell = {}, i;
+    for (i = 0; i < rows.length; i++) {
+        var x = String(rows[i][0] === null ? '' : rows[i][0]);
+        var y = String(rows[i][1] === null ? '' : rows[i][1]);
+        var v = num(rows[i][2]);
+        if (!x || !y || v === null) { continue; }
+        if (xs.indexOf(x) === -1) { xs.push(x); }
+        if (ys.indexOf(y) === -1) { ys.push(y); }
+        var k = x + RK_SEP + y, prev = cell[k];
+        var tier = String(rows[i].length > 3 && rows[i][3] ? rows[i][3] : 'unknown-risk');
+        if (prev && (TIER_RANK[prev.tier] || 0) > (TIER_RANK[tier] || 0)) { tier = prev.tier; }
+        cell[k] = {
+            v: (prev ? prev.v : 0) + v,
+            tier: tier,
+            note: rows[i].length > 4 && rows[i][4] ? String(rows[i][4]) : '',
+        };
+    }
+    // ECharts draws a category y axis bottom-up. Without this the most
+    // reachable row lands at the bottom and the picture reads upside down.
+    ys = ys.slice().reverse();
+
+    var data = [];
+    for (var yi = 0; yi < ys.length; yi++) {
+        for (var xi = 0; xi < xs.length; xi++) {
+            var c = cell[xs[xi] + RK_SEP + ys[yi]];
+            var v2 = c ? c.v : 0, st, lc, fw;
+            if (v2 === 0) {
+                st = { color: t.tooltipBg, borderColor: t.axis, borderWidth: 1 };
+                lc = t.muted;
+                fw = 'normal';
+            } else {
+                // An unrecognised tier falls back to unknown-risk, never to watch.
+                var tt = TIER[c.tier] || TIER['unknown-risk'];
+                st = {
+                    color: tt.fill,
+                    borderColor: tt.dashed ? tt.text : t.axis,
+                    borderWidth: tt.dashed ? 2 : 1,
+                    borderType: tt.dashed ? 'dashed' : 'solid',
+                };
+                lc = tt.text;
+                fw = 'bold';
+            }
+            data.push({
+                value: [xi, yi, v2],
+                itemStyle: st,
+                label: { color: lc, fontWeight: fw },
+                rkNote: c ? c.note : '',
+                rkTier: c ? c.tier : '',
+            });
+        }
+    }
+
+    return {
+        animation: false,
+        tooltip: {
+            trigger: 'item',
+            backgroundColor: t.tooltipBg,
+            borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                var yy = ys[p.value[1]], xx = xs[p.value[0]];
+                if (p.value[2] === 0) {
+                    return escapeHtml(yy) + '<br/>' + escapeHtml(xx) +
+                        '<br/><b>0</b> open findings here.';
+                }
+                return '<b>' + Number(p.value[2]).toLocaleString() + '</b> open findings' +
+                    '<br/>' + escapeHtml(yy) + '<br/>' + escapeHtml(xx) +
+                    (p.data.rkNote ? '<br/><span style="color:' + t.muted + '">' +
+                        escapeHtml(p.data.rkNote) + '</span>' : '') +
+                    '<br/><span style="color:' + t.muted + '">priority: ' +
+                    escapeHtml(p.data.rkTier) + '</span>';
+            },
+        },
+        grid: { left: 178, right: 22, top: 64, bottom: 20, containLabel: false },
+        xAxis: {
+            type: 'category', position: 'top', data: xs,
+            splitArea: { show: true },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: t.axis } },
+            axisLabel: { color: t.muted, fontSize: 11, interval: 0 },
+            name: 'how likely the world is to exploit it',
+            nameLocation: 'middle', nameGap: 36,
+            nameTextStyle: { color: t.muted, fontSize: 10 },
+        },
+        yAxis: {
+            type: 'category', data: ys,
+            splitArea: { show: true },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: t.axis } },
+            axisLabel: { color: t.muted, fontSize: 11, interval: 0,
+                         width: 166, overflow: 'truncate' },
+            name: 'whether this copy answers the network',
+            nameLocation: 'middle', nameGap: 162, nameRotate: 90,
+            nameTextStyle: { color: t.muted, fontSize: 10 },
+        },
+        series: [{
+            type: 'heatmap',
+            data: data,
+            label: {
+                show: true, fontSize: 13,
+                formatter: function (p) {
+                    return p.value[2] === 0 ? '0' : Number(p.value[2]).toLocaleString();
+                },
+            },
+            itemStyle: { borderColor: t.axis, borderWidth: 1 },
+            emphasis: { itemStyle: { borderColor: t.text, borderWidth: 2 } },
+        }],
+    };
+}
+
+/* The chain: network edge -> listening process -> container -> package -> CVE.
+ *
+ * This is the one picture only this collector can draw. It follows a published
+ * port through the process holding it, into the container answering it, to the
+ * package inside, to the CVE. Laid out as a fixed five-column DAG rather than a
+ * force graph, because a picture that rearranges itself between two loads of
+ * the same data is a picture nobody trusts.
+ *
+ * A sankey was the cheaper option and is wrong here. Sankey takes a node's
+ * column from its depth in the flow, and these chains have two different
+ * depths -- a host process is four hops, a containerised one is five -- so host
+ * packages would land in column three and container packages in column four,
+ * asserting they are different kinds of thing when the only difference is that
+ * one hop exists. A tree is wrong for the opposite reason: it duplicates shared
+ * nodes, and convergence -- three exposed services ending at one library -- is
+ * exactly what the operator came to see.
+ *
+ * Node identity is (layer, name), never name alone. A container called nginx
+ * and a package called nginx are different things, and merging them would draw
+ * a chain that does not exist.
+ */
+var CHAIN_KIND = {
+    'edge':            { layer: 0, color: '#dc4e41' },
+    'listener':        { layer: 1, color: '#f8be34' },
+    // A port that answers with no process attributed to it. Drawn dashed
+    // because it is a hole in what the collector could see, which is a
+    // different thing from a hop that is known and harmless.
+    'listener-unknown': { layer: 1, color: '#6b5a2a', dashed: true },
+    'container':       { layer: 2, color: '#7cc0ec' },
+    'package':         { layer: 3, color: '#6e9c4f' },
+    'package-unknown': { layer: 3, color: '#6b5a2a', dashed: true },
+    'cve':             { layer: 4, color: '#708794' },
+    'cve-kev':         { layer: 4, color: '#a4302a' },
+};
+var CHAIN_LAYERS = ['network edge', 'listening process', 'container', 'package', 'CVE'];
+
+function chainNodeLabel(id) {
+    var s = String(id);
+    return s.slice(s.indexOf(RK_SEP) + 1);
+}
+
+function buildChainGraph(rows, t, config) {
+    var nodes = {}, links = [], i, vmax = 0;
+
+    function touch(name, kind, v) {
+        var k = CHAIN_KIND[kind] || { layer: 4, color: '#6b5a2a', dashed: true };
+        var id = k.layer + RK_SEP + name;
+        if (!nodes[id]) {
+            nodes[id] = { id: id, name: name, layer: k.layer, kind: kind,
+                          color: k.color, dashed: !!k.dashed, v: 0 };
+        }
+        if (v > nodes[id].v) { nodes[id].v = v; }
+        return id;
+    }
+
+    for (i = 0; i < rows.length; i++) {
+        var sName = String(rows[i][0] === null ? '' : rows[i][0]);
+        var sKind = String(rows[i][1] === null ? '' : rows[i][1]);
+        var tName = String(rows[i][2] === null ? '' : rows[i][2]);
+        var tKind = String(rows[i][3] === null ? '' : rows[i][3]);
+        var v = num(rows[i][4]);
+        if (!sName || !tName) { continue; }
+        if (v === null) { v = 0; }
+        if (v > vmax) { vmax = v; }
+        var sid = touch(sName, sKind, v), tid = touch(tName, tKind, v);
+        links.push({ source: sid, target: tid, value: v,
+                     targetKind: tKind, sourceKind: sKind });
+    }
+
+    // Lay each column out top to bottom, busiest first, then two barycentre
+    // passes to pull connected nodes level with each other. Cheap, and it
+    // removes most of the crossings that make a DAG unreadable.
+    var byLayer = {};
+    Object.keys(nodes).forEach(function (id) {
+        (byLayer[nodes[id].layer] = byLayer[nodes[id].layer] || []).push(nodes[id]);
+    });
+    Object.keys(byLayer).forEach(function (L) {
+        byLayer[L].sort(function (a, b) { return b.v - a.v; });
+        byLayer[L].forEach(function (n, k) { n.y = 100 * (k + 0.5) / byLayer[L].length; });
+    });
+    for (var pass = 0; pass < 2; pass++) {
+        Object.keys(byLayer).sort().forEach(function (L) {
+            byLayer[L].forEach(function (n) {
+                var ys = [], j;
+                for (j = 0; j < links.length; j++) {
+                    if (links[j].target === n.id && nodes[links[j].source]) {
+                        ys.push(nodes[links[j].source].y);
+                    } else if (links[j].source === n.id && nodes[links[j].target]) {
+                        ys.push(nodes[links[j].target].y);
+                    }
+                }
+                if (ys.length) {
+                    n.y = ys.reduce(function (a, b) { return a + b; }, 0) / ys.length;
+                }
+            });
+            byLayer[L].sort(function (a, b) { return a.y - b.y; });
+            byLayer[L].forEach(function (n, k) { n.y = 100 * (k + 0.5) / byLayer[L].length; });
+        });
+    }
+
+    // Label the busiest nodes in each column and leave the rest to the tooltip.
+    // A CVE column is routinely fifty nodes deep, and fifty ten-pixel labels
+    // stacked in one column render as a solid block of grey that hides the
+    // graph behind it. ECharts' hideOverlap does not save this: it drops
+    // labels only once they collide after layout, which in a column this tight
+    // means it drops almost all of them and keeps an arbitrary few.
+    var LABEL_PER_LAYER = 12;
+    Object.keys(byLayer).forEach(function (L) {
+        byLayer[L].slice().sort(function (a, b) { return b.v - a.v; })
+            .forEach(function (n, k) { n.labelled = k < LABEL_PER_LAYER; });
+    });
+
+    var nodeData = Object.keys(nodes).map(function (id) {
+        var n = nodes[id];
+        // sqrt so AREA tracks the value. A radius-proportional bubble
+        // overstates a large one by its square.
+        var size = vmax > 0 ? 9 + 23 * Math.sqrt(n.v / vmax) : 11;
+        return {
+            name: n.id,
+            value: [n.layer, n.y],
+            symbolSize: size,
+            rkKind: n.kind,
+            label: { show: n.labelled, position: n.layer >= 4 ? 'left' : 'right' },
+            itemStyle: {
+                color: n.color,
+                borderColor: n.dashed ? '#f8be34' : t.axis,
+                borderWidth: n.dashed ? 2 : 1,
+                borderType: n.dashed ? 'dashed' : 'solid',
+            },
+        };
+    });
+
+    var linkData = links.map(function (l) {
+        return {
+            source: l.source, target: l.target, value: l.value,
+            targetKind: l.targetKind,
+            lineStyle: { width: vmax > 0 ? 1 + 2.4 * (l.value / vmax) : 1.4 },
+        };
+    });
+
+    return {
+        animation: false,
+        tooltip: {
+            trigger: 'item',
+            backgroundColor: t.tooltipBg,
+            borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                if (p.dataType === 'edge') {
+                    return escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
+                        escapeHtml(chainNodeLabel(p.data.target)) + '<br/><b>' +
+                        p.data.value + '</b> distinct CVEs reachable through this hop';
+                }
+                return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b><br/>' +
+                    escapeHtml(CHAIN_LAYERS[p.value[0]] || 'unclassified') +
+                    '<br/><span style="color:' + t.muted + '">size is the most CVEs ' +
+                    'reachable through any one hop touching this node. Sibling sizes ' +
+                    'do not sum.</span>';
+            },
+        },
+        grid: { left: 18, right: 18, top: 46, bottom: 16, containLabel: false },
+        xAxis: {
+            type: 'category', data: CHAIN_LAYERS, position: 'top', boundaryGap: true,
+            axisTick: { show: false },
+            axisLine: { show: false },
+            splitLine: { show: true, lineStyle: { color: t.axis, type: 'dashed' } },
+            axisLabel: { color: t.muted, fontSize: 11, interval: 0 },
+        },
+        yAxis: { type: 'value', min: 0, max: 100, show: false },
+        series: [{
+            type: 'graph',
+            coordinateSystem: 'cartesian2d',
+            xAxisIndex: 0, yAxisIndex: 0, roam: false,
+            edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 7,
+            lineStyle: { color: 'source', opacity: 0.45, curveness: 0.08 },
+            emphasis: { focus: 'adjacency', lineStyle: { opacity: 0.95, width: 3 } },
+            label: {
+                show: true, color: t.text, fontSize: 10,
+                formatter: function (p) { return shorten(chainNodeLabel(p.name), 26); },
+            },
+            labelLayout: { hideOverlap: true },
+            data: nodeData,
+            links: linkData,
+        }],
+    };
+}
+
 var BUILDERS = {
     treemap: buildTreemap,
     donut: buildDonut,
@@ -573,6 +937,8 @@ var BUILDERS = {
     heatmap: buildHeatmap,
     boxplot: buildBoxplot,
     bar: buildBar,
+    prioritymatrix: buildPriorityMatrix,
+    chaingraph: buildChainGraph,
 };
 
 export default SplunkVisualizationBase.extend({
@@ -732,7 +1098,8 @@ export default SplunkVisualizationBase.extend({
         var names = (CLICK_FIELDS[chartType] || []);
         this.chart.on('click', function (params) {
             var values = [];
-            if (chartType === 'heatmap' && params.value) {
+            if ((chartType === 'heatmap' || chartType === 'prioritymatrix') &&
+                    params.value) {
                 // Heatmap data is [xIndex, yIndex, value], so the labels have
                 // to come back out of the axis rather than off the point.
                 var opt = self.chart.getOption();
@@ -740,6 +1107,13 @@ export default SplunkVisualizationBase.extend({
                     (opt.xAxis[0].data || [])[params.value[0]],
                     (opt.yAxis[0].data || [])[params.value[1]],
                 ];
+            } else if (chartType === 'chaingraph') {
+                // A graph node's name carries its layer, so that a container
+                // and a package sharing a name stay separate. The dashboard
+                // wants the name back without it.
+                values = params.dataType === 'edge'
+                    ? [chainNodeLabel(params.data.target), params.data.targetKind]
+                    : [chainNodeLabel(params.name), params.data && params.data.rkKind];
             } else if (chartType === 'sankey') {
                 values = params.dataType === 'edge'
                     ? [params.data.source, params.data.target]
@@ -752,14 +1126,19 @@ export default SplunkVisualizationBase.extend({
 
             var payload = {};
             names.forEach(function (slot, i) {
-                var col = fields && fields[i] ? fields[i].name : slot;
+                // The chain graph's click values are a node and its kind, which
+                // are not columns 1 and 2 of its contract -- reporting them
+                // under the source/source_kind headers would name them wrongly.
+                var col = (chartType === 'chaingraph' || !(fields && fields[i]))
+                    ? slot : fields[i].name;
                 if (values[i] === undefined) { return; }
                 // Both spellings, for the same reason the grid emits both:
                 // Splunk resolves $row.<field>$ from the bare name.
                 payload[col] = values[i];
                 payload['row.' + col] = values[i];
             });
-            payload['click.name'] = (fields && fields[0]) ? fields[0].name : 'label';
+            payload['click.name'] = chartType === 'chaingraph' ? 'node'
+                : ((fields && fields[0]) ? fields[0].name : 'label');
             payload['click.value'] = values[0];
             payload.name = payload['click.name'];
             payload.value = payload['click.value'];
