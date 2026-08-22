@@ -15,7 +15,7 @@
            load, and it is the first thing to fall over on a real fleet. The
            snapshot is one row per host. -->
       <search>
-        <query>| inputlookup riskability_hoststate_lookup | where hostname!="__meta" | sort hostname | fields hostname</query>
+        <query>| `riskability_hosts_seen` | sort hostname | fields hostname</query>
         <earliest>0</earliest>
         <latest>now</latest>
       </search>
@@ -41,8 +41,7 @@
              the finding state. No raw index search, so this costs the same on a
              fleet of five thousand as on a fleet of two. -->
         <search>
-          <query>| inputlookup riskability_hoststate_lookup
-| where hostname!="__meta"
+          <query>| `riskability_hosts_seen`
 | search hostname=$hostname|s$
 | lookup riskability_matchstate_lookup hostname OUTPUT n_components, matched_at
 | join type=left hostname

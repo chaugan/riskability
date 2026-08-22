@@ -293,6 +293,8 @@ def import_bundle(
         pass
     feedstate.insert(json.dumps(state))
 
+    sweep_ungenerationed(kvstore)
+
     # Only now is the old generation unreachable, so removing it is safe. If
     # this is interrupted the leftovers are invisible to readers and will be
     # cleaned up by the next import.
@@ -347,13 +349,35 @@ def _delete_generation(kvstore, generation: int) -> None:
             kvstore[collection].data.delete(json.dumps({"gen": generation}))
         except Exception:
             pass
-        # Rows written before generations existed carry no gen field at all.
-        if generation == 0:
-            try:
-                kvstore[collection].data.delete(
-                    json.dumps({"gen": {"$exists": False}}))
-            except Exception:
-                pass
+
+
+def sweep_ungenerationed(kvstore) -> None:
+    """Remove rows that carry no generation at all.
+
+    These predate generations, or were left by a version that could not delete
+    them. Readers all filter on the live generation -- the matcher queries
+    {"gen": <live>} explicitly -- so these rows are unreachable and cannot
+    affect a result. They can, however, never be reclaimed, and they are not
+    small: a development instance was carrying 962,000 orphaned version ranges
+    and 323,387 orphaned advisories, 18.6% of the range table, against Splunk's
+    25GB-per-collection guidance for search-head stability.
+
+    They accumulated because the delete used {"$exists": False}. Splunk's KV
+    Store accepts only a subset of MongoDB's query operators and rejects
+    $exists outright as an invalid query, and the exception was swallowed -- so
+    nothing was ever deleted and nothing was ever said. {"gen": None} is the
+    selector that works, which the feed worker already knew and this module was
+    never told. It also ran only when generation == 0, a condition that stops
+    being true after the first successful import and never becomes true again.
+    """
+    for collection in list(COLLECTIONS.values()) + [ECO_COLLECTION]:
+        try:
+            kvstore[collection].data.delete(json.dumps({"gen": None}))
+        except Exception:
+            # Best effort: reclaiming space must never be the reason an import
+            # fails. But it no longer fails silently for a reason nobody can
+            # see -- the selector above is the tested one.
+            pass
 
 
 def verify(kvstore) -> dict:

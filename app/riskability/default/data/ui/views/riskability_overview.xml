@@ -10,7 +10,7 @@
     <query>index=riskability_findings sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
-    _index_earliest=`riskability_lifecycle_window` _index_latest=now
+    _index_earliest=`riskability_stuck_window` _index_latest=now
 | stats max(match_run) AS match_run, sum(findings_produced) AS findings_produced BY hostname
 | where findings_produced &gt; 0
 | lookup riskability_matchstate_lookup hostname OUTPUT folded_run
@@ -95,7 +95,7 @@
           <query>index=riskability_findings sourcetype=riskability:findings
     record_type="match_receipt"
     earliest=0 latest=+10y
-    _index_earliest=`riskability_lifecycle_window` _index_latest=now
+    _index_earliest=`riskability_stuck_window` _index_latest=now
 | stats max(match_run) AS match_run, sum(findings_produced) AS findings_produced BY hostname
 | where findings_produced &gt; 0
 | lookup riskability_matchstate_lookup hostname OUTPUT folded_run

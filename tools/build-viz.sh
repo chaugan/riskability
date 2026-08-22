@@ -83,7 +83,19 @@ printf '%s\n' "$now_hash" > "$HASHFILE"
 current=$(awk -F'= *' '/^build/{print $2; exit}' "$APPCONF")
 next=$((current + 1))
 # Portable in-place edit: sed -i differs between GNU and BSD.
+#
+# `cat` back over the original rather than `mv` the temp file into place. mktemp
+# creates 0600 and mv preserves it, so moving the temp file over app.conf left
+# it readable only by the user who ran the build. git does not track that bit,
+# so `git status` stayed clean and review could not see it -- but the package
+# carried it, and the ordinary air-gapped install is to untar the .spl as root
+# and run Splunk as the splunk user. splunkd could then not read app.conf at
+# all: no [package] id, no [ui], no build number. It is also a straight
+# Splunkbase file-permission failure. The dev box never showed it because
+# deploy-dev.sh chowns everything afterwards, which is exactly the kind of
+# local-only repair that must never be what makes a build correct.
 tmp=$(mktemp)
 awk -v n="$next" '/^build = /{print "build = " n; next} {print}' "$APPCONF" > "$tmp"
-mv "$tmp" "$APPCONF"
+cat "$tmp" > "$APPCONF"
+rm -f "$tmp"
 echo "  app build $current -> $next (cache key)"

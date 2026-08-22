@@ -316,6 +316,23 @@ class FeedWorker(Script):
             ew.log("INFO", "riskability: removed stale feed generation(s) "
                            + ",".join(str(g) for g in removed))
 
+        # Rows carrying no generation at all. range(0, live) above cannot reach
+        # them -- there is no generation number to iterate to -- so they were
+        # never swept by anything. They are unreachable to readers, which all
+        # filter on the live generation, but they are not free: an instance that
+        # had been through the older import path was carrying 1.28 million of
+        # them. The import path sweeps these too now; this covers an install
+        # that upgrades and does not immediately re-import.
+        try:
+            probe = kv[importer.COLLECTIONS["advisories"]].data.query(
+                query=json.dumps({"gen": None}), limit=1)
+        except Exception as exc:
+            ew.log("WARN", f"riskability: could not look for ungenerationed rows: {exc}")
+            return
+        if probe:
+            importer.sweep_ungenerationed(kv)
+            ew.log("INFO", "riskability: removed feed rows that carried no generation")
+
     def _staged_path(self, filename: str) -> str:
         name = os.path.basename(filename or "")
         full = os.path.realpath(os.path.join(INCOMING_DIR, name))
