@@ -14,7 +14,7 @@
       <title>Open</title>
       <single>
         <search>
-          <query>| `riskability_findings_now` | search hostname=$host_tok|s$ | where status="open" | stats dc(finding_key) AS n</query>
+          <query>| `riskability_open_findings` | search hostname=$host_tok|s$ | stats dc(finding_key) AS n</query>
         </search>
         <option name="drilldown">none</option>
         <option name="underLabel">still present on the host</option>

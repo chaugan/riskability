@@ -47,6 +47,63 @@
 
   <row>
     <panel>
+      <title>Open findings</title>
+      <single>
+        <search>
+          <query>| `riskability_open_findings` | stats dc(finding_key) AS n</query>
+        </search>
+        <option name="underLabel">excluding accepted risks</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[1,100]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Accepted risks</title>
+      <single>
+        <search>
+          <query>| `riskability_accepted_findings` | stats dc(finding_key) AS n</query>
+        </search>
+        <option name="underLabel">excluded from every number above</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Accepted and known-exploited</title>
+      <single>
+        <search>
+          <query>| `riskability_accepted_findings` | where isnotnull(kev_added) AND kev_added!="" | stats dc(cve_id) AS n</query>
+        </search>
+        <option name="underLabel">on the CISA KEV list, and excepted</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0">
+          <b>Accepted risks are excluded from every other number on this page.</b>
+          <span>
+            An accepted risk is one somebody has looked at and decided to handle another way,
+            recorded with what that other way is. It is still a vulnerability, and it is still
+            present. A fleet showing no open findings and four hundred accepted ones is not a
+            clean fleet, which is why the count sits here rather than being hidden. Manage them
+            on <b>Risk exceptions</b>.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Where the open findings are, by package</title>
       <viz type="riskability.riskability_chart">
         <search>
