@@ -64,6 +64,43 @@ Splunk instance that is not the app's to change, and each is a single command.
    "nothing has been assessed", not "nothing is wrong". The Feed administration
    page says so explicitly rather than showing a clean-looking dashboard.
 
+## Inventory heartbeats (optional, and worth it above a few dozen hosts)
+
+swinv writes one NDJSON record per component per scan. That is the right shape
+for correctness — every scan is a complete statement of what is installed, so a
+package that disappears is genuinely gone rather than merely unmentioned — and
+it is the wrong shape for volume. Fourteen thousand components on five thousand
+hosts scanned hourly is 1.68 billion events a day, and the app's hourly "which
+hosts changed" decision reads every one of them. The matcher only works on hosts
+that changed; the search that decides which ones those are does not.
+
+A **heartbeat** fixes that. swinv sends one small record per host per scan
+carrying a digest of its component list, and sends the full component list only
+when that digest changes:
+
+```json
+{"record_type":"heartbeat","hostname":"web01","digest":"sha256:9f2c…",
+ "n_components":14425,"os_id":"ubuntu","os_version_id":"24.04",
+ "architecture":"amd64","scanned_at":"2026-08-22T06:47:35Z"}
+```
+
+The app prefers a heartbeat where one exists and computes the digest itself
+where it does not, so a fleet part-way through the rollout works throughout, and
+so does one that never adopts it.
+
+Three things worth knowing if you are implementing the collector side:
+
+- **The digest is opaque to the app.** It is never recomputed and never compared
+  against anything but the previous value stored for the same host. Hash it
+  however you like, as long as it is stable and changes when the inventory does.
+  A host switching from computed to heartbeat digests looks changed exactly once.
+- **Keep sending full lists on change.** The app deliberately does not accept
+  deltas. A delta cannot express a removal, and "this package is no longer here"
+  is the fact that decides whether a vulnerability is fixed or merely unreported.
+- **Whichever record is newer wins.** If heartbeats stop arriving, the app goes
+  back to computing the digest from the component list rather than trusting a
+  stale heartbeat forever.
+
 ## How vulnerability data gets in
 
 The app ships no vulnerability data. An operator runs the riskability-feed tool
