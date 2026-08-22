@@ -1,0 +1,344 @@
+<dashboard version="1.1" theme="dark" stylesheet="riskability_start.css">
+  <label>Start here</label>
+  <description>What this app does, what its numbers mean, and what they do not.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-start-lede">
+          <h2>Riskability finds known vulnerabilities in the software your fleet actually has
+              installed &#8212; using CVE databases you carry in by hand.</h2>
+          <p>
+            It is built for search heads that can never reach the internet. Nothing here
+            calls out to anything: the vulnerability data arrives as a file you build on a
+            connected machine and import on the <b>Feed administration</b> page, and the
+            inventory arrives from <b>swinv</b> through your forwarders.
+          </p>
+          <p class="rk-start-honest">
+            <b>The most important thing to know about every number in this app:</b> an empty
+            panel means <em>nothing was found</em>, which is not the same as <em>there is
+            nothing to find</em>. A feed that was never imported, a host that stopped
+            reporting, and a package no advisory covers all produce the same reassuring
+            zero. That is why the three clocks below come first, and why
+            <b>Coverage</b> exists at all.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Feed age</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_feedstate_lookup
+| search _key=current
+| eval days = round((now() - imported_at) / 86400, 1)
+| fields days</query>
+        </search>
+        <option name="underLabel">days since the CVE data was imported</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[7,30]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Newest inventory</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_hoststate_lookup
+| stats max(host_last_scan) AS t
+| eval hours = round((now() - t) / 3600, 1)
+| fields hours</query>
+        </search>
+        <option name="underLabel">hours since any host last reported</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[6,48]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Last match</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_matchstate_lookup
+| stats max(matched_at) AS t
+| eval hours = round((now() - t) / 3600, 1)
+| fields hours</query>
+        </search>
+        <option name="underLabel">hours since inventory was compared to the feed</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[2,26]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Hosts reporting</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_hoststate_lookup | stats count AS n</query>
+        </search>
+        <option name="underLabel">seen at least once</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-start-note">
+          <b>Every number in this app is only as current as the oldest of those three.</b>
+          A fresh scan compared against a six-month-old feed finds six-month-old
+          vulnerabilities.
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Open findings</title>
+      <single>
+        <search>
+          <query>| `riskability_open_findings` | stats dc(finding_key) AS n</query>
+        </search>
+        <option name="underLabel">excluding accepted risks</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[1,100]</option>
+        <option name="useColors">1</option>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Accepted risks</title>
+      <single>
+        <search>
+          <query>| `riskability_accepted_findings` | stats dc(finding_key) AS n</query>
+        </search>
+        <option name="underLabel">excluded on purpose, with a recorded reason</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Components tracked</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_matchstate_lookup | stats sum(n_components) AS n</query>
+        </search>
+        <option name="underLabel">installed pieces of software seen</option>
+        <option name="drilldown">none</option>
+        <option name="useColors">0</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How a finding is made</title>
+      <html>
+        <div class="rk-start-flow">
+          <div class="rk-step">
+            <div class="rk-step-n">1</div>
+            <div>
+              <b>swinv walks the machine</b>
+              <p>Not just the package manager. It looks inside container images, snap bases
+                 and chroots, and records the <em>path</em> of every copy it finds &#8212; which is
+                 how this app can tell a patched host from one with a stale copy still sitting
+                 in an image.</p>
+            </div>
+          </div>
+          <div class="rk-step">
+            <div class="rk-step-n">2</div>
+            <div>
+              <b>Each component gets an identity</b>
+              <p>A <b>PURL</b> when a package manager installed it (<code>pkg:deb/ubuntu/openssl</code>),
+                 or a <b>CPE</b> when nothing did &#8212; which is most Windows software. A PURL is
+                 read from a package record; a CPE is inferred from a display name. That
+                 difference is why Windows findings are always reported at low
+                 <b>confidence</b>.</p>
+            </div>
+          </div>
+          <div class="rk-step">
+            <div class="rk-step-n">3</div>
+            <div>
+              <b>Versions are compared using the right rules</b>
+              <p>Debian, RPM, Alpine, npm, Python, Maven and Go each order versions
+                 differently, and comparing them as text gets the answer wrong. Where a
+                 comparison cannot be made properly the finding is marked
+                 <b>informational</b> or <b>low</b> rather than asserted.</p>
+            </div>
+          </div>
+          <div class="rk-step">
+            <div class="rk-step-n">4</div>
+            <div>
+              <b>The finding is tracked over time</b>
+              <p>A finding that stops appearing is not automatically a fixed one. If the
+                 package is still installed at a newer version it is <b>mitigated</b>; if it is
+                 gone it is <b>removed</b>; if the host simply stopped reporting it is
+                 <b>unknown</b>. Silence is never counted as success.</p>
+            </div>
+          </div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How MITRE ATT&amp;CK fits, and where it loses information</title>
+      <html>
+        <div class="rk-funnel">
+          <div class="rk-funnel-row">
+            <div class="rk-node">
+              <div class="rk-node-t">CVE</div>
+              <div class="rk-node-s">a specific vulnerability<br/>in a specific product</div>
+            </div>
+            <div class="rk-hop">
+              <div class="rk-hop-arrow">&#8594;</div>
+              <div class="rk-hop-l">most CVEs have none</div>
+            </div>
+            <div class="rk-node">
+              <div class="rk-node-t">CWE</div>
+              <div class="rk-node-s">the <em>class</em> of mistake<br/>e.g. use-after-free</div>
+            </div>
+            <div class="rk-hop">
+              <div class="rk-hop-arrow">&#8594;</div>
+              <div class="rk-hop-l">many-to-many</div>
+            </div>
+            <div class="rk-node">
+              <div class="rk-node-t">CAPEC</div>
+              <div class="rk-node-s">a pattern of attack<br/>that abuses it</div>
+            </div>
+            <div class="rk-hop">
+              <div class="rk-hop-arrow">&#8594;</div>
+              <div class="rk-hop-l">many-to-many</div>
+            </div>
+            <div class="rk-node rk-node-end">
+              <div class="rk-node-t">ATT&amp;CK</div>
+              <div class="rk-node-s">what an adversary<br/>could then do</div>
+            </div>
+          </div>
+          <p class="rk-funnel-warn">
+            <b>Every hop is a mapping MITRE publishes, and every hop loses information.</b>
+            A CVE with no CWE recorded simply never reaches the matrix, so a technique
+            missing from the ATT&amp;CK page is not a technique you are safe from. And because
+            one weakness maps to several techniques, a single vulnerability is drawn several
+            times &#8212; the widths never add up to a total.
+          </p>
+          <p class="rk-funnel-warn">
+            What this chain says is <em>&#8220;this class of weakness is the kind of thing that
+            enables that technique&#8221;</em>. It does not say an adversary used it, and it does not
+            say this vulnerability is exploitable in your environment. For that, use the
+            <b>KEV</b> and <b>EPSS</b> columns on <b>Findings</b>, which are about real-world
+            exploitation rather than classification.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How much survives the chain, right now</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_open_findings`
+| stats dc(cve_id) AS n
+| eval stage = "1. open CVEs"
+| append
+    [| `riskability_finding_cwes` | stats dc(cve_id) AS n | eval stage = "2. have a CWE recorded"]
+| append
+    [| `riskability_attack_surface` | stats dc(cve_id) AS n | eval stage = "3. reach a technique"]
+| eval series = stage
+| fields stage, series, n</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">stackedbar</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings to trace through the chain.</option>
+        <option name="height">280</option>
+      </viz>
+      <html>
+        <div class="rk-start-note">
+          The drop between these bars is not a defect &#8212; it is what the mapping costs. Read
+          the ATT&amp;CK page as <em>&#8220;capabilities our open findings could hand an
+          attacker&#8221;</em>, never as a complete picture of exposure.
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Where to go</title>
+      <html>
+        <div class="rk-start-guide">
+          <div class="rk-guide-item"><b>Fleet overview</b>
+            <span>The numbers, and how stale they are.</span></div>
+          <div class="rk-guide-item"><b>Findings</b>
+            <span>What to patch, ranked by likelihood of exploitation rather than by severity
+              score. This is the working list.</span></div>
+          <div class="rk-guide-item"><b>Remediation</b>
+            <span>What actually got fixed, with the version change that proves it &#8212; and what
+              merely stopped being reported.</span></div>
+          <div class="rk-guide-item"><b>MITRE ATT&amp;CK</b>
+            <span>Lossy classification of what your open findings could enable. Context, not
+              evidence.</span></div>
+          <div class="rk-guide-item"><b>Hosts</b>
+            <span>One machine at a time, split by the filesystem root each component came
+              from.</span></div>
+          <div class="rk-guide-item"><b>Coverage</b>
+            <span>What the app <em>cannot</em> see: ecosystems present in the fleet that the
+              imported feed knows nothing about. The most honest page here.</span></div>
+          <div class="rk-guide-item"><b>Risk exceptions</b>
+            <span>Findings someone has decided to handle another way, with what that way is.
+              Excluded from every risk number, and counted separately so they are never
+              hidden.</span></div>
+          <div class="rk-guide-item"><b>Feed administration</b>
+            <span>Import the offline CVE data, and download the builder that makes it.</span></div>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Words this app uses</title>
+      <html>
+        <div class="rk-glossary">
+          <dl>
+            <dt>CVE</dt><dd>One specific vulnerability in one specific product, with an
+              identifier everyone shares.</dd>
+            <dt>CWE</dt><dd>The <em>class</em> of programming mistake behind it. Most CVEs never
+              get one assigned.</dd>
+            <dt>CAPEC</dt><dd>A catalogued pattern of attack that abuses such a weakness.</dd>
+            <dt>ATT&amp;CK</dt><dd>MITRE's catalogue of what adversaries actually do, organised
+              by tactic. Reached here through CWE and CAPEC, so lossily.</dd>
+            <dt>PURL</dt><dd>A package URL &#8212; an identity read from a package manager's own
+              records. Precise.</dd>
+            <dt>CPE</dt><dd>A vendor/product naming scheme used when no package manager was
+              involved. Inferred, so weaker evidence.</dd>
+            <dt>EPSS</dt><dd>A published estimate of how likely a CVE is to be exploited in the
+              next 30 days. Better for prioritising than a severity score.</dd>
+            <dt>KEV</dt><dd>CISA's list of vulnerabilities known to be exploited in the wild
+              right now. The strongest signal available offline.</dd>
+            <dt>scope / root</dt><dd>Which filesystem the component was found in: the host
+              itself, a snap base, a container image, a chroot.</dd>
+            <dt>confidence</dt><dd>How strong the evidence is, not how bad the vulnerability is.
+              <em>high</em> means both identity and version came from package records.</dd>
+            <dt>authority</dt><dd>Who said this version is affected &#8212; the distribution, the
+              upstream ecosystem, or NVD. Distributions win, because they backport.</dd>
+            <dt>generation</dt><dd>One complete import of the feed. Findings are always matched
+              against a single generation, never a half-written one.</dd>
+          </dl>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

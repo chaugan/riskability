@@ -1,0 +1,88 @@
+/* Start-here page. Prose that has to be read, so it is set for reading:
+   a measure that does not run the width of a 1700px monitor, and enough
+   line height to survive a dark background. */
+
+.rk-start-lede { max-width: 900px; }
+.rk-start-lede h2 {
+    color: #f2f4f5; font-size: 18px; line-height: 1.45; font-weight: 600;
+    margin: 4px 0 12px;
+}
+.rk-start-lede p { color: #d5d8dc; font-size: 13px; line-height: 1.6; margin: 0 0 10px; }
+.rk-start-honest {
+    border-left: 3px solid #f8be34; background: #2c2f34;
+    padding: 10px 14px; border-radius: 3px;
+}
+.rk-start-honest b { color: #f8be34; }
+
+.rk-start-note {
+    color: #9aa4ae; font-size: 12px; line-height: 1.55; margin: 6px 0 0;
+    max-width: 1000px;
+}
+.rk-start-note b { color: #d5d8dc; }
+
+/* --- how a finding is made ------------------------------------------- */
+.rk-start-flow { display: flex; flex-wrap: wrap; gap: 18px; }
+.rk-step {
+    display: flex; gap: 12px; flex: 1 1 380px; min-width: 320px;
+    background: #23272e; border: 1px solid #33383f; border-radius: 4px;
+    padding: 14px 16px;
+}
+.rk-step-n {
+    flex: 0 0 26px; height: 26px; border-radius: 13px;
+    background: #8B1A1A; color: #f2f4f5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+}
+.rk-step b { color: #f2f4f5; font-size: 13px; }
+.rk-step p { color: #9aa4ae; font-size: 12px; line-height: 1.55; margin: 5px 0 0; }
+.rk-step code {
+    background: #1a1d21; color: #d5d8dc; padding: 1px 5px;
+    border-radius: 2px; font-size: 11px;
+}
+
+/* --- the lossy chain -------------------------------------------------- */
+.rk-funnel-row {
+    display: flex; align-items: stretch; gap: 4px; flex-wrap: wrap;
+    margin-bottom: 14px;
+}
+.rk-node {
+    flex: 1 1 150px; min-width: 130px;
+    background: #23272e; border: 1px solid #46474a; border-radius: 4px;
+    padding: 12px 14px; text-align: center;
+}
+/* The last box is the one people over-read, so it is the one that is
+   visually softest rather than loudest. */
+.rk-node-end { border-color: #33383f; background: #212327; }
+.rk-node-t { color: #f2f4f5; font-size: 14px; font-weight: 700; letter-spacing: 0.3px; }
+.rk-node-s { color: #9aa4ae; font-size: 11px; line-height: 1.5; margin-top: 5px; }
+.rk-hop {
+    flex: 0 0 108px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 2px;
+}
+.rk-hop-arrow { color: #708794; font-size: 17px; line-height: 1; }
+.rk-hop-l { color: #f8be34; font-size: 10px; text-align: center; line-height: 1.35; }
+.rk-funnel-warn {
+    color: #d5d8dc; font-size: 12px; line-height: 1.6;
+    max-width: 1000px; margin: 0 0 8px;
+}
+.rk-funnel-warn b { color: #f2f4f5; }
+
+/* --- where to go ------------------------------------------------------ */
+/* A two-column grid rather than an inline-block with a min-width: with the
+   latter, a description longer than one line wraps back to the left margin and
+   sits under the name it belongs to. */
+.rk-start-guide {
+    display: grid; grid-template-columns: 180px 1fr; gap: 7px 18px;
+    max-width: 1000px; align-items: baseline;
+}
+.rk-guide-item { display: contents; font-size: 12px; line-height: 1.55; }
+.rk-guide-item b { color: #f2f4f5; }
+.rk-guide-item span { color: #9aa4ae; }
+
+/* --- glossary --------------------------------------------------------- */
+.rk-glossary dl {
+    display: grid; grid-template-columns: 140px 1fr; gap: 6px 18px;
+    margin: 0; max-width: 1000px;
+}
+.rk-glossary dt { color: #f2f4f5; font-size: 12px; font-weight: 600; }
+.rk-glossary dd { color: #9aa4ae; font-size: 12px; line-height: 1.55; margin: 0; }

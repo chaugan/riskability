@@ -1,5 +1,6 @@
 <nav search_view="search" color="#8B1A1A">
-  <view name="riskability_overview" default="true"/>
+  <view name="riskability_start" default="true"/>
+  <view name="riskability_overview"/>
   <view name="riskability_findings"/>
   <view name="riskability_remediation"/>
   <view name="riskability_mitre"/>

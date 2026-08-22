@@ -501,7 +501,12 @@ function stacked(rows, t, config, horizontal) {
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
                    backgroundColor: t.tooltipBg, borderColor: t.axis,
                    textStyle: { color: t.text } },
-        legend: { textStyle: { color: t.muted, fontSize: 11 }, top: 0 },
+        // A legend that repeats the axis labels is noise. It only earns its
+        // space when a category is actually made of several series.
+        legend: {
+            show: series.length > 1 && cats.length !== series.length,
+            textStyle: { color: t.muted, fontSize: 11 }, top: 0,
+        },
         // containLabel in both orientations: horizontal carries long category
         // names on the y axis, vertical carries rotated dates on the x, and
         // both were being clipped by fixed margins.
