@@ -10,6 +10,9 @@
         <query>index=riskability_inventory sourcetype=riskability:swinv | stats count BY hostname | fields hostname</query>
       </search>
     </input>
+    <input type="hidden" token="sev_filter"><default>sev=*</default></input>
+    <input type="hidden" token="eco_filter"><default>ecosystem=*</default></input>
+    <input type="hidden" token="host_drill_label"><default>everything</default></input>
   </fieldset>
 
   <row>
@@ -77,18 +80,34 @@
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open findings for this host. That can also mean the host has not reported inventory recently — check its last scan time above.</option>
         <option name="height">380</option>
+        <drilldown>
+          <set token="sev_filter">sev="$row.sev$"</set>
+          <set token="eco_filter">ecosystem="$row.ecosystem$"</set>
+          <set token="host_drill_label">$row.sev$ / $row.ecosystem$</set>
+          <set token="host_any_filter">1</set>
+        </drilldown>
       </viz>
     </panel>
   </row>
 
   <row>
     <panel>
-      <title>Findings on this host</title>
+      <title>Findings on this host — $host_drill_label$</title>
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Click a cell in the heatmap above to narrow this table.</span>
+          <span class="rk-drill-state" depends="$host_any_filter$">Filtered by $host_drill_label$</span>
+          <a class="rk-drill-clear" depends="$host_any_filter$"
+             href="riskability_hosts?form.hostname=$hostname$">Clear</a>
+        </div>
+      </html>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings`
 | search hostname=$hostname|s$
 | where confidence!="informational"
+| eval sev = coalesce(severity, "unrated")
+| search $sev_filter$ $eco_filter$
 | eval root = if(scope_id!="", scope_id, "host")
 | eval installed_version = last_version
 | table cve_id, package, ecosystem, installed_version, fixed_version, root, confidence, epss, title

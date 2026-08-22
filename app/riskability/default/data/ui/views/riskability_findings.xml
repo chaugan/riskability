@@ -29,6 +29,19 @@
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
+    <!-- Filtered in the search rather than in the browser, so other dashboards
+         can link straight to "the findings behind this package" and the count
+         they land on is the real one rather than the loaded-rows one. -->
+    <input type="text" token="package_tok" searchWhenChanged="true">
+      <label>Package (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+    <input type="text" token="cve_tok" searchWhenChanged="true">
+      <label>CVE (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
   </fieldset>
 
   <row>
@@ -52,7 +65,7 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_open_findings_all`
-| search hostname=$host_tok|s$
+| search hostname=$host_tok|s$ package=$package_tok|s$ cve_id=$cve_tok|s$
 | search $confidence_tok$ $scope_tok$
 | eval installed_version = last_version
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())

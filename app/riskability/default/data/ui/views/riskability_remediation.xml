@@ -7,6 +7,8 @@
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
+    <input type="hidden" token="rem_sev_filter"><default>sev=*</default></input>
+    <input type="hidden" token="rem_sev_label"><default>every severity</default></input>
   </fieldset>
 
   <row>
@@ -79,6 +81,11 @@
         <option name="riskability.riskability_chart.chartType">boxplot</option>
         <option name="riskability.riskability_chart.valueLabel">days open</option>
         <option name="riskability.riskability_chart.emptyText">Not enough open findings to describe an age distribution.</option>
+        <drilldown>
+          <set token="rem_sev_filter">sev="$row.sev$"</set>
+          <set token="rem_sev_label">$row.sev$</set>
+          <set token="rem_any_filter">1</set>
+        </drilldown>
         <option name="height">380</option>
       </viz>
       <html>
@@ -96,11 +103,27 @@
 
   <row>
     <panel>
-      <title>Mitigated: the upgrade that fixed it</title>
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Click a box above to narrow the two tables below to that
+            severity.</span>
+          <span class="rk-drill-state" depends="$rem_any_filter$">Filtered by $rem_sev_label$</span>
+          <a class="rk-drill-clear" depends="$rem_any_filter$"
+             href="riskability_remediation?form.host_tok=$host_tok$">Clear</a>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Mitigated: the upgrade that fixed it — $rem_sev_label$</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_mitigated_findings`
 | search hostname=$host_tok|s$
+| eval sev = coalesce(severity, "unrated")
+| search $rem_sev_filter$
 | eval fixed_after_days = round((last_seen - first_seen)/86400, 1)
 | eval root = if(scope_id!="", scope_id, "host")
 | table cve_id, package, ecosystem, mitigation, root, hostname, path, fixed_after_days, epss
@@ -130,6 +153,8 @@
         <search>
           <query>| `riskability_findings_now`
 | search hostname=$host_tok|s$
+| eval sev = coalesce(severity, "unrated")
+| search $rem_sev_filter$
 | where status="removed" OR status="unknown"
 | eval root = if(scope_id!="", scope_id, "host")
 | table cve_id, package, last_version, status, root, hostname, path, last_seen
