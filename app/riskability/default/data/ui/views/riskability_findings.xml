@@ -1,4 +1,4 @@
-<form version="1.1" theme="dark">
+<form version="1.1" theme="dark" script="riskability_exceptions.js" stylesheet="riskability_exceptions.css">
   <label>Findings</label>
   <description>Every vulnerability the current feed can attribute to installed software.</description>
   <fieldset submitButton="false" autoRun="true">
@@ -33,22 +33,41 @@
 
   <row>
     <panel>
+      <html>
+        <div id="rk-exc-toolbar" class="rk-exc-toolbar">
+          <span class="rk-exc-hint">Select rows to accept a risk. Every selected row must share
+            one CVE &#8212; one justification cannot honestly cover several different
+            vulnerabilities.</span>
+          <span id="rk-exc-summary" class="rk-exc-summary"></span>
+          <button id="rk-exc-accept" class="rk-exc-btn" type="button" disabled="disabled">
+            Accept risk&#8230;</button>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Findings, ranked by exploitation likelihood (EPSS) rather than CVSS</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_open_findings`
+          <query>| `riskability_open_findings_all`
 | search hostname=$host_tok|s$
 | search $confidence_tok$ $scope_tok$
 | eval installed_version = last_version
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")
-| table cve_id, package, installed_version, fixed_version, hostname, scope_id, ecosystem, match_authority, confidence, epss_pct, kev, title
+| eval accepted_label = if(accepted=="1", "accepted", "")
+| table cve_id, package, installed_version, fixed_version, hostname, scope_id, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
          fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root",
          ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
-         epss_pct AS "EPSS %", kev AS "KEV", title AS "Summary"
+         epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted",
+         title AS "Summary", finding_key AS "Key"
 | sort - "EPSS %"</query>
         </search>
+        <option name="riskability.riskability_grid.selectable">yes</option>
+        <option name="riskability.riskability_grid.hideColumns">Key</option>
         <option name="riskability.riskability_grid.emptyText">No findings matched. With the Confidence filter on "High only" this can mean the evidence was never strong enough to assert one, not that the fleet is clean — switch it to All to see what was found and why it was downgraded.</option>
       </viz>
       <html>

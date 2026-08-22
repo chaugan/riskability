@@ -25,7 +25,7 @@
  */
 import { Tabulator, SortModule, FilterModule, FormatModule, EditModule,
          ResizeColumnsModule, PageModule, DownloadModule, MenuModule,
-         TooltipModule, InteractionModule } from 'tabulator-tables';
+         TooltipModule, InteractionModule, SelectRowModule } from 'tabulator-tables';
 
 import SplunkVisualizationBase from 'api/SplunkVisualizationBase';
 import vizUtils from 'api/SplunkVisualizationUtils';
@@ -38,6 +38,7 @@ import vizUtils from 'api/SplunkVisualizationUtils';
 Tabulator.registerModule([
     SortModule, FilterModule, FormatModule, EditModule, ResizeColumnsModule,
     PageModule, DownloadModule, MenuModule, TooltipModule, InteractionModule,
+    SelectRowModule,
 ]);
 
 var ROW_CAP = 10000;
@@ -202,6 +203,10 @@ export default SplunkVisualizationBase.extend({
         host.className = 'rk-grid-host';
         this.el.appendChild(host);
 
+        var hidden = String(this._opt(config, 'hideColumns') || '')
+            .split(',').map(function (x) { return x.trim().toLowerCase(); })
+            .filter(Boolean);
+
         var columns = fields.map(function (f, i) {
             var title = f.name;
             var numeric = looksNumeric(rows, i);
@@ -226,6 +231,7 @@ export default SplunkVisualizationBase.extend({
                 col.headerFilterFunc = '=';
             }
             if (numeric) { col.hozAlign = 'right'; }
+            if (hidden.indexOf(title.toLowerCase()) !== -1) { col.visible = false; }
             if (isColoured(title)) {
                 col.formatter = function (cell) {
                     var v = cell.getValue();
@@ -249,10 +255,20 @@ export default SplunkVisualizationBase.extend({
             return o;
         });
 
+        var selectable = String(this._opt(config, 'selectable') || 'no') === 'yes';
+        if (selectable) {
+            columns.unshift({
+                formatter: 'rowSelection', titleFormatter: 'rowSelection',
+                hozAlign: 'center', headerSort: false, width: 42,
+                cellClick: function (e, cell) { cell.getRow().toggleSelect(); },
+            });
+        }
+
         try {
             this.table = new Tabulator(host, {
                 data: tableData,
                 columns: columns,
+                selectableRows: selectable ? true : false,
                 // fitColumns, not fitDataStretch. fitDataStretch sizes to the
                 // content and then stretches the last column, which overshoots
                 // the panel by a few pixels on narrow tables and leaves a
@@ -291,6 +307,27 @@ export default SplunkVisualizationBase.extend({
         this.table.on('dataFiltered', function (filters, filteredRows) {
             setCount(filteredRows ? filteredRows.length : rows.length);
         });
+
+        // Selection is published as a DOM event rather than handled here.
+        //
+        // The page that owns the action owns the button: this component is on
+        // five dashboards and only one of them can accept a risk. Emitting an
+        // event lets that page listen without every other panel growing a
+        // control it must not have. Column names travel with it so the
+        // listener is not guessing at positions.
+        if (selectable) {
+            var emit = function () {
+                var picked = self.table.getSelectedData().map(function (d) {
+                    var o = {};
+                    for (var i = 0; i < fields.length; i++) { o[fields[i].name] = d['c' + i]; }
+                    return o;
+                });
+                self.el.dispatchEvent(new CustomEvent('riskability-grid-selection', {
+                    bubbles: true, detail: { rows: picked },
+                }));
+            };
+            this.table.on('rowSelectionChanged', emit);
+        }
 
         // Drilldown, so <drilldown> blocks in Simple XML keep working.
         //

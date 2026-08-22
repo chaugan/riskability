@@ -117,6 +117,10 @@ need riskability "riskability/bin/riskability/vercmp.py"           "version comp
 need riskability "riskability/bin/splunklib/binding.py"            "vendored SDK"
 need riskability "riskability/bin/splunk_sdk-3.0.0.dist-info/METADATA" "vendored SDK version lookup"
 need riskability "riskability/appserver/static/riskability_admin.js"  "admin page"
+need riskability "riskability/appserver/static/riskability_exceptions.js" "the accept-risk dialog"
+need riskability "riskability/appserver/static/riskability_exceptions.css" "styles the dialog"
+need riskability "riskability/bin/riskability_exceptions_rest.py"    "the only writer of the exception register"
+need riskability "riskability/default/authorize.conf"                "defines riskability_accept_risk"
 need riskability "riskability/appserver/static/scripts/riskability-feedbuilder.zip" \
      "the self-contained feed builder the admin page offers"
 need riskability "riskability/default/visualizations.conf"                "declares the custom visualization"

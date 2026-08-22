@@ -9,6 +9,21 @@
                        value=""></splunk-text-input>
   </splunk-control-group>
 
+  <splunk-control-group label="Row selection"
+                        help="Adds a checkbox column and publishes the selection to the page. Only enable it where the page has something to do with a selection.">
+    <splunk-select name="display.visualizations.custom.riskability.riskability_grid.selectable"
+                   value="no">
+      <option value="no">Off</option>
+      <option value="yes">On</option>
+    </splunk-select>
+  </splunk-control-group>
+
+  <splunk-control-group label="Hidden columns"
+                        help="Comma-separated column titles to keep in the data but not display, e.g. a key the page needs but a reader does not.">
+    <splunk-text-input name="display.visualizations.custom.riskability.riskability_grid.hideColumns"
+                       value=""></splunk-text-input>
+  </splunk-control-group>
+
   <splunk-control-group label="Row click"
                         help="Emits row.&lt;Column&gt; and click.value tokens for a &lt;drilldown&gt; block. Turn off where a click should do nothing.">
     <splunk-select name="display.visualizations.custom.riskability.riskability_grid.drilldown"
