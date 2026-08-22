@@ -79,7 +79,7 @@
         perc75(age_days) AS q3, max(age_days) AS hi, dc(cve_id) AS cves
         BY sev
 | where cves &gt;= 3
-| sort - cves
+| sort 50000 - cves
 | fields sev, lo, q1, med, q3, hi</query>
         </search>
         <option name="riskability.riskability_chart.chartType">boxplot</option>
@@ -141,7 +141,7 @@
 | rename cve_id AS "CVE", package AS "Package", ecosystem AS "Type",
          mitigation AS "Version change", root AS "Root", hostname AS "Host",
          path AS "Path", fixed_after_days AS "Open for (days)", epss AS "EPSS"
-| sort - "EPSS"</query>
+| sort 50000 - "EPSS"</query>
         </search>
         <option name="riskability.riskability_grid.filterNote">$rem_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
@@ -191,7 +191,7 @@
 | search hostname=$host_tok|s$
 | eval day = strftime(first_seen, "%Y-%m-%d")
 | stats dc(finding_key) AS findings BY day, status
-| sort day</query>
+| sort 50000 day</query>
         </search>
         <option name="riskability.riskability_chart.chartType">stackedcolumn</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>

@@ -28,7 +28,7 @@
         <search>
           <query>`riskability_latest_inventory`
 | stats dc(name) AS components BY type
-| sort - components
+| sort 50000 - components
 | head 40</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
@@ -79,7 +79,7 @@
 | stats count AS components, sum(has_identifier) AS with_identifier BY type
 | eval without_identifier = components - with_identifier
 | eval identifier_pct = round(with_identifier * 100 / components, 1)
-| sort - components
+| sort 50000 - components
 | rename type AS "Ecosystem", components AS "Components",
          with_identifier AS "With purl/cpe", without_identifier AS "No identifier",
          identifier_pct AS "Identifiable %"</query>
@@ -97,7 +97,7 @@
 | search ecosystem=$eco_name|s$
 | eval root = if(scope_id!="", scope_id, "host")
 | stats dc(package) AS packages, dc(cve_id) AS cves BY root, hostname
-| sort - packages
+| sort 50000 - packages
 | rename root AS "Root", hostname AS "Host", packages AS "Packages", cves AS "CVEs"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
@@ -132,7 +132,7 @@
                     cpe_ident &gt; 0 AND cpe_ranges &gt; 0, tostring(cpe_ranges, "commas") . " CPE ranges",
                     1=1, "0")
 | eval feed_packages = if(feed_packages &lt; 0, "counted approximately", tostring(feed_packages, "commas"))
-| sort - components
+| sort 50000 - components
 | rename type AS "Ecosystem", components AS "Components in fleet",
          feed_packages AS "Packages in feed", reach AS "Version ranges reachable",
          status AS "Status"

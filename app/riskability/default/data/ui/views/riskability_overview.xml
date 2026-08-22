@@ -182,7 +182,7 @@
         <search>
           <query>| `riskability_open_findings`
 | stats dc(cve_id) AS cves BY package
-| sort - cves
+| sort 50000 - cves
 | head 60</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
@@ -214,7 +214,7 @@
           <query>| `riskability_open_findings`
 | stats count AS findings BY confidence
 | eval sev = confidence
-| sort confidence
+| sort 50000 confidence
 | fields confidence, sev, findings</query>
         </search>
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
@@ -244,7 +244,7 @@
           <query>| `riskability_open_findings`
 | where confidence!="informational"
 | stats dc(cve_id) AS cves, dc(package) AS packages BY hostname
-| sort - cves
+| sort 50000 - cves
 | head 20</query>
         </search>
         <drilldown>
@@ -289,7 +289,7 @@
         BY cve_id
 | eval title = mvindex(title, 0)
 | eval epss_pct = if(isnotnull(epss), round(epss * 100, 1), null())
-| sort - hosts
+| sort 50000 - hosts
 | table cve_id, title, hosts, packages, kev_added, kev_due, epss_pct
 | rename cve_id AS "CVE", title AS "What it is", hosts AS "Hosts",
          packages AS "Packages", kev_added AS "Added to KEV",

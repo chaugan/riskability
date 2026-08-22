@@ -15,7 +15,7 @@
            load, and it is the first thing to fall over on a real fleet. The
            snapshot is one row per host. -->
       <search>
-        <query>| `riskability_hosts_seen` | sort hostname | fields hostname</query>
+        <query>| `riskability_hosts_seen` | sort 50000 hostname | fields hostname</query>
         <earliest>0</earliest>
         <latest>now</latest>
       </search>
@@ -54,7 +54,7 @@
 | eval last_scan = strftime(tonumber(host_last_scan), "%Y-%m-%d %H:%M")
 | eval quiet_for = if(isnull(host_last_scan), "never reported",
                       tostring(round(now() - tonumber(host_last_scan)), "duration"))
-| sort - kev, - cves
+| sort 50000 - kev, - cves
 | table hostname, os, release, arch, n_components, findings, cves, kev, top_epss, last_scan, quiet_for
 | rename hostname AS "Host", os AS "OS", release AS "Release", arch AS "Arch",
          n_components AS "Components", findings AS "Open findings", cves AS "CVEs",
@@ -90,7 +90,7 @@
 | where hostname!="__meta"
 | search hostname=$hostname|s$
 | stats sum(components) AS components BY type
-| sort - components | head 25</query>
+| sort 50000 - components | head 25</query>
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
@@ -123,7 +123,7 @@
 | eval root = if(scope_id!="", scope_id, "host")
 | eval sev = coalesce(severity, "unrated")
 | stats dc(cve_id) AS cves BY root, sev
-| sort - cves</query>
+| sort 50000 - cves</query>
         </search>
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
@@ -149,7 +149,7 @@
 | search hostname=$hostname|s$
 | eval sev = coalesce(severity, "unrated")
 | stats dc(cve_id) AS cves BY sev, ecosystem
-| sort - cves
+| sort 50000 - cves
 | fields sev, ecosystem, cves</query>
         </search>
         <option name="riskability.riskability_chart.chartType">heatmap</option>
@@ -191,7 +191,7 @@
 | eval root = if(scope_id!="", scope_id, "host")
 | eval installed_version = last_version
 | table cve_id, package, ecosystem, installed_version, fixed_version, root, confidence, epss, title
-| sort - epss</query>
+| sort 50000 - epss</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No open findings, or nothing has reported inventory recently.</option>

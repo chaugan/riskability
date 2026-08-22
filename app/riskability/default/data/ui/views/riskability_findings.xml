@@ -77,7 +77,7 @@
          ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
          epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted",
          title AS "Summary", finding_key AS "Key"
-| sort - "EPSS %"</query>
+| sort 50000 - "EPSS %"</query>
         </search>
         <option name="riskability.riskability_grid.selectable">yes</option>
         <!-- Clicks here select rows to accept a risk. Without this a click also

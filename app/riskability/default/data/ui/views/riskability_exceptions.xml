@@ -102,7 +102,7 @@
           <query>| `riskability_exceptions_with_counts`
 | where exc_state="active"
 | search hostname=$exc_host_tok|s$ OR scope_kind="fleet_cve"
-| sort - created_at
+| sort 50000 - created_at
 | table cve_id, scope_label, scope_kind, reason_kind, control, expires_label, findings_covered, hosts_covered, created_by, created_label, notes, exception_key
 | rename cve_id AS "CVE", scope_label AS "Applies to", scope_kind AS "Scope",
          reason_kind AS "Reason", control AS "Control in place",
@@ -141,7 +141,7 @@
 | where exc_state!="active"
 | search hostname=$exc_host_tok|s$ OR scope_kind="fleet_cve"
 | eval ended = if(exc_state="revoked", strftime(tonumber(revoked_at), "%Y-%m-%d %H:%M"), expires_label)
-| sort - created_at
+| sort 50000 - created_at
 | table exc_state, cve_id, scope_label, reason_kind, control, ended, created_by, notes, exception_key
 | rename exc_state AS "State", cve_id AS "CVE", scope_label AS "Applies to",
          reason_kind AS "Reason", control AS "Control in place", ended AS "Ended",
@@ -164,7 +164,7 @@
           <query>index=`riskability_index_audit` sourcetype=riskability:exception:audit
 | eval at = strftime(coalesce(when, _time), "%Y-%m-%d %H:%M:%S")
 | eval covered = coalesce(findings_affected, "")
-| sort - _time
+| sort 50000 - _time
 | table at, action, who, cve_id, hostname, scope_kind, covered, control, changed
 | rename at AS "When", action AS "Action", who AS "Who", cve_id AS "CVE",
          hostname AS "Host", scope_kind AS "Scope", covered AS "Findings at the time",
