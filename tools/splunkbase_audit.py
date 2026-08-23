@@ -147,12 +147,22 @@ def audit(path):
             if not m.name.endswith((".py", ".conf", ".xml", ".js", ".html", ".md", ".spec")):
                 continue
             blob = tf.extractfile(m).read()
+            rel_name = m.name[len(root) + 1:]
+            # Splunk's own SDK ships docstring examples that read like
+            # credentials (username="boris", password="natasha"). Reporting
+            # those as suspected secrets every run trains the reader to skip
+            # this section, which is how a real one gets through. Called out
+            # separately rather than suppressed, so the count is still honest.
+            vendored = rel_name.startswith("bin/splunklib/") or ".dist-info/" in rel_name
             for hit in set(leak.findall(blob)):
                 txt = hit.decode(errors="replace")
                 # The docs legitimately describe where a user puts their own file.
                 if txt.startswith("password") and b"$SPLUNK_PASSWORD" in blob:
                     continue
-                note(WARN, pkg, f"possible dev path or secret in {m.name[len(root)+1:]}: {txt[:40]}")
+                if vendored:
+                    note(OK, pkg, f"vendored SDK example, not a credential: {rel_name}: {txt[:34]}")
+                else:
+                    note(WARN, pkg, f"possible dev path or secret in {rel_name}: {txt[:40]}")
 
         for doc in ("README.md", "README.txt", "README"):
             if f"{root}/{doc}" in names:
