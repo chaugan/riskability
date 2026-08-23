@@ -42,52 +42,15 @@ reachability first and reports plainly when there is none.
 
 ## Contents
 
-- [Why this exists rather than "just match CPEs against NVD"](#why-this-exists-rather-than-just-match-cpes-against-nvd)
-- [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong)
-- [Architecture](#architecture)
-  - [How it actually works](#how-it-actually-works)
-- [Installing](#installing)
-  - [What the app reads from the collector](#what-the-app-reads-from-the-collector)
-  - [Configuring the universal forwarder](#configuring-the-universal-forwarder)
-  - [Index names](#index-names)
-  - [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
-- [Getting vulnerability data in](#getting-vulnerability-data-in)
-  - [Why a normalised bundle rather than the raw feeds](#why-a-normalised-bundle-rather-than-the-raw-feeds)
-  - [Licensing](#licensing)
-- [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
-- [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop)
-- [Dashboards](#dashboards)
-  - [The CVE encyclopaedia, and why it needs a source of its own](#the-cve-encyclopaedia-and-why-it-needs-a-source-of-its-own)
-- [Development](#development)
-- [Status](#status)
-- [Licence](#licence)
+**Start here** &nbsp; [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong) · [Installing](#installing) · [Getting vulnerability data in](#getting-vulnerability-data-in)
 
-## Why this exists rather than "just match CPEs against NVD"
+**Deploying** &nbsp; [What the app reads from the collector](#what-the-app-reads-from-the-collector) · [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-Because that approach produces a flood of false positives on exactly the hosts
-people care about, and a vulnerability tool that cries wolf gets switched off.
+**Using it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
 
-Ubuntu ships `openssl 3.0.13-0ubuntu3.4` carrying the backported fix for a CVE
-that upstream fixed in 3.0.14. NVD says "anything below 3.0.14 is vulnerable".
-Both statements are true; only one of them is about your host. Riskability is
-built around getting that distinction right:
+**Running it** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
-| Rule | Why |
-|---|---|
-| Distro advisory beats ecosystem advisory beats NVD/CPE | Only the vendor knows whether *their* build is patched |
-| An upstream range about a `deb`/`rpm`/`apk` is *informational*, never asserted | The distro version is not comparable to the upstream one |
-| A vendor "not affected" beats everything | It is the most specific claim available |
-| Per-ecosystem version comparators, never one generic one | `3.0.13-0ubuntu3.4` is not `3.0.14`, and `1.10` is not below `1.9` |
-| A comparison that could not be made properly is *low confidence*, not a finding | A guess reported as fact is worse than no finding |
-
-The Debian and RPM comparators are differentially tested against the real
-`dpkg` and `rpm` binaries: **2450/2450** and **1190/1190** version pairs match
-the reference implementations exactly. That test earns its keep - it caught a
-collation bug where digits were ordered as punctuation rather than as
-end-of-string, which mis-sorted every component whose version could not be
-determined.
-
----
+**The project** &nbsp; [Why this exists rather than "just match CPEs against NVD"](#why-this-exists-rather-than-just-match-cpes-against-nvd) · [Architecture](#architecture) · [Development](#development) · [Licence](#licence)
 
 ## What it does that most scanners get wrong
 
@@ -166,162 +129,6 @@ more than one advisory record, and the worst is described by nine. Keyed on
 advisory id, a single flaw is reported up to nine times.
 
 ---
-
-## Architecture
-
-```mermaid
-flowchart LR
-  subgraph connected["Connected machine (never the search head)"]
-    B["riskability-feed<br/>or the downloadable<br/>feedbuilder.zip"]
-    OSV["OSV, NVD, CISA KEV,<br/>FIRST EPSS, MITRE technique data"] --> B
-    B --> BUNDLE["bundle.tar.gz<br/>normalised, deduplicated"]
-  end
-
-  subgraph fleet["Every host"]
-    SW["swinv"] --> ND["NDJSON: components,<br/>heartbeat, exposure, container"]
-    ND --> UF["universal forwarder<br/>TA-riskability"]
-  end
-
-  subgraph sh["Search head - no outbound network"]
-    IMP["Feed administration<br/>upload or stage a file"]
-    WORKER["riskability_feedworker<br/>modular input, 60s"]
-    IDX["index=riskability_inventory"]
-    KVF[("KV Store<br/>advisories, ranges,<br/>attack, tactics")]
-    MATCH["riskabilitymatch<br/>Python search command"]
-    FIND["index=riskability_findings"]
-    STATE[("KV Store<br/>findings_state")]
-    ROLL[("KV Store<br/>openstate rollups")]
-    DASH["10 dashboards"]
-
-    IMP --> WORKER --> KVF
-    IDX --> MATCH
-    KVF --> MATCH
-    MATCH -->|collect| FIND
-    FIND -->|fold in| STATE
-    STATE --> ROLL --> DASH
-    STATE --> DASH
-  end
-
-  UF -->|"port 9997"| IDX
-  BUNDLE -.->|"carried by hand"| IMP
-```
-
-One package ships. `riskability` carries everything a search head needs, plus
-the index definitions and the index-time parsing, so a single instance - one
-Splunk that is both search head and indexer - works on install:
-
-| Package | Deploy to | Contains |
-|---|---|---|
-| **`riskability`** | search heads, and single instances | dashboards, matcher, admin backend, KV Store collections, field extraction, index definitions, index-time parsing |
-
-The one thing that cannot go everywhere is the app itself, on a **universal
-forwarder**. A forwarder ships no Python, so the modular input cannot be
-introspected and splunkd logs an error on every restart. A forwarder needs six
-lines of `inputs.conf` and nothing more.
-
-For convenience the repository also builds `TA-riskability` (that input, for
-forwarders) and `TA-riskability-indexes` (the index definitions alone, for
-indexers that should not carry the whole app). Neither is on Splunkbase,
-because a listing takes exactly one archive.
-
-An earlier version of this app really could not put `indexes.conf` on a
-forwarder: it set `tstatsHomePath` to a `volume:` path a forwarder cannot
-resolve. Splunk sets that setting globally for every index anyway, so naming it
-per stanza only restated the default. Removing it - which Splunk Cloud vetting
-required independently - is what made a single package possible.
-
-### How it actually works
-
-Nothing here is a daemon. Every moving part is either a Splunk scheduled search,
-a Python search command, or a modular input, so it is all visible in Splunk's own
-job inspector and logs.
-
-| Component | Kind | Job |
-|---|---|---|
-| `riskabilitymatch` | custom search command (`bin/riskability_match.py`) | Takes inventory rows, decides which are actually vulnerable, emits findings |
-| `riskability_feedworker` | modular input, 60s interval | Imports a staged bundle into the KV Store; also performs the opt-in direct fetch |
-| `riskability_feed_admin` | REST handler (`/riskability/feed`) | What **Feed administration** talks to: upload, stage, import, verify |
-| `riskability_exceptions` | REST handler (`/riskability/exceptions`) | Create, edit and revoke risk exceptions; writes the audit trail |
-| `riskabilityvercmp` | custom search command | Compares two versions the way the matcher would, for debugging a verdict |
-| 28 scheduled searches | `savedsearches.conf` | The hourly pipeline below |
-
-The matcher is split into small modules with one job each, because each is a
-place a wrong answer comes from:
-
-| Module | Decides |
-|---|---|
-| `scope.py` | Which filesystem root a component belongs to, and therefore which OS it should be judged against |
-| `purl.py` | What a package really is: its name, its ecosystem, and the source package behind a binary |
-| `vercmp.py` | Whether one version precedes another, using each ecosystem's own rules rather than string order |
-| `match.py` | Whether an advisory applies at all: distro, release, variant, authority and confidence |
-| `feed.py` | The bundle format, and normalising a dozen upstream shapes into one |
-| `importer.py` | Loading a bundle into the KV Store atomically, by generation |
-| `build.py` | Fetching upstream feeds and assembling a bundle, on a connected machine |
-
-#### The hourly pipeline
-
-The order is a contract rather than a convenience. Closing a finding is gated on
-evidence that the matcher's output actually reached the state collection, and
-that evidence is produced by four different searches at four different minutes.
-`tools/pipeline_order.py` prints the real order from the shipped conf file.
-
-```mermaid
-flowchart TD
-  A[":17 materialise findings<br/>only hosts whose digest, feed generation<br/>or matcher version changed"] --> B[":19-:23 snapshots<br/>host scan times, inventory state,<br/>ecosystems, listening ports, containers"]
-  B --> C[":25 fold in new findings<br/>index rows become one row per finding"]
-  C --> D[":26 acknowledge<br/>proves the matcher's output landed"]
-  D --> E[":27 close what the matcher<br/>no longer reports"]
-  E --> F[":30 checkpoint matched hosts<br/>records digest, generation, version"]
-  F --> G[":35-:41 lifecycle<br/>silent hosts, exception expiry,<br/>accepted-risk reconciliation"]
-  G --> H[":42-:45 rollups<br/>per host, per CVE, per dimension"]
-  H --> I[":45-:50 archive and<br/>catch-up fold"]
-  I --> J[":55 pipeline did not complete<br/>alerts if any host stalled"]
-```
-
-Two properties fall out of that shape, and both are the point:
-
-**Only changed hosts are re-matched.** A host is due for re-matching when its
-inventory digest, the feed generation, or the matcher version has moved - or
-when it has not been matched for 24 hours, so a host that failed for any reason
-heals itself. Everything else is skipped, which turns the hourly cost from
-O(fleet) into O(changed). The collector can send a small heartbeat carrying a
-digest instead of its whole component list; the app computes the digest itself
-for collectors that do not.
-
-**Dashboards read rollups, not findings.** Hourly searches maintain per-host,
-per-CVE and per-dimension summaries, so a fleet total is a read of a few
-thousand rows rather than a few million. The cost is that those pages lag by up
-to an hour, which **Fleet overview** states next to the numbers and warns about
-when the lag is longer than it should be.
-
-**Convergence is two cycles**, measured on a rebuilt-from-nothing instance by
-`tools/test_fresh_install.sh`: the first produces the final count, the second
-confirms it is stable.
-
-#### Where state lives
-
-| Where | Holds | Why there |
-|---|---|---|
-| `index=riskability_inventory` | What swinv reported, 30 days | Append-only; every scan is a complete statement |
-| `index=riskability_findings` | Findings as produced, 1 year | The matcher's raw output, before lifecycle |
-| `index=riskability_findings_archive` | What was found and when it was fixed, 2 years | History, kept out of the working set |
-| `index=riskability_audit` | The risk-exception trail, 5 years | Append-only: a register anyone can rewrite is not an audit trail |
-| KV Store, 23 collections | The feed, current finding state, rollups, exceptions | Indexed lookups; a search-time join at fleet scale is not viable |
-
-#### The tools
-
-| Script | Does |
-|---|---|
-| `tools/riskability-feed` | Builds a bundle from upstream feeds, on a connected machine |
-| `tools/make-feedbuilder.sh` | Packs that builder into the self-contained zip the admin page offers |
-| `tools/riskability-scan` | Runs the exact matching logic against a swinv file with no Splunk at all |
-| `tools/package.sh --verify` | Builds the three `.spl` files and checks what is inside them |
-| `tools/deploy-dev.sh`, `tools/deploy-uf.sh` | Sync into the local Splunk and forwarder |
-| `tools/build-viz.sh` | Builds the two ECharts visualizations and bumps the asset cache key |
-| `tools/test_fresh_install.sh` | Rebuilds everything from nothing and asserts 95 things about it |
-| `tools/build_demo_instance.sh` | Builds a populated demo instance from nothing, in the order a user installs in |
-| `tools/pipeline_cycle.sh` | Runs one full pass of the hourly pipeline on demand, rather than waiting for the hour |
-| `tools/test_*.py`, `tools/audit_claims.py` | Matching, scope and comparator suites; recomputes this file's numbers |
 
 ## Installing
 
@@ -488,152 +295,6 @@ Three things are **not** app configuration and must be done on the deployment:
 
 The KV Store must be running on the search head; the feed lives there.
 
-### What the app reads from the collector
-
-Every line the forwarder ships is one JSON object. The app reads four kinds,
-distinguished by `record_type`:
-
-| `record_type` | Carries | Without it |
-|---|---|---|
-| *(absent)* | one installed component | there is nothing to assess |
-| `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
-| `exposure` | one listening port, the process holding it, and the package behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
-| `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
-
-The last two are what the **Exposure** page is built on. A collector that does
-not emit them leaves the page honest but empty: hosts appear under "never
-reported a listening port" and their findings sit in the dashed *not assessed*
-row of the matrix, which is deliberately not the same place as "nothing is
-listening".
-
-An `exposure` record carries one port and one component, so a port served by
-three packages arrives as three records. The package **name** is derived here
-rather than shipped: from the purl's name segment, with the distro namespace
-dropped for `deb`, `rpm` and `apk`, and from the `Name@Version` string on
-Windows, where there is no purl to give. Checked against the component records
-of both dev hosts - 22 of 22 Linux purls and 18 of 18 Windows strings derive the
-same name the inventory reports, which is what lets a finding be joined to a
-port by package alone.
-
-`os_component` on an exposure record means the port is answered by the operating
-system itself - Windows `System` and `svchost`. Those are counted separately
-from ports nothing could be attributed to, because they are not the same fact:
-one is a listener the app can see and cannot assess against a package feed, the
-other is one it could not identify at all.
-
-### Configuring the universal forwarder
-
-Do not install the app itself on a universal forwarder. A forwarder ships no
-Python, so the app's modular input cannot be introspected and splunkd logs an
-error on every restart. The forwarder needs the input and nothing else.
-
-This is the whole of it. Put it in an app of your own on the forwarder, or use
-the prebuilt `TA-riskability`, or push it with a deployment server:
-
-```ini
-# <your-app>/local/inputs.conf on the forwarder
-[monitor:///var/lib/swinv/*.ndjson]
-disabled = 0
-index = riskability_inventory
-sourcetype = riskability:swinv
-crcSalt = <SOURCE>
-blacklist = -latest\.ndjson$
-```
-
-`crcSalt = <SOURCE>` matters. swinv's output is deterministic apart from
-timestamps, so two scans of an unchanged host share a long identical prefix,
-and without a source-based CRC salt Splunk treats the new file as one it has
-already read and skips it. The blacklist matters too: swinv writes a
-`<host>-latest.ndjson` symlink beside the real files, and monitoring it would
-re-read the entire inventory on every scan.
-
-If you install `TA-riskability` rather than pasting the above, note that it
-ships the input **disabled** - installing an add-on must not silently start
-reading a customer's filesystem - so you still set `disabled = 0` in its
-`local/inputs.conf`.
-
-and point the forwarder at your indexers as usual:
-
-```ini
-# outputs.conf
-[tcpout]
-defaultGroup = riskability_indexers
-
-[tcpout:riskability_indexers]
-server = idx1.example.net:9997, idx2.example.net:9997
-```
-
-### Index names
-
-The app writes to four indexes and ships their definitions in `default/indexes.conf`:
-
-| Index | Holds | Retention |
-|---|---|---|
-| `riskability_inventory` | what swinv reported | 30 days |
-| `riskability_findings` | findings as they were produced | 1 year |
-| `riskability_findings_archive` | what was found and when it was fixed | 2 years |
-| `riskability_audit` | the risk-exception trail, append-only | 5 years |
-
-The names are not hardcoded. Four macros - `riskability_index_inventory`,
-`_findings`, `_archive` and `_audit` - are the only place they appear in SPL, so
-a site with its own naming scheme overrides them in `local/macros.conf` and
-everything follows: dashboards, the matcher, the lifecycle jobs, the audit
-trail. The **Feed administration** page writes those overrides for you.
-
-Two things do not follow automatically, because they are not the app's to
-change: the forwarder's `inputs.conf` must send to the same index, and on a
-distributed deployment the indexes must exist **on the indexers**. The app's
-own `indexes.conf` covers a single instance; for a distributed one, copy it to
-the indexers, or into the cluster manager's bundle, alongside the
-`[riskability:swinv]` parsing from the app's `props.conf` - a universal
-forwarder does not parse, so index-time settings have to be where the data is
-indexed. A site using its own index names creates those instead.
-
-Nothing here needs `tstatsHomePath`. Splunk's own `system/default/indexes.conf`
-sets it globally for every index, and naming it per stanza only restates the
-default - which is also why an earlier version of this app could not be
-deployed to a forwarder, and why Splunk Cloud rejected it.
-
-### The forwarder input, and what it inherits
-
-That `local/` stanza does not repeat everything the input needs, and does not
-have to. Splunk merges configuration per attribute: `local/` wins for the
-attributes it names, and every attribute it does not name is still taken from
-`default/`. So the two settings below apply whether or not you write them out.
-
-- **`crcSalt = <SOURCE>`**, shown above and also in the shipped default. swinv's
-  output is deterministic apart from the timestamps, so two scans of an
-  unchanged host share a long identical prefix. Without a source-based CRC salt
-  Splunk recognises the new file as one it has already read and skips it
-  entirely.
-- **`blacklist = -latest\.ndjson$`**, in the shipped default only - it is not in
-  the example above because there is no need to restate it. swinv writes a
-  `<host>-latest.ndjson` symlink beside each scan. Monitoring the symlink as
-  well would re-read the whole inventory every run: re-pointing a symlink does
-  not reliably raise a new-file event, and its target changes name every scan.
-
-Read the shipped file at `TA-riskability/default/inputs.conf` if you want to see
-exactly what you are inheriting; it carries both settings and the reasoning.
-
-Have swinv write NDJSON, which is the format the input expects:
-
-```sh
-swinv --format ndjson --out /var/lib/swinv
-```
-
-Index-time parsing (line breaking and the timestamp) takes effect on the
-**indexer**, because a universal forwarder does not parse. On a single instance
-the app's own `props.conf` covers it. On a distributed one, copy the
-`[riskability:swinv]` stanza and `indexes.conf` to the indexers.
-
-Matching runs in Python because Splunk cannot express dpkg or RPM version
-ordering in SPL. It never streams over raw inventory: the caller reduces to
-latest state first, and each chunk becomes a handful of KV Store queries keyed
-on `(ecosystem, package)`, so work scales with distinct packages rather than
-hosts × packages.
-
----
-
 ## Getting vulnerability data in
 
 On a machine with internet access:
@@ -694,42 +355,149 @@ uncontroversial; redistributing one is your decision, not this app's.
 
 ---
 
-## Accepting a risk, and proving you did
+## What the app reads from the collector
 
-Not every finding gets patched. **Risk exceptions** records the ones that do not:
-the CVE, what it applies to, why, what control is in place instead, who decided,
-and when it must be reviewed again. Accepted findings are removed from every risk
-number on every page and counted separately, so they are never quietly dropped -
-"no open findings" alongside four hundred accepted ones is not a clean fleet, and
-the pages say so.
+Every line the forwarder ships is one JSON object. The app reads four kinds,
+distinguished by `record_type`:
 
-The decisions are also written to a separate append-only index, `riskability_audit`,
-kept for five years. That is deliberate: a register that can be rewritten by
-whoever can write the register is not an audit trail. Expiries are reconciled by a
-scheduled search, so a lapsed exception puts its findings back into the open counts
-without anyone remembering to do it.
+| `record_type` | Carries | Without it |
+|---|---|---|
+| *(absent)* | one installed component | there is nothing to assess |
+| `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
+| `exposure` | one listening port, the process holding it, and the package behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
+| `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
 
----
+The last two are what the **Exposure** page is built on. A collector that does
+not emit them leaves the page honest but empty: hosts appear under "never
+reported a listening port" and their findings sit in the dashed *not assessed*
+row of the matrix, which is deliberately not the same place as "nothing is
+listening".
 
-## What makes it work on a fleet rather than a laptop
+An `exposure` record carries one port and one component, so a port served by
+three packages arrives as three records. The package **name** is derived here
+rather than shipped: from the purl's name segment, with the distro namespace
+dropped for `deb`, `rpm` and `apk`, and from the `Name@Version` string on
+Windows, where there is no purl to give. Checked against the component records
+of both dev hosts - 22 of 22 Linux purls and 18 of 18 Windows strings derive the
+same name the inventory reports, which is what lets a finding be joined to a
+port by package alone.
 
-Matching every component on every host against the whole feed, every hour, does
-not scale, and neither does a dashboard that re-derives fleet totals on each load.
-Two mechanisms avoid both.
+`os_component` on an exposure record means the port is answered by the operating
+system itself - Windows `System` and `svchost`. Those are counted separately
+from ports nothing could be attributed to, because they are not the same fact:
+one is a listener the app can see and cannot assess against a package feed, the
+other is one it could not identify at all.
 
-**Only changed hosts are re-matched.** The collector can send a small heartbeat
-carrying a digest of its component list; the app checkpoints each host against
-`(inventory digest, feed generation, matcher version)` and re-runs the matcher only
-where one of the three moved. An unchanged host costs one row per scan instead of
-its entire inventory. There is a daily floor as well, so a host that failed to
-match for any reason heals itself rather than staying stale forever, and the app
-computes the digest itself for collectors that send no heartbeat.
+## Configuring the universal forwarder
 
-**Dashboards read rollups, not the finding state.** Hourly scheduled searches
-maintain per-host, per-CVE and per-dimension summaries, so a fleet total is a read
-of a few thousand rows rather than a few million. The cost is that those pages lag
-by up to an hour, which **Fleet overview** states next to the numbers and warns
-about when the lag is longer than it should be.
+Do not install the app itself on a universal forwarder. A forwarder ships no
+Python, so the app's modular input cannot be introspected and splunkd logs an
+error on every restart. The forwarder needs the input and nothing else.
+
+This is the whole of it. Put it in an app of your own on the forwarder, or use
+the prebuilt `TA-riskability`, or push it with a deployment server:
+
+```ini
+# <your-app>/local/inputs.conf on the forwarder
+[monitor:///var/lib/swinv/*.ndjson]
+disabled = 0
+index = riskability_inventory
+sourcetype = riskability:swinv
+crcSalt = <SOURCE>
+blacklist = -latest\.ndjson$
+```
+
+`crcSalt = <SOURCE>` matters. swinv's output is deterministic apart from
+timestamps, so two scans of an unchanged host share a long identical prefix,
+and without a source-based CRC salt Splunk treats the new file as one it has
+already read and skips it. The blacklist matters too: swinv writes a
+`<host>-latest.ndjson` symlink beside the real files, and monitoring it would
+re-read the entire inventory on every scan.
+
+If you install `TA-riskability` rather than pasting the above, note that it
+ships the input **disabled** - installing an add-on must not silently start
+reading a customer's filesystem - so you still set `disabled = 0` in its
+`local/inputs.conf`.
+
+and point the forwarder at your indexers as usual:
+
+```ini
+# outputs.conf
+[tcpout]
+defaultGroup = riskability_indexers
+
+[tcpout:riskability_indexers]
+server = idx1.example.net:9997, idx2.example.net:9997
+```
+
+## Index names
+
+The app writes to four indexes and ships their definitions in `default/indexes.conf`:
+
+| Index | Holds | Retention |
+|---|---|---|
+| `riskability_inventory` | what swinv reported | 30 days |
+| `riskability_findings` | findings as they were produced | 1 year |
+| `riskability_findings_archive` | what was found and when it was fixed | 2 years |
+| `riskability_audit` | the risk-exception trail, append-only | 5 years |
+
+The names are not hardcoded. Four macros - `riskability_index_inventory`,
+`_findings`, `_archive` and `_audit` - are the only place they appear in SPL, so
+a site with its own naming scheme overrides them in `local/macros.conf` and
+everything follows: dashboards, the matcher, the lifecycle jobs, the audit
+trail. The **Feed administration** page writes those overrides for you.
+
+Two things do not follow automatically, because they are not the app's to
+change: the forwarder's `inputs.conf` must send to the same index, and on a
+distributed deployment the indexes must exist **on the indexers**. The app's
+own `indexes.conf` covers a single instance; for a distributed one, copy it to
+the indexers, or into the cluster manager's bundle, alongside the
+`[riskability:swinv]` parsing from the app's `props.conf` - a universal
+forwarder does not parse, so index-time settings have to be where the data is
+indexed. A site using its own index names creates those instead.
+
+Nothing here needs `tstatsHomePath`. Splunk's own `system/default/indexes.conf`
+sets it globally for every index, and naming it per stanza only restates the
+default - which is also why an earlier version of this app could not be
+deployed to a forwarder, and why Splunk Cloud rejected it.
+
+## The forwarder input, and what it inherits
+
+That `local/` stanza does not repeat everything the input needs, and does not
+have to. Splunk merges configuration per attribute: `local/` wins for the
+attributes it names, and every attribute it does not name is still taken from
+`default/`. So the two settings below apply whether or not you write them out.
+
+- **`crcSalt = <SOURCE>`**, shown above and also in the shipped default. swinv's
+  output is deterministic apart from the timestamps, so two scans of an
+  unchanged host share a long identical prefix. Without a source-based CRC salt
+  Splunk recognises the new file as one it has already read and skips it
+  entirely.
+- **`blacklist = -latest\.ndjson$`**, in the shipped default only - it is not in
+  the example above because there is no need to restate it. swinv writes a
+  `<host>-latest.ndjson` symlink beside each scan. Monitoring the symlink as
+  well would re-read the whole inventory every run: re-pointing a symlink does
+  not reliably raise a new-file event, and its target changes name every scan.
+
+Read the shipped file at `TA-riskability/default/inputs.conf` if you want to see
+exactly what you are inheriting; it carries both settings and the reasoning.
+
+Have swinv write NDJSON, which is the format the input expects:
+
+```sh
+swinv --format ndjson --out /var/lib/swinv
+```
+
+Index-time parsing (line breaking and the timestamp) takes effect on the
+**indexer**, because a universal forwarder does not parse. On a single instance
+the app's own `props.conf` covers it. On a distributed one, copy the
+`[riskability:swinv]` stanza and `indexes.conf` to the indexers.
+
+Matching runs in Python because Splunk cannot express dpkg or RPM version
+ordering in SPL. It never streams over raw inventory: the caller reduces to
+latest state first, and each chunk becomes a handful of KV Store queries keyed
+on `(ecosystem, package)`, so work scales with distinct packages rather than
+hosts × packages.
 
 ---
 
@@ -860,6 +628,246 @@ feed stays searchable throughout, so importing does not blind the fleet:
 
 ---
 
+## Accepting a risk, and proving you did
+
+Not every finding gets patched. **Risk exceptions** records the ones that do not:
+the CVE, what it applies to, why, what control is in place instead, who decided,
+and when it must be reviewed again. Accepted findings are removed from every risk
+number on every page and counted separately, so they are never quietly dropped -
+"no open findings" alongside four hundred accepted ones is not a clean fleet, and
+the pages say so.
+
+The decisions are also written to a separate append-only index, `riskability_audit`,
+kept for five years. That is deliberate: a register that can be rewritten by
+whoever can write the register is not an audit trail. Expiries are reconciled by a
+scheduled search, so a lapsed exception puts its findings back into the open counts
+without anyone remembering to do it.
+
+---
+
+## What makes it work on a fleet rather than a laptop
+
+Matching every component on every host against the whole feed, every hour, does
+not scale, and neither does a dashboard that re-derives fleet totals on each load.
+Two mechanisms avoid both.
+
+**Only changed hosts are re-matched.** The collector can send a small heartbeat
+carrying a digest of its component list; the app checkpoints each host against
+`(inventory digest, feed generation, matcher version)` and re-runs the matcher only
+where one of the three moved. An unchanged host costs one row per scan instead of
+its entire inventory. There is a daily floor as well, so a host that failed to
+match for any reason heals itself rather than staying stale forever, and the app
+computes the digest itself for collectors that send no heartbeat.
+
+**Dashboards read rollups, not the finding state.** Hourly scheduled searches
+maintain per-host, per-CVE and per-dimension summaries, so a fleet total is a read
+of a few thousand rows rather than a few million. The cost is that those pages lag
+by up to an hour, which **Fleet overview** states next to the numbers and warns
+about when the lag is longer than it should be.
+
+---
+
+## Status
+
+Working and verified end to end against real inventory from a 14,349-component
+Ubuntu host and a 502-component Windows host, both checked in under
+`testdata/ndjson/` so the numbers in this file can be recomputed rather than
+taken on trust.
+
+**Windows is supported, at low confidence only.** swinv emits no PURL for
+Windows software, so identity comes from CPEs generated from the display name
+and version - 488 of 502 components on the test host carry at least one. The
+matcher tries several candidate CPEs per component and caps every resulting
+finding at `low`, because the product identity is inferred rather than read from
+a package record. Treat them as leads to verify.
+
+Installed hotfixes are collected but not yet matched. Doing that properly means
+MSRC CSAF data keyed CVE → KB → OS build, asking whether the KB that fixes a CVE
+is installed, rather than comparing version ranges. That is not implemented.
+
+## Why this exists rather than "just match CPEs against NVD"
+
+Because that approach produces a flood of false positives on exactly the hosts
+people care about, and a vulnerability tool that cries wolf gets switched off.
+
+Ubuntu ships `openssl 3.0.13-0ubuntu3.4` carrying the backported fix for a CVE
+that upstream fixed in 3.0.14. NVD says "anything below 3.0.14 is vulnerable".
+Both statements are true; only one of them is about your host. Riskability is
+built around getting that distinction right:
+
+| Rule | Why |
+|---|---|
+| Distro advisory beats ecosystem advisory beats NVD/CPE | Only the vendor knows whether *their* build is patched |
+| An upstream range about a `deb`/`rpm`/`apk` is *informational*, never asserted | The distro version is not comparable to the upstream one |
+| A vendor "not affected" beats everything | It is the most specific claim available |
+| Per-ecosystem version comparators, never one generic one | `3.0.13-0ubuntu3.4` is not `3.0.14`, and `1.10` is not below `1.9` |
+| A comparison that could not be made properly is *low confidence*, not a finding | A guess reported as fact is worse than no finding |
+
+The Debian and RPM comparators are differentially tested against the real
+`dpkg` and `rpm` binaries: **2450/2450** and **1190/1190** version pairs match
+the reference implementations exactly. That test earns its keep - it caught a
+collation bug where digits were ordered as punctuation rather than as
+end-of-string, which mis-sorted every component whose version could not be
+determined.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph connected["Connected machine (never the search head)"]
+    B["riskability-feed<br/>or the downloadable<br/>feedbuilder.zip"]
+    OSV["OSV, NVD, CISA KEV,<br/>FIRST EPSS, MITRE technique data"] --> B
+    B --> BUNDLE["bundle.tar.gz<br/>normalised, deduplicated"]
+  end
+
+  subgraph fleet["Every host"]
+    SW["swinv"] --> ND["NDJSON: components,<br/>heartbeat, exposure, container"]
+    ND --> UF["universal forwarder<br/>TA-riskability"]
+  end
+
+  subgraph sh["Search head - no outbound network"]
+    IMP["Feed administration<br/>upload or stage a file"]
+    WORKER["riskability_feedworker<br/>modular input, 60s"]
+    IDX["index=riskability_inventory"]
+    KVF[("KV Store<br/>advisories, ranges,<br/>attack, tactics")]
+    MATCH["riskabilitymatch<br/>Python search command"]
+    FIND["index=riskability_findings"]
+    STATE[("KV Store<br/>findings_state")]
+    ROLL[("KV Store<br/>openstate rollups")]
+    DASH["10 dashboards"]
+
+    IMP --> WORKER --> KVF
+    IDX --> MATCH
+    KVF --> MATCH
+    MATCH -->|collect| FIND
+    FIND -->|fold in| STATE
+    STATE --> ROLL --> DASH
+    STATE --> DASH
+  end
+
+  UF -->|"port 9997"| IDX
+  BUNDLE -.->|"carried by hand"| IMP
+```
+
+One package ships. `riskability` carries everything a search head needs, plus
+the index definitions and the index-time parsing, so a single instance - one
+Splunk that is both search head and indexer - works on install:
+
+| Package | Deploy to | Contains |
+|---|---|---|
+| **`riskability`** | search heads, and single instances | dashboards, matcher, admin backend, KV Store collections, field extraction, index definitions, index-time parsing |
+
+The one thing that cannot go everywhere is the app itself, on a **universal
+forwarder**. A forwarder ships no Python, so the modular input cannot be
+introspected and splunkd logs an error on every restart. A forwarder needs six
+lines of `inputs.conf` and nothing more.
+
+For convenience the repository also builds `TA-riskability` (that input, for
+forwarders) and `TA-riskability-indexes` (the index definitions alone, for
+indexers that should not carry the whole app). Neither is on Splunkbase,
+because a listing takes exactly one archive.
+
+An earlier version of this app really could not put `indexes.conf` on a
+forwarder: it set `tstatsHomePath` to a `volume:` path a forwarder cannot
+resolve. Splunk sets that setting globally for every index anyway, so naming it
+per stanza only restated the default. Removing it - which Splunk Cloud vetting
+required independently - is what made a single package possible.
+
+### How it actually works
+
+Nothing here is a daemon. Every moving part is either a Splunk scheduled search,
+a Python search command, or a modular input, so it is all visible in Splunk's own
+job inspector and logs.
+
+| Component | Kind | Job |
+|---|---|---|
+| `riskabilitymatch` | custom search command (`bin/riskability_match.py`) | Takes inventory rows, decides which are actually vulnerable, emits findings |
+| `riskability_feedworker` | modular input, 60s interval | Imports a staged bundle into the KV Store; also performs the opt-in direct fetch |
+| `riskability_feed_admin` | REST handler (`/riskability/feed`) | What **Feed administration** talks to: upload, stage, import, verify |
+| `riskability_exceptions` | REST handler (`/riskability/exceptions`) | Create, edit and revoke risk exceptions; writes the audit trail |
+| `riskabilityvercmp` | custom search command | Compares two versions the way the matcher would, for debugging a verdict |
+| 28 scheduled searches | `savedsearches.conf` | The hourly pipeline below |
+
+The matcher is split into small modules with one job each, because each is a
+place a wrong answer comes from:
+
+| Module | Decides |
+|---|---|
+| `scope.py` | Which filesystem root a component belongs to, and therefore which OS it should be judged against |
+| `purl.py` | What a package really is: its name, its ecosystem, and the source package behind a binary |
+| `vercmp.py` | Whether one version precedes another, using each ecosystem's own rules rather than string order |
+| `match.py` | Whether an advisory applies at all: distro, release, variant, authority and confidence |
+| `feed.py` | The bundle format, and normalising a dozen upstream shapes into one |
+| `importer.py` | Loading a bundle into the KV Store atomically, by generation |
+| `build.py` | Fetching upstream feeds and assembling a bundle, on a connected machine |
+
+#### The hourly pipeline
+
+The order is a contract rather than a convenience. Closing a finding is gated on
+evidence that the matcher's output actually reached the state collection, and
+that evidence is produced by four different searches at four different minutes.
+`tools/pipeline_order.py` prints the real order from the shipped conf file.
+
+```mermaid
+flowchart TD
+  A[":17 materialise findings<br/>only hosts whose digest, feed generation<br/>or matcher version changed"] --> B[":19-:23 snapshots<br/>host scan times, inventory state,<br/>ecosystems, listening ports, containers"]
+  B --> C[":25 fold in new findings<br/>index rows become one row per finding"]
+  C --> D[":26 acknowledge<br/>proves the matcher's output landed"]
+  D --> E[":27 close what the matcher<br/>no longer reports"]
+  E --> F[":30 checkpoint matched hosts<br/>records digest, generation, version"]
+  F --> G[":35-:41 lifecycle<br/>silent hosts, exception expiry,<br/>accepted-risk reconciliation"]
+  G --> H[":42-:45 rollups<br/>per host, per CVE, per dimension"]
+  H --> I[":45-:50 archive and<br/>catch-up fold"]
+  I --> J[":55 pipeline did not complete<br/>alerts if any host stalled"]
+```
+
+Two properties fall out of that shape, and both are the point:
+
+**Only changed hosts are re-matched.** A host is due for re-matching when its
+inventory digest, the feed generation, or the matcher version has moved - or
+when it has not been matched for 24 hours, so a host that failed for any reason
+heals itself. Everything else is skipped, which turns the hourly cost from
+O(fleet) into O(changed). The collector can send a small heartbeat carrying a
+digest instead of its whole component list; the app computes the digest itself
+for collectors that do not.
+
+**Dashboards read rollups, not findings.** Hourly searches maintain per-host,
+per-CVE and per-dimension summaries, so a fleet total is a read of a few
+thousand rows rather than a few million. The cost is that those pages lag by up
+to an hour, which **Fleet overview** states next to the numbers and warns about
+when the lag is longer than it should be.
+
+**Convergence is two cycles**, measured on a rebuilt-from-nothing instance by
+`tools/test_fresh_install.sh`: the first produces the final count, the second
+confirms it is stable.
+
+#### Where state lives
+
+| Where | Holds | Why there |
+|---|---|---|
+| `index=riskability_inventory` | What swinv reported, 30 days | Append-only; every scan is a complete statement |
+| `index=riskability_findings` | Findings as produced, 1 year | The matcher's raw output, before lifecycle |
+| `index=riskability_findings_archive` | What was found and when it was fixed, 2 years | History, kept out of the working set |
+| `index=riskability_audit` | The risk-exception trail, 5 years | Append-only: a register anyone can rewrite is not an audit trail |
+| KV Store, 23 collections | The feed, current finding state, rollups, exceptions | Indexed lookups; a search-time join at fleet scale is not viable |
+
+#### The tools
+
+| Script | Does |
+|---|---|
+| `tools/riskability-feed` | Builds a bundle from upstream feeds, on a connected machine |
+| `tools/make-feedbuilder.sh` | Packs that builder into the self-contained zip the admin page offers |
+| `tools/riskability-scan` | Runs the exact matching logic against a swinv file with no Splunk at all |
+| `tools/package.sh --verify` | Builds the three `.spl` files and checks what is inside them |
+| `tools/deploy-dev.sh`, `tools/deploy-uf.sh` | Sync into the local Splunk and forwarder |
+| `tools/build-viz.sh` | Builds the two ECharts visualizations and bumps the asset cache key |
+| `tools/test_fresh_install.sh` | Rebuilds everything from nothing and asserts 95 things about it |
+| `tools/build_demo_instance.sh` | Builds a populated demo instance from nothing, in the order a user installs in |
+| `tools/pipeline_cycle.sh` | Runs one full pass of the hourly pipeline on demand, rather than waiting for the hour |
+| `tools/test_*.py`, `tools/audit_claims.py` | Matching, scope and comparator suites; recomputes this file's numbers |
+
 ## Development
 
 ```sh
@@ -901,24 +909,6 @@ tools/riskability-scan inventory.json riskability-feed.tar.gz
 ```
 
 ---
-
-## Status
-
-Working and verified end to end against real inventory from a 14,349-component
-Ubuntu host and a 502-component Windows host, both checked in under
-`testdata/ndjson/` so the numbers in this file can be recomputed rather than
-taken on trust.
-
-**Windows is supported, at low confidence only.** swinv emits no PURL for
-Windows software, so identity comes from CPEs generated from the display name
-and version - 488 of 502 components on the test host carry at least one. The
-matcher tries several candidate CPEs per component and caps every resulting
-finding at `low`, because the product identity is inferred rather than read from
-a package record. Treat them as leads to verify.
-
-Installed hotfixes are collected but not yet matched. Doing that properly means
-MSRC CSAF data keyed CVE → KB → OS build, asking whether the KB that fixes a CVE
-is installed, rather than comparing version ranges. That is not implemented.
 
 ## Licence
 
