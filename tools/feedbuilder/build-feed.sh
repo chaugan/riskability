@@ -66,7 +66,17 @@ case "${1:-}" in
       --ecosystem SUSE --ecosystem openSUSE --ecosystem NuGet
       --ecosystem RubyGems --ecosystem "crates.io" --ecosystem Packagist
       --nvd all
+      # The CVE Program catalogue, which is what gives the CVE encyclopaedia a
+      # description and a product name. Only in this profile: it is about
+      # 600 MB to fetch and roughly 120 MB in the bundle, which is a real
+      # decision on an air gap rather than a default to inherit.
+      --cve-list
     )
+    ;;
+  --with-cve-list)
+    # Any profile plus the encyclopaedia's source. Kept as its own flag so a
+    # Linux or Windows build can have it without taking every ecosystem too.
+    ARGS+=(--cve-list)
     ;;
   --help|-h)
     awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"

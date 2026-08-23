@@ -28,6 +28,7 @@
 param(
     [ValidateSet('Linux', 'Windows', 'Everything')]
     [string]$FeedProfile = 'Windows',
+    [switch]$WithCveList,
     [string]$OutDir = '.',
     [string]$FeedTool = ''
 )
@@ -91,10 +92,19 @@ switch ($FeedProfile) {
             '--ecosystem', 'openSUSE', '--ecosystem', 'NuGet',
             '--ecosystem', 'RubyGems', '--ecosystem', 'crates.io',
             '--ecosystem', 'Packagist',
-            '--nvd', 'all'
+            '--nvd', 'all',
+            # The CVE Program catalogue, which is what gives the CVE
+            # encyclopaedia a description and a product name. Only in this
+            # profile: about 600 MB to fetch and roughly 120 MB in the bundle,
+            # which is a real decision on an air gap, not a default.
+            '--cve-list'
         )
     }
 }
+
+# Any profile plus the encyclopaedia's source, so a Linux or Windows build can
+# have it without taking every ecosystem as well.
+if ($WithCveList) { $buildArgs += @('--cve-list') }
 
 Write-Host "Building $out ..." -ForegroundColor Cyan
 & $python.Exe @($python.Pre) $tool @buildArgs

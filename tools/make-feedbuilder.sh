@@ -179,6 +179,11 @@ a positional flag on the shell script, a named parameter in PowerShell.
   Windows      ./build-feed.sh --windows     .\build-feed.ps1
   Everything   ./build-feed.sh --everything  .\build-feed.ps1 -FeedProfile Everything
 
+  Add the CVE encyclopaedia's source to any profile:
+
+               ./build-feed.sh --with-cve-list
+               .\build-feed.ps1 -WithCveList
+
   Linux        Ubuntu, Debian, Alpine, npm, PyPI, Go, Maven, plus CISA KEV,
                FIRST EPSS and the MITRE CWE -> ATT&CK mapping.
   Windows      All of the above plus NVD CPE data for 2015-2026. This is the

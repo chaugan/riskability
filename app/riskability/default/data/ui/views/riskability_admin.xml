@@ -29,6 +29,15 @@ riskability-feed build --out riskability-feed.tar.gz \
             ecosystems your fleet runs; the <b>Coverage</b> dashboard lists which component
             types are going unmatched.
           </p>
+          <p>
+            Add <code>--cve-list</code> for the <b>CVE encyclopaedia</b>, which is what gives a
+            vulnerability a description and a product name rather than an id and a score. It is
+            the one source that is off by default here and in the wrappers: roughly 600 MB to
+            download and about 120 MB in the bundle you carry, which is a decision worth making
+            deliberately. Without it the encyclopaedia still works and still describes almost
+            every CVE, from the advisory text; it just cannot name a product for anything CISA
+            has not catalogued.
+          </p>
 
           <h4>2. Get it onto this search head</h4>
           <p>

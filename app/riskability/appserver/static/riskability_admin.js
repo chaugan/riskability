@@ -653,6 +653,16 @@
         overlayLab.appendChild(overlayCb);
         overlayLab.appendChild(document.createTextNode(" KEV and EPSS"));
         extras.appendChild(overlayLab);
+
+        // Off by default, unlike every other source here. It is about 600 MB to
+        // download and roughly 120 MB in the feed, which is a decision worth
+        // making deliberately rather than inheriting from a ticked box.
+        var cveCb = el("input"); cveCb.type = "checkbox"; cveCb.checked = false;
+        var cveLab = el("label", "rk-pick");
+        cveLab.appendChild(cveCb);
+        cveLab.appendChild(document.createTextNode(
+            " CVE Program catalogue, for the encyclopaedia (about 600 MB)"));
+        extras.appendChild(cveLab);
         wrap.appendChild(extras);
 
         var go = el("button", "rk-btn rk-btn-primary", "Fetch and import now");
@@ -662,7 +672,9 @@
             if (!window.confirm(
                 "Download the selected feeds and import them?\n\n"
                 + "This contacts the hosts listed above. With NVD selected it can take "
-                + "several minutes. The current feed stays live until it finishes.")) return;
+                + "several minutes, and with the CVE Program catalogue considerably longer: "
+                + "that source alone is about 600 MB. The current feed stays live until it "
+                + "finishes.")) return;
             goMsg.textContent = "Starting\u2026";
             request("POST", {
                 action: "fetch",
@@ -670,7 +682,8 @@
                 nvd: nvdCb.checked ? "2015-2026" : "",
                 mitre: mitreCb.checked,
                 kev: overlayCb.checked,
-                epss: overlayCb.checked
+                epss: overlayCb.checked,
+                cve_list: cveCb.checked
             }).then(function () { poll(); })
               .catch(function (e) { goMsg.textContent = "Failed: " + e.message; });
         });

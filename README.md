@@ -137,82 +137,17 @@ advisory id, a single flaw is reported up to nine times.
 #### 0. Install the collector first
 
 Riskability correlates what [`swinv`](https://github.com/chaugan/swinv)
-reports. It collects nothing itself. Install swinv on the hosts you want
-assessed, following its own instructions, then run it with the flags this app
-needs.
+reports. It collects nothing itself, so nothing works until swinv is running on
+the hosts you want assessed and writing NDJSON. The exact invocation this app
+needs, and why each flag matters, is under
+[What the app reads from the collector](#what-the-app-reads-from-the-collector).
 
-Linux:
-
-```sh
-sudo swinv --out /var/lib/swinv \
-           --format ndjson \
-           --ndjson-include all \
-           --heartbeat \
-           --output-mode overwrite \
-           --latest-symlink=false
-```
-
-Windows:
-
-```powershell
-swinv.exe --out C:\ProgramData\swinv `
-          --format ndjson `
-          --ndjson-include all `
-          --heartbeat `
-          --output-mode overwrite `
-          --latest-symlink=false
-```
-
-The output directory is an example; use whatever you monitor, and keep the
-forwarder input pointing at the same place.
-
-| Flag | Why this app wants it |
-|---|---|
-| `--format ndjson` | The only format this app reads. One JSON object per line, which is what lets Splunk break events without parsing a whole document |
-| `--ndjson-include all` | Adds the `exposure` and `container` records. **Without this there is no reachability at all**: every finding is reported as "not assessed", the Exposure dashboard has nothing to draw, and container findings cannot be told apart from host ones |
-| `--heartbeat` | Puts a digest at the head of every scan. The app checkpoints each host against that digest and re-matches only hosts whose software actually changed, so an unchanged host costs one row per scan instead of its whole inventory |
-| `--output-mode overwrite` | One fixed filename per host, replaced each run, so the directory cannot grow without bound. The default `timestamped` keeps every scan forever and has no retention of its own, which means you have to prune it yourself |
-| `--latest-symlink=false` | Stops swinv writing `<host>-latest.ndjson`. Monitoring a symlink would re-read the whole inventory on every scan, which is why the shipped input blacklists it. Turning it off is cleaner than filtering it out |
-
-#### Why monitoring an overwritten file is safe here
-
-This is worth spelling out, because it is normally a trap. Splunk fingerprints
-the first 256 bytes of a file to decide whether it has seen it before, and if
-the fingerprint matches it resumes from the byte offset it stored last time. A
-file that is replaced in place rather than appended to breaks that assumption.
-With `--heartbeat` the effect is dramatic: a quiet scan ships only a digest, so
-the file collapses from megabytes to tens of kilobytes and then grows back on
-the next change. If Splunk thought it were the same file, it would resume at
-the old offset and silently skip the beginning of the next full scan.
-
-It does not happen, because **every swinv NDJSON line carries `scanned_at`**,
-and on both record types it falls inside the first 256 bytes: byte 141 on a
-plain component line in the sample data here. So the fingerprint differs on
-every scan, Splunk treats each run as a new file and reads all of it. No gaps
-and no duplicates. This holds with or without `--heartbeat`.
-
-swinv also writes atomically, to a temp file that is then renamed, so the inode
-changes on every run and Splunk can never read a half-written inventory.
-
-`--heartbeat` earns its place for a different reason: it lets the app re-match
-only hosts whose software actually changed. It is not what makes `overwrite`
-safe.
-
-If you prefer `--output-mode timestamped`, the shipped input handles it: that is
-what `crcSalt = <SOURCE>` and the `-latest` blacklist are for. Just remember to
-prune the directory.
-
-Confirm something is being written before going further:
+Confirm something is arriving before going further:
 
 ```sh
 ls -l /var/lib/swinv/*.ndjson
 head -1 /var/lib/swinv/*.ndjson    # should be a record_type of heartbeat
 ```
-
-Doing this first is worth the few minutes. With no inventory arriving there is
-nothing to correlate, every dashboard reads zero, and the app cannot tell that
-apart from a fleet with no vulnerabilities - which is why it says "no data"
-rather than showing a clean bill of health.
 
 #### 1. Get the package
 
@@ -298,6 +233,80 @@ Three things are **not** app configuration and must be done on the deployment:
 The KV Store must be running on the search head; the feed lives there.
 
 ## What the app reads from the collector
+
+### Running the collector
+
+Riskability correlates what [`swinv`](https://github.com/chaugan/swinv)
+reports. It collects nothing itself. Install swinv on the hosts you want
+assessed, following its own instructions, then run it with the flags this app
+needs.
+
+Linux:
+
+```sh
+sudo swinv --out /var/lib/swinv \
+           --format ndjson \
+           --ndjson-include all \
+           --heartbeat \
+           --output-mode overwrite \
+           --latest-symlink=false
+```
+
+Windows:
+
+```powershell
+swinv.exe --out C:\ProgramData\swinv `
+          --format ndjson `
+          --ndjson-include all `
+          --heartbeat `
+          --output-mode overwrite `
+          --latest-symlink=false
+```
+
+The output directory is an example; use whatever you monitor, and keep the
+forwarder input pointing at the same place.
+
+| Flag | Why this app wants it |
+|---|---|
+| `--format ndjson` | The only format this app reads. One JSON object per line, which is what lets Splunk break events without parsing a whole document |
+| `--ndjson-include all` | Adds the `exposure` and `container` records. **Without this there is no reachability at all**: every finding is reported as "not assessed", the Exposure dashboard has nothing to draw, and container findings cannot be told apart from host ones |
+| `--heartbeat` | Puts a digest at the head of every scan. The app checkpoints each host against that digest and re-matches only hosts whose software actually changed, so an unchanged host costs one row per scan instead of its whole inventory |
+| `--output-mode overwrite` | One fixed filename per host, replaced each run, so the directory cannot grow without bound. The default `timestamped` keeps every scan forever and has no retention of its own, which means you have to prune it yourself |
+| `--latest-symlink=false` | Stops swinv writing `<host>-latest.ndjson`. Monitoring a symlink would re-read the whole inventory on every scan, which is why the shipped input blacklists it. Turning it off is cleaner than filtering it out |
+
+#### Why monitoring an overwritten file is safe here
+
+This is worth spelling out, because it is normally a trap. Splunk fingerprints
+the first 256 bytes of a file to decide whether it has seen it before, and if
+the fingerprint matches it resumes from the byte offset it stored last time. A
+file that is replaced in place rather than appended to breaks that assumption.
+With `--heartbeat` the effect is dramatic: a quiet scan ships only a digest, so
+the file collapses from megabytes to tens of kilobytes and then grows back on
+the next change. If Splunk thought it were the same file, it would resume at
+the old offset and silently skip the beginning of the next full scan.
+
+It does not happen, because **every swinv NDJSON line carries `scanned_at`**,
+and on both record types it falls inside the first 256 bytes: byte 141 on a
+plain component line in the sample data here. So the fingerprint differs on
+every scan, Splunk treats each run as a new file and reads all of it. No gaps
+and no duplicates. This holds with or without `--heartbeat`.
+
+swinv also writes atomically, to a temp file that is then renamed, so the inode
+changes on every run and Splunk can never read a half-written inventory.
+
+`--heartbeat` earns its place for a different reason: it lets the app re-match
+only hosts whose software actually changed. It is not what makes `overwrite`
+safe.
+
+If you prefer `--output-mode timestamped`, the shipped input handles it: that is
+what `crcSalt = <SOURCE>` and the `-latest` blacklist are for. Just remember to
+prune the directory.
+
+
+Doing this first is worth the few minutes. With no inventory arriving there is
+nothing to correlate, every dashboard reads zero, and the app cannot tell that
+apart from a fleet with no vulnerabilities - which is why it says "no data"
+rather than showing a clean bill of health.
 
 Every line the forwarder ships is one JSON object. The app reads four kinds,
 distinguished by `record_type`:
@@ -405,16 +414,28 @@ the prebuilt `TA-riskability`, or push it with a deployment server:
 disabled = 0
 index = riskability_inventory
 sourcetype = riskability:swinv
-crcSalt = <SOURCE>
-blacklist = -latest\.ndjson$
 ```
 
-`crcSalt = <SOURCE>` matters. swinv's output is deterministic apart from
-timestamps, so two scans of an unchanged host share a long identical prefix,
-and without a source-based CRC salt Splunk treats the new file as one it has
-already read and skips it. The blacklist matters too: swinv writes a
-`<host>-latest.ndjson` symlink beside the real files, and monitoring it would
-re-read the entire inventory on every scan.
+Four lines, if you run swinv the way this app recommends. Two settings that
+appear in the shipped default are deliberately absent here, and it is worth
+knowing when you do need them.
+
+`blacklist = -latest\.ndjson$` filters the `<host>-latest.ndjson` symlink that
+swinv writes beside each scan. Monitoring a symlink would re-read the whole
+inventory every run. With `--latest-symlink=false` there is no symlink to
+filter, so the setting has nothing to do.
+
+`crcSalt = <SOURCE>` makes Splunk include the file path when deciding whether
+it has seen a file before. That matters in swinv's default `timestamped` mode,
+where each scan is a new filename and consecutive scans of an unchanged host
+share a long identical opening. In `--output-mode overwrite` the path never
+changes, so salting with it achieves nothing; what makes Splunk re-read is that
+every swinv line carries `scanned_at`, so the first 256 bytes differ on every
+scan.
+
+Both are in the shipped `TA-riskability` default because that default cannot
+know which mode you run, and they are the settings that make swinv's own
+defaults work. Neither does any harm if you keep them.
 
 If you install `TA-riskability` rather than pasting the above, note that it
 ships the input **disabled** - installing an add-on must not silently start
@@ -470,25 +491,29 @@ have to. Splunk merges configuration per attribute: `local/` wins for the
 attributes it names, and every attribute it does not name is still taken from
 `default/`. So the two settings below apply whether or not you write them out.
 
-- **`crcSalt = <SOURCE>`**, shown above and also in the shipped default. swinv's
-  output is deterministic apart from the timestamps, so two scans of an
-  unchanged host share a long identical prefix. Without a source-based CRC salt
-  Splunk recognises the new file as one it has already read and skips it
-  entirely.
-- **`blacklist = -latest\.ndjson$`**, in the shipped default only - it is not in
-  the example above because there is no need to restate it. swinv writes a
-  `<host>-latest.ndjson` symlink beside each scan. Monitoring the symlink as
-  well would re-read the whole inventory every run: re-pointing a symlink does
-  not reliably raise a new-file event, and its target changes name every scan.
+- **`crcSalt = <SOURCE>`** makes Splunk fold the file path into the fingerprint
+  it uses to decide whether it has seen a file before. It is what makes swinv's
+  default `timestamped` mode work, where every scan is a new filename and two
+  scans of an unchanged host share a long identical opening. It is inert under
+  `--output-mode overwrite`, where the path never changes.
+- **`blacklist = -latest\.ndjson$`** filters the `<host>-latest.ndjson` symlink
+  swinv writes beside each scan. Monitoring a symlink would re-read the whole
+  inventory every run: re-pointing one does not reliably raise a new-file event,
+  and its target changes name every scan. It has nothing to filter under
+  `--latest-symlink=false`.
+
+Both are in the shipped default because an add-on cannot know which mode you
+chose, and both are the settings swinv's own defaults require. Running it the
+way this app recommends makes neither necessary, and neither harmful.
 
 Read the shipped file at `TA-riskability/default/inputs.conf` if you want to see
 exactly what you are inheriting; it carries both settings and the reasoning.
 
-Have swinv write NDJSON, which is the format the input expects:
-
-```sh
-swinv --format ndjson --out /var/lib/swinv
-```
+The input expects NDJSON, which is one of several things swinv has to be told
+to produce. The full invocation is under
+[What the app reads from the collector](#what-the-app-reads-from-the-collector);
+a bare `--format ndjson` is not enough, because without `--ndjson-include all`
+there are no exposure records and the entire reachability axis is missing.
 
 Index-time parsing (line breaking and the timestamp) takes effect on the
 **indexer**, because a universal forwarder does not parse. On a single instance

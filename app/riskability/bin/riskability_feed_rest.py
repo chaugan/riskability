@@ -325,7 +325,12 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         mitre = bool(body.get("mitre"))
         kev = bool(body.get("kev"))
         epss = bool(body.get("epss"))
-        if not (ecosystems or nvd or mitre or kev or epss):
+        # The CVE Program catalogue. Accepted here so an instance that does have
+        # outbound access can fetch it the same way it fetches everything else,
+        # rather than the encyclopaedia's source being reachable only through
+        # the offline builder.
+        cve_list = bool(body.get("cve_list"))
+        if not (ecosystems or nvd or mitre or kev or epss or cve_list):
             raise ValueError("select at least one source to fetch")
 
         self._queue(service, {
@@ -335,6 +340,7 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             "mitre": mitre,
             "kev": kev,
             "epss": epss,
+            "cve_list": cve_list,
             "requested_by": user,
             "requested_at": int(time.time()),
             "state": "pending",
