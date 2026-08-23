@@ -2,24 +2,41 @@
 
 # Riskability
 
-**Offline software vulnerability correlation for Splunk.**
+**Know which vulnerabilities your fleet actually has, on a Splunk search head
+with no route to the internet.**
 
-Riskability takes the software inventory that [`swinv`](https://github.com/chaugan/swinv)
-collects from every host, correlates it against vulnerability data an operator
-supplies by hand, and reports what is actually exposed - on a search head that
-has no route to the internet.
+Riskability correlates the software [`swinv`](https://github.com/chaugan/swinv)
+finds on every host - including inside containers, snap bases and unpacked
+images - against CVE data you carry in by hand. No agent calls out, no lookup
+leaves the building, and no cloud service is asked what your estate is running.
 
-**Matching, the dashboards and the import path make no outbound network
-requests.** Nothing on a search head reaches for the internet to decide whether
-a package is vulnerable, and nothing needs to.
+Three things separate it from pointing a scanner at NVD.
 
-The one exception is deliberate and opt-in: **Feed administration** offers a
-*Fetch directly* button that downloads the upstream feeds and builds a bundle on
-the search head itself, for instances that do have a route out. It tests
-reachability first and reports the failure immediately on an instance that does
-not, rather than starting a download that dies minutes later. Nothing invokes it
-on your behalf; on an air-gapped search head it is a button that reports it
-cannot work.
+**It does not cry wolf.** Distributions backport fixes without changing the
+upstream version, so "anything below 3.0.14 is vulnerable" is true of NVD and
+false of your Ubuntu host. Riskability recovers the source package behind each
+binary, compares versions with each ecosystem's own rules, and marks a
+comparison it cannot make properly instead of asserting one. That took deb
+coverage on the test host from 260 matched components to 770.
+
+**It ranks by what an attacker can reach.** EPSS says how likely the world is to
+exploit a vulnerability; neither it nor the KEV catalogue knows whether *this*
+copy is answering a socket. The collector reports listening ports, the process
+holding each one and the containers behind them. On the two-host test fleet that
+turns 10,206 open findings into **11 that answer a network address** - a list
+somebody can work through tonight. It re-orders the work; it never shortens it.
+
+**It tells you what it cannot see.** Half the components on the test host were
+kernel modules that no vulnerability feed covers. A scanner silently blind to
+half a host is more dangerous than one that says so, so every page reports its
+own gaps, and an empty panel here says whether it found nothing or looked at
+nothing.
+
+Built for air-gapped estates and regulated networks: the search head never
+initiates an outbound connection. Feeds are built on a connected machine and
+carried across. There is one opt-in exception for instances that do have a route
+out - a *Fetch directly* button on **Feed administration** - which checks
+reachability first and reports plainly when there is none.
 
 ---
 
@@ -87,10 +104,10 @@ and Riskability joins that to the findings. Every finding gets one of five
 labels: *answers any address* (a wildcard bind), *answers one address* (bound to
 a specific non-loopback address - treated as reachable, because it is),
 *loopback only*, *no listening port*, or *not assessed* when the host never
-reported its ports at all. On the test fleet, of 22,925 open findings, 17
-answered a network address - two of them known-exploited - 383 answered only
-loopback, and 22,525 had nothing listening. Those four figures are a live
-instance snapshot rather than something `audit_claims.py` can recompute. It is a re-ordering, never a filter: an unreachable vulnerability is still a
+reported its ports at all. On the two-host test fleet, of 10,206 open findings,
+11 answered a network address, 272 answered only loopback, and 9,923 had nothing
+listening. Those figures are a live-instance snapshot rather than something
+`audit_claims.py` can recompute. It is a re-ordering, never a filter: an unreachable vulnerability is still a
 vulnerability, and a host running a collector too old to report ports is shown as
 *not assessed* rather than counted as safe.
 

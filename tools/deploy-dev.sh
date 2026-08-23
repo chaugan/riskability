@@ -66,9 +66,14 @@ else
 # Register the service the way the portal's own guide says, once:
 #   curl -X POST http://localhost:3300/api/services -H "Authorization: Bearer $TOKEN" \
 #        -d '{"name":"riskability","target":"http://localhost:8000"}'
-SHARE_PREFIX="${RISKABILITY_SHARE_PREFIX:-/share/REDACTED}"
-PROXY_BASE="${RISKABILITY_PROXY_BASE:-proxy.example.invalid:443}"
-if [ -n "$SHARE_PREFIX" ]; then
+# Both default to empty, and the block below is skipped when they are. They
+# describe one developer's reverse proxy, not anything about this app, and a
+# share path is a working URL to somebody's instance - not a thing to ship in a
+# public repository. Export them to use it:
+#   RISKABILITY_SHARE_PREFIX=/share/xxxx RISKABILITY_PROXY_BASE=host:443 ./tools/deploy-dev.sh
+SHARE_PREFIX="${RISKABILITY_SHARE_PREFIX:-}"
+PROXY_BASE="${RISKABILITY_PROXY_BASE:-}"
+if [ -n "$SHARE_PREFIX" ] && [ -n "$PROXY_BASE" ]; then
   docker exec -u splunk "$CONTAINER" sh -c \
     "grep -q 'root_endpoint = $SHARE_PREFIX' /opt/splunk/etc/system/local/web.conf 2>/dev/null || \
      printf '[settings]\nroot_endpoint = %s\ntools.proxy.on = True\ntools.proxy.base = %s\n' '$SHARE_PREFIX' '$PROXY_BASE' > /opt/splunk/etc/system/local/web.conf" \
