@@ -39,9 +39,47 @@ upstream fixed in 3.0.14.
 
 This app correlates what swinv (https://github.com/chaugan/swinv) reports. It
 collects nothing itself. Install swinv on the hosts you want assessed,
-following its own instructions, and confirm it is writing NDJSON to
-/var/lib/swinv before going further. With no inventory arriving there is
-nothing to correlate, and every dashboard will read zero.
+following its own instructions, then run it with the flags this app needs:
+
+  Linux:
+    sudo swinv --out /var/lib/swinv \
+               --format ndjson \
+               --ndjson-include all \
+               --heartbeat \
+               --output-mode overwrite \
+               --latest-symlink=false
+
+  Windows:
+    swinv.exe --out C:\ProgramData\swinv `
+              --format ndjson `
+              --ndjson-include all `
+              --heartbeat `
+              --output-mode overwrite `
+              --latest-symlink=false
+
+The output directory is an example; point the forwarder input at whichever one
+you use.
+
+  --format ndjson        the only format this app reads
+  --ndjson-include all   adds exposure and container records. WITHOUT THIS
+                         THERE IS NO REACHABILITY: every finding reads "not
+                         assessed" and the Exposure dashboard has nothing to
+                         draw
+  --heartbeat            a digest each scan, so only hosts whose software
+                         changed are re-matched
+  --output-mode overwrite  one fixed filename per host, so the directory
+                         cannot grow without bound. The default, timestamped,
+                         keeps every scan and has no retention of its own
+  --latest-symlink=false stops the <host>-latest.ndjson symlink, which would
+                         re-read the whole inventory on every scan
+
+Overwriting a monitored file is safe here because every swinv line carries
+scanned_at within the first 256 bytes Splunk fingerprints, so each scan looks
+like a new file and is read in full. swinv writes atomically, so Splunk never
+sees a half-written inventory.
+
+With no inventory arriving there is nothing to correlate, and every dashboard
+will read zero.
 
 ### 1. Install the app
 
