@@ -64,6 +64,24 @@ var ROW_CAP = 10000;
 var PREF_COL_WIDTH = 90;
 var MIN_COL_WIDTH = 80;
 
+/* A table that overflows its box by less than this is not a table that needs
+ * scrolling; it is a rounding remainder.
+ *
+ * fitColumns divides the holder's width among the columns and rounds each one.
+ * At an integer zoom on an even container the remainder is zero and nothing is
+ * wrong. At 125% zoom, or on a container whose width is fractional because a
+ * flexbox divided an odd number of pixels, the rounded column widths can sum to
+ * a pixel or three more than the box they sit in -- and a browser answers three
+ * pixels of overflow with a full-height scrollbar, the same one it would draw
+ * for three hundred. The user sees a scrollbar under a table that plainly fits
+ * and reasonably concludes the app is broken.
+ *
+ * There is no CSS for "no bar under four pixels", so the remainder is taken off
+ * the widest column after the layout settles. Sixteen pixels is the ceiling
+ * because that is about a scrollbar's width: anything wider is a table that
+ * genuinely does not fit, and those must keep their scrollbar. */
+var HAIRLINE_OVERFLOW = 16;
+
 function columnFloor(available, count) {
     if (!available || available < 0 || !count) { return PREF_COL_WIDTH; }
     return Math.max(MIN_COL_WIDTH,
@@ -200,7 +218,7 @@ export default SplunkVisualizationBase.extend({
             // before saying there is nothing to show under it.
             this._message('warn', 'Nothing to display', note
                 ? 'No rows match the filter currently applied to this panel (' + note +
-                  '). Clear the filter to see everything. \u2014 ' + emptyText
+                  '). Clear the filter to see everything. - ' + emptyText
                 : emptyText);
             return;
         }
@@ -226,7 +244,7 @@ export default SplunkVisualizationBase.extend({
                 'Showing the first ' + ROW_CAP.toLocaleString() + ' rows; the ' +
                 'search returned at least this many. Column filters below apply ' +
                 'only to these rows, so a filter can hide matches that exist ' +
-                'beyond the cut — narrow the search itself instead.';
+                'beyond the cut - narrow the search itself instead.';
             this.el.appendChild(warn);
         }
 
@@ -391,6 +409,7 @@ export default SplunkVisualizationBase.extend({
                     var holder = self.el.querySelector('.tabulator-tableholder');
                     self._scrolledVertically = !!holder &&
                         holder.scrollHeight > holder.clientHeight;
+                    self._shaveHairlineOverflow();
                 } catch (e) { /* torn down */ }
             });
         });
@@ -474,6 +493,33 @@ export default SplunkVisualizationBase.extend({
         }
     },
 
+    /* Take a rounding remainder off the widest column, so no scrollbar is drawn
+     * for it. See HAIRLINE_OVERFLOW. Deliberately does not redraw: fitColumns
+     * would recompute the very widths this is correcting. Every caller runs it
+     * as the last step after its own redraw, so the correction survives until
+     * the next layout, which corrects itself again. */
+    _shaveHairlineOverflow: function () {
+        if (!this.table) { return; }
+        var holder = this.el.querySelector('.tabulator-tableholder');
+        if (!holder || !holder.clientWidth) { return; }
+        var over = holder.scrollWidth - holder.clientWidth;
+        if (over <= 0 || over > HAIRLINE_OVERFLOW) { return; }
+
+        var flex = this.table.getColumns().filter(function (c) {
+            return c.isVisible() && !(c.getDefinition() || {}).width;
+        });
+        if (!flex.length) { return; }
+        var widest = flex[0], i;
+        for (i = 1; i < flex.length; i++) {
+            if (flex[i].getWidth() > widest.getWidth()) { widest = flex[i]; }
+        }
+        // A column already at the floor has nothing to give, and forcing it
+        // below would start the fight fitColumns is meant to settle.
+        var want = widest.getWidth() - over - 1;
+        if (want < MIN_COL_WIDTH) { return; }
+        try { widest.setWidth(want); } catch (e) { /* torn down */ }
+    },
+
     /* Redraw only if the vertical scrollbar has appeared or disappeared since
      * the last layout, because that is the only thing that silently changes the
      * width the columns were fitted to. */
@@ -487,6 +533,7 @@ export default SplunkVisualizationBase.extend({
         try {
             this._fitColumnFloor();
             this.table.redraw(true);
+            this._shaveHairlineOverflow();
         } catch (e) { /* torn down */ }
     },
 
@@ -530,6 +577,7 @@ export default SplunkVisualizationBase.extend({
                 var holder = this.el.querySelector('.tabulator-tableholder');
                 this._scrolledVertically = !!holder &&
                     holder.scrollHeight > holder.clientHeight;
+                this._shaveHairlineOverflow();
             } catch (e) { /* not built yet */ }
         }
     },

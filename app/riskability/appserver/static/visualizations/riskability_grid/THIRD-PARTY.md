@@ -11,9 +11,9 @@ inside the package. This file is the manifest for it.
 `overrides.css` from this directory, which pulls it onto the Riskability
 palette. Both halves are plain CSS and readable in the shipped file.
 
-Only the Tabulator modules this table uses are registered — sort, filter,
+Only the Tabulator modules this table uses are registered - sort, filter,
 format, edit (which supplies the header-filter inputs), column resize, page,
-download, menu and tooltip — rather than `TabulatorFull`, which would bundle
+download, menu and tooltip - rather than `TabulatorFull`, which would bundle
 every feature including ones with heavier dependencies.
 
 Nothing is fetched at runtime; this app runs on air-gapped search heads.

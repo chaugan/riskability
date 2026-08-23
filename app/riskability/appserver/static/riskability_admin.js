@@ -108,10 +108,10 @@
             var pct = want ? Math.min(99, Math.round(loaded * 100 / want)) : 0;
             prog.appendChild(el("b", null,
                 st.state === "queued"
-                    ? "Queued — the feed worker starts within a minute"
+                    ? "Queued - the feed worker starts within a minute"
                     : st.state === "cleaning"
-                        ? "Import complete — removing the previous feed…"
-                        : "Importing " + (st.bundle_version || "") + " — " + pct + "%"));
+                        ? "Import complete - removing the previous feed…"
+                        : "Importing " + (st.bundle_version || "") + " - " + pct + "%"));
             prog.appendChild(el("span", null,
                 " The feed below stays live and searchable until this finishes. " +
                 "The import continues on the server whether or not this page is open."));
@@ -150,7 +150,7 @@
             var age = el("div", "rk-status " + ageClass(feed.imported_at));
             age.appendChild(el("b", null, "Imported " + humanAge(feed.imported_at)));
             age.appendChild(el("span", null,
-                " — an offline feed is only as current as its last import, so this number " +
+                " - an offline feed is only as current as its last import, so this number " +
                 "bounds how much the findings below can be trusted."));
             card.appendChild(age);
 
@@ -198,7 +198,7 @@
                 noTac.appendChild(el("span", null,
                     "The " + (feed.attack_count || 0).toLocaleString() + " CWE-to-technique " +
                     "mappings are here, so the technique panels work, but nothing says which " +
-                    "tactic each technique belongs to \u2014 so the ATT&CK matrix on the MITRE " +
+                    "tactic each technique belongs to - so the ATT&CK matrix on the MITRE " +
                     "page is blank. That is a gap in the bundle, not an absence of exposure. " +
                     "It happens when the build host could not reach the ATT&CK STIX data; " +
                     "rebuild the bundle on a host that can and import it again."));
@@ -467,7 +467,7 @@
         ].forEach(function (o) {
             var li = el("li");
             li.appendChild(el("code", null, o[0]));
-            li.appendChild(document.createTextNode(" \u2014 " + o[1]));
+            li.appendChild(document.createTextNode(" - " + o[1]));
             ul.appendChild(li);
         });
         opts.appendChild(ul);
@@ -707,7 +707,7 @@
             box.appendChild(el("span", null, err.message));
             box.appendChild(el("div", "rk-dim",
                 "This page needs the admin_all_objects capability, and the KV Store must be " +
-                "running — check 'splunk show kvstore-status' if this persists."));
+                "running - check 'splunk show kvstore-status' if this persists."));
             root.appendChild(box);
         });
     }

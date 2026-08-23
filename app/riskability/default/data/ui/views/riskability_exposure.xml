@@ -23,6 +23,50 @@
     </input>
   </fieldset>
 
+  <!-- One aggregation over the open findings, shared by the worst-hosts panel
+       and by the count in its caption. A base search rather than two, because
+       this is the same read the matrix above already does and doing it twice
+       for one number would be careless. -->
+  <search id="rk_exposed_hosts">
+    <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+| search $reach_filter$ $exploit_filter$
+| eval rk_reach = if(reach_rank &gt;= 2, 1, 0), rk_local = if(reach_rank == 1, 1, 0),
+       rk_unknown = if(reach_rank &lt; 0, 1, 0),
+       rk_kev_reach = if(reach_rank &gt;= 2 AND is_kev == 1, 1, 0)
+| stats sum(rk_kev_reach) AS kev_reachable, sum(rk_reach) AS reachable,
+        sum(rk_local) AS local_only, sum(rk_unknown) AS unassessed,
+        count AS findings, dc(package) AS packages BY hostname
+| eventstats dc(hostname) AS fleet_hosts, sum(reachable) AS fleet_reachable
+| eval shown_hosts = min(10, fleet_hosts)
+| sort 50000 - kev_reachable, - reachable, - findings</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <!-- This is also where the chain gets its host.
+         There is no host picker: with thousands of machines a dropdown is a
+         scrolling exercise, and the list below already ranks them. So the chain
+         follows the first row of that ranking unless the reader clicks another,
+         which means a page opened cold shows the route into the worst machine
+         in view rather than an empty panel with an instruction in it.
+         Re-running this search re-points the chain, and that is wanted: narrow
+         the matrix to known-exploited-and-reachable and the chain moves to a
+         host that actually has one. A row click does not re-run it, so a
+         deliberate choice is not overwritten. -->
+    <done>
+      <condition match="'job.resultCount' &gt; 0">
+        <set token="chain_host">$result.hostname$</set>
+        <set token="fleet_hosts">$result.fleet_hosts$</set>
+        <set token="shown_hosts">$result.shown_hosts$</set>
+        <set token="fleet_reachable">$result.fleet_reachable$</set>
+      </condition>
+      <condition>
+        <set token="chain_host">*</set>
+        <set token="fleet_hosts">0</set>
+        <set token="shown_hosts">0</set>
+        <set token="fleet_reachable">0</set>
+      </condition>
+    </done>
+  </search>
+
   <!-- Drilldown state, set here rather than by <input type="hidden">.
        Splunk 9 has no hidden input. It renders one as an ordinary text box
        labelled with the token's name, so a page written this way opens with
@@ -35,6 +79,7 @@
     <set token="reach_filter">reach_class=*</set>
     <set token="exploit_filter">exploit_class=*</set>
     <set token="node_filter">rk_nodes=*</set>
+    <set token="host_focus_filter">hostname=*</set>
     <set token="drill_note"></set>
   </init>
 
@@ -46,16 +91,16 @@
           <span>
             Every finding on this page is still a real vulnerability. What this page adds is
             the one thing EPSS and the KEV catalogue cannot know: whether <em>this</em> copy is
-            answering the network. A package with no listening port is not safe &#8212; it is
+            answering the network. A package with no listening port is not safe - it is
             reached by something other than a socket, or by an attacker who is already inside
-            &#8212; but it is not the thing to fix tonight. Nothing here is ever coloured green,
+            - but it is not the thing to fix tonight. Nothing here is ever coloured green,
             because nothing here is finished.
             <b>Read a quiet row as "later", never as "no".</b>
           </span>
           <span>
             This page opens with <b>all matches</b> rather than high-confidence ones only. What
             listens on a port is usually a compiled binary, and a binary is exactly what this app
-            matches least confidently &#8212; it can tell that a Go executable is serving and
+            matches least confidently - it can tell that a Go executable is serving and
             still be unsure which module versions are inside it. Filtering those out would empty
             the reachable rows and hide the finding you came for, so they are shown and labelled
             instead: check the <b>Confidence</b> column before you act on one.
@@ -67,7 +112,7 @@
 
   <row>
     <panel>
-      <title>What to do first — open findings by reach and by exploit likelihood</title>
+      <title>What to do first - open findings by reach and by exploit likelihood</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
@@ -76,7 +121,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">prioritymatrix</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>
-        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either there are no open findings for this host filter, or the exposure snapshot has not run yet — see the assessment coverage panel below.</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either there are no open findings for this host filter, or the exposure snapshot has not run yet - see the assessment coverage panel below.</option>
         <option name="height">460</option>
         <!-- The chart reports a click under the SEARCH's field names, not under
              the contract's slot names, so these are $row.reach_class$ and
@@ -94,12 +139,59 @@
           <span>
             The cell holding two known-exploited findings on a wildcard port is the darkest one
             on the grid; the cell holding sixteen thousand unreachable ones is the coolest. That
-            inversion is the whole point &#8212; a chart that sized by count would draw the two
+            inversion is the whole point - a chart that sized by count would draw the two
             findings you must fix tonight as a hairline. Empty cells are drawn deliberately: a
             row reading zero across is a statement, and a missing row would be an ambiguity.
-            The dashed row is <b>not assessed</b> &#8212; those findings are unranked because the
+            The dashed row is <b>not assessed</b> - those findings are unranked because the
             collector on that host never reported its listening ports, so treat them as unknown
             risk rather than as low risk.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Most exposed hosts</title>
+      <viz type="riskability.riskability_grid">
+        <search base="rk_exposed_hosts">
+          <query>| head 10
+| table hostname, kev_reachable, reachable, local_only, unassessed, findings
+| rename hostname AS "Host", kev_reachable AS "Known-exploited and reachable",
+         reachable AS "Reachable findings", local_only AS "Loopback only",
+         unassessed AS "Not assessed", findings AS "Open findings"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">all</option>
+        <option name="riskability.riskability_grid.emptyText">No host has an open finding at this filter.</option>
+        <option name="height">300</option>
+        <drilldown>
+          <set token="form.chain_host">$row.Host$</set>
+          <set token="host_focus_filter">hostname="$row.Host$"</set>
+          <set token="drill_note">host $row.Host$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Showing $shown_hosts$ of $fleet_hosts$ hosts with findings, worst first.</b>
+          <span>
+            The matrix above is the whole fleet and stays that size however many machines
+            report, because it has thirty cells whatever the input. A list of hosts does not:
+            it grows a row per machine, and past a few hundred it stops being something anyone
+            reads and becomes something they scroll. So the list is cut to the ten that matter
+            and the number it was cut from is printed above, rather than the cut being made
+            quietly. The order is known-exploited-and-reachable first, then reachable, then
+            open findings - a machine with one exploited CVE answering the internet
+            outranks one with a thousand findings nothing can get to. $fleet_reachable$
+            findings across the fleet answer a network address.
+            Click a row to point the chain below at that host and narrow the detail table to
+            it - and the chain follows the top row of this list on its own, so a page opened
+            cold shows a real route rather than an empty panel. This list follows the matrix
+            too: select a cell and it becomes the answer to "which machines have
+            <em>that</em>", which is the list you want before you go looking at any one
+            route. To work through the rest, sort or filter this page by host, or use
+            <b>Hosts</b>, which is built for one machine at a time.
           </span>
         </div>
       </html>
@@ -130,10 +222,15 @@
 
   <row>
     <panel>
-      <title>How the network gets there — port, process, container, package, CVE</title>
+      <title>How the network gets there on $chain_host$ - port, process, container, package, CVE</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_exposure_chain_for($host_tok|s$, $conf_tok|s$)`
+          <query>| `riskability_exposure_chain_for($chain_host|s$, $conf_tok|s$)`
+| search $reach_filter$ $exploit_filter$
+| eventstats dc(cve_id) AS rk_port_cves BY n_edge
+| sort 200000 - rk_port_cves, n_edge
+| streamstats dc(n_edge) AS rk_port_rank
+| where rk_port_rank &lt;= 10
 | eval rk_epss = coalesce(epss, 0)
 | stats max(rk_epss) AS rk_epss, max(is_kev) AS rk_kev, dc(cve_id) AS cves
         BY source, source_kind, target, target_kind
@@ -155,7 +252,8 @@
         </search>
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No chain to draw: no open finding is behind a listening port. That is a real answer, not a missing one — check the assessment coverage panel below to be sure the ports were measured at all.</option>
+        <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
+        <option name="riskability.riskability_chart.emptyText">No chain to draw. Three things look identical here and are not: this host may have nothing behind a listening port at all; the matrix cell you selected may be one of the unreachable rows, which by definition have no route - that is the answer, not a missing panel; or this host may simply have none of the findings in that cell, in which case the host list above says which hosts do. Check the assessment coverage panel below to be sure its ports were measured at all.</option>
         <option name="height">620</option>
         <drilldown>
           <set token="node_filter">rk_nodes="$row.node$"</set>
@@ -165,20 +263,44 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>Every hop here is measured, and the picture is still not the whole route.</b>
+          <b>One host at a time, and that is not a limitation of the panel.</b>
           <span>
+            A chain is a route through one machine. Drawn across a fleet it merges every
+            copy of <code>sshd</code> into a single node, sums edge widths over machines that
+            have nothing to do with each other, and stops describing a route anyone could
+            follow. There is no host picker, because with thousands of machines a dropdown is a
+            scrolling exercise: the chain follows the top row of the ranked list above unless
+            you click another row, so it opens on the machine most worth opening rather than
+            on an instruction to choose one. Selecting a cell
+            in the matrix narrows this chain to those findings as well - picking
+            <em>known-exploited, answers any address</em> draws only the routes the world can
+            walk to a CVE someone is already exploiting. Picking one of the unreachable rows
+            empties it, correctly: those findings have no route, which is the whole reason
+            they are ranked below.
+          </span>
+          <span>
+            <b>The ten busiest listening ports on that host, and the 160 busiest hops.</b>
+            Cutting by port rather than by hop count is deliberate: a port and everything
+            behind it is a whole route, so dropping one leaves the rest intact, where
+            trimming hops alone would leave nodes hanging off nothing. Measured on the fleet
+            this was built against, one host's chain comes to nine CVE nodes and the other's
+            to fifteen, comfortably inside the panel. The cap is there for the machine
+            running thirty services, not for these.
+          </span>
+          <span>
+            <b>Every hop here is measured, and the picture is still not the whole route.</b>
             The collector saw the port, the process holding it and the packages inside; it did
             not see your firewall, your reverse proxy or your network segmentation. A wildcard
-            bind means the process would answer any address that reaches the host &#8212; not
+            bind means the process would answer any address that reaches the host - not
             that the internet can. Bubble size is the largest number of CVEs reachable through
             any single hop touching that node, so sibling sizes do not add up. Only the 160
             busiest hops are drawn. A dashed node is a hole in what the collector could see
-            &#8212; a port answering with no process attributed to it &#8212; which is a
+            - a port answering with no process attributed to it - which is a
             different thing from a hop that is known and harmless. Ports with no package behind
             them never reach this graph at all, because nothing can be matched against them;
             they are counted in <b>Ports with no package</b> below. Each package shows its known-exploited CVEs and its three highest-scoring
             others by name; the rest are collected into a single "N more in &lt;package&gt;"
-            node rather than drawn as fifty unreadable bubbles &#8212; unless the roll-up would
+            node rather than drawn as fifty unreadable bubbles - unless the roll-up would
             hold a single CVE, which is named instead. Every node is named where the
             panel has the height to name it; if a column is ever dense enough to run out of
             room, the busiest keep their labels and the rest can be read by hovering.
@@ -232,7 +354,7 @@
 
   <row>
     <panel>
-      <title>Containers — a stopped container is not a safe container</title>
+      <title>Containers - a stopped container is not a safe container</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_container_findings_for($host_tok|s$)`
@@ -298,7 +420,7 @@
           <span>
             They were matched against the operating system declared inside the container, which
             is often a different distribution from the host it runs on. Fixing them means
-            rebuilding or replacing the image &#8212; patching the host will not move them.
+            rebuilding or replacing the image - patching the host will not move them.
           </span>
         </div>
       </html>
@@ -307,11 +429,11 @@
 
   <row>
     <panel>
-      <title>The findings behind this — $drill_note$</title>
+      <title>The findings behind this - $drill_note$</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
-| search $reach_filter$ $exploit_filter$
+| search $reach_filter$ $exploit_filter$ $host_focus_filter$
 | eval rk_nodes = mvappend(package, cve_id, split(coalesce(ports_text, ""), ", "),
         split(coalesce(listener_text, ""), ", "), split(coalesce(container_text, ""), ", "))
 | search $node_filter$

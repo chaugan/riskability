@@ -3,7 +3,7 @@
 AppInspect and Splunkbase vetting both expect vendored JavaScript to be
 identifiable: which library, which version, which licence, and where it came
 from. `visualization.js` is a webpack bundle, so nothing below is separately
-readable inside the package — this file is the manifest for it.
+readable inside the package - this file is the manifest for it.
 
 | Library | Version | Licence | Source |
 |---|---|---|---|

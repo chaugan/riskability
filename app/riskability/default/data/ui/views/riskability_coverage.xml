@@ -24,7 +24,7 @@
       <html>
         <div class="rk-status rk-warn" style="margin:0 0 4px;">
           <b>A low finding count is not the same as a secure fleet.</b>
-          <span>Components below with no feed coverage are not "clean" &#8212; they are unassessed.
+          <span>Components below with no feed coverage are not "clean" - they are unassessed.
           Kernel modules, GitHub Actions and unmanaged binaries have no vulnerability feed at all;
           other gaps usually mean the relevant ecosystem was not included when the bundle was built.</span>
         </div>

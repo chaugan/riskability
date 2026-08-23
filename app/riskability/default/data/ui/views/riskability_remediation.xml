@@ -142,7 +142,7 @@
 
   <row>
     <panel>
-      <title>Mitigated: the upgrade that fixed it — $rem_sev_label$</title>
+      <title>Mitigated: the upgrade that fixed it - $rem_sev_label$</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_mitigated_findings`
@@ -198,11 +198,12 @@
 
   <row>
     <panel>
-      <title>Findings first seen over time</title>
+      <title>Findings first seen, the last 90 days</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_findings_now`
 | search hostname=$host_tok|s$
+| where first_seen &gt;= relative_time(now(), "-90d")
 | eval day = strftime(first_seen, "%Y-%m-%d")
 | stats dc(finding_key) AS findings BY day, status
 | sort 50000 day</query>

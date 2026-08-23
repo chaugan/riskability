@@ -14,7 +14,7 @@
           <p>
             This app makes no outbound network requests, by design: it is built to run on a
             search head with no route to the internet. Vulnerability data gets in exactly one
-            way &#8212; you build a bundle on a machine that does have access, carry it across,
+            way - you build a bundle on a machine that does have access, carry it across,
             and import it here.
           </p>
 
@@ -34,8 +34,8 @@ riskability-feed build --out riskability-feed.tar.gz \
 
           <h4>2. Get it onto this search head</h4>
           <p>
-            Either drop the file straight into the staging directory shown above &#8212; the
-            right choice for anything large, since nothing has to fit in memory &#8212; or use
+            Either drop the file straight into the staging directory shown above - the
+            right choice for anything large, since nothing has to fit in memory - or use
             the upload control, which is capped at 64&#160;MB because a REST upload is held
             whole in the search head's memory.
           </p>
@@ -50,7 +50,7 @@ riskability-feed build --out riskability-feed.tar.gz \
           <h4>Windows estates need one extra source</h4>
           <p>
             Linux packages are installed by a package manager, so each carries a PURL and can be
-            matched against its distribution's own advisories &#8212; which is what makes backport
+            matched against its distribution's own advisories - which is what makes backport
             handling possible. Windows software has no equivalent: there is no package manager and
             no PURL, only a display name and a version read out of the registry.
           </p>
@@ -77,7 +77,7 @@ riskability-feed build --out riskability-feed.tar.gz \
             Use the <b>Fetch directly</b> panel above. It checks which upstream hosts are actually
             reachable first, so an air-gapped instance tells you immediately rather than starting a
             download that fails minutes later. The app makes no outbound request unless you press
-            that button &#8212; nothing is scheduled and nothing runs at install time.
+            that button - nothing is scheduled and nothing runs at install time.
           </p>
 
           <h4>A note on redistribution</h4>

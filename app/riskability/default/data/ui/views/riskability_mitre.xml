@@ -48,7 +48,7 @@
             <em>this weakness class is the kind of thing that enables that technique</em>, not that
             an adversary used it, and not that this particular vulnerability is exploitable in your
             environment. A CVE with no CWE, or a CWE MITRE has not mapped, simply does not appear
-            &#8212; so absence here is not safety. Use it to see which capabilities your open
+            - so absence here is not safety. Use it to see which capabilities your open
             findings could hand an attacker, and pair it with the KEV and EPSS columns on
             <b>Findings</b>, which are about real-world exploitation rather than classification.
           </span>
@@ -59,7 +59,7 @@
 
   <row>
     <panel>
-      <title>ATT&amp;CK matrix — where open findings sit in an attack</title>
+      <title>ATT&amp;CK matrix - where open findings sit in an attack</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
@@ -72,7 +72,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">heatmap</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No tactic data. The matrix needs the ATT&amp;CK tactic mapping, which older feed bundles do not carry — rebuild the bundle with --mitre and import it. Until then this panel is blank because the mapping is missing, not because nothing is exposed.</option>
+        <option name="riskability.riskability_chart.emptyText">No tactic data. The matrix needs the ATT&amp;CK tactic mapping, which older feed bundles do not carry - rebuild the bundle with --mitre and import it. Until then this panel is blank because the mapping is missing, not because nothing is exposed.</option>
         <option name="height">520</option>
         <drilldown>
           <set token="tech_name_tok">$row.technique_name$</set>
@@ -89,7 +89,7 @@
           <span>
             The grid needs MITRE's technique-to-tactic mapping, which only bundles built
             with <code>--mitre</code> by a recent feed builder carry. If this panel is
-            empty, rebuild the bundle and import it — the techniques listed below are
+            empty, rebuild the bundle and import it - the techniques listed below are
             still correct in the meantime, they simply cannot be placed in an attack
             sequence without tactics. Cells show distinct CVEs; a technique appears in
             every tactic MITRE assigns it, so reading across a row counts the same CVEs
@@ -148,7 +148,7 @@
              panel asserting it shows a subset while showing everything is the
              exact failure the note exists to prevent. -->
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk — see the coverage panel beside it.</option>
+        <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk - see the coverage panel beside it.</option>
         <option name="height">400</option>
         <drilldown>
           <set token="cwe_tok">$row.cwe$</set>
@@ -180,7 +180,7 @@
 
   <row>
     <panel>
-      <title>Which weaknesses lead to which techniques — $tech_label$</title>
+      <title>Which weaknesses lead to which techniques - $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
@@ -208,8 +208,8 @@
           <b>Widths do not add up, by design.</b>
           <span>
             One weakness can enable several techniques, so a single CVE is drawn once per
-            technique it reaches. Each ribbon is honest on its own — that many distinct CVEs
-            connect that CWE to that technique — but summing the right-hand side counts the
+            technique it reaches. Each ribbon is honest on its own - that many distinct CVEs
+            connect that CWE to that technique - but summing the right-hand side counts the
             same CVE several times. Read concentration, not totals. Only the top 25 links
             are shown.
           </span>
@@ -220,7 +220,7 @@
 
   <row>
     <panel>
-      <title>Exploitation likelihood — $tech_label$</title>
+      <title>Exploitation likelihood - $tech_label$</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
@@ -251,7 +251,7 @@
           <span>
             The table above reports each technique's highest EPSS, which one noisy CVE can
             dominate. A box shows whether a technique is backed by many likely-exploited
-            CVEs or by a single outlier — those call for different responses. Techniques
+            CVEs or by a single outlier - those call for different responses. Techniques
             with fewer than three scored CVEs are omitted as too small to describe.
           </span>
         </div>
@@ -290,7 +290,7 @@
       <title>Findings behind $tech_label$</title>
       <html depends="$tech_tok$">
         <div class="rk-status" style="margin:0 0 8px">
-          <b>Showing only $tech_tok$ — $tech_name_tok$.</b>
+          <b>Showing only $tech_tok$ - $tech_name_tok$.</b>
           <span>
             These are the findings that put this technique on the matrix. Every one is a real
             vulnerability; the technique is what MITRE says this class of weakness could enable,

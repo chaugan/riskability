@@ -114,7 +114,7 @@
         if (already.length === selection.length) {
             summary.textContent = selection.length === 1
                 ? "This finding is already accepted. Change or withdraw that decision on the "
-                  + "Risk exceptions page \u2014 accepting it twice records one decision twice."
+                  + "Risk exceptions page - accepting it twice records one decision twice."
                 : "All " + selection.length + " selected findings are already accepted. "
                   + "Manage them on the Risk exceptions page.";
             summary.className = "rk-exc-summary rk-exc-bad";
@@ -127,7 +127,7 @@
             // justification covering several unrelated vulnerabilities is how
             // a pile of things gets accepted that nobody actually assessed.
             summary.textContent = selection.length + " rows selected across " + cves.length +
-                " different CVEs. Narrow it to one CVE — a single justification cannot " +
+                " different CVEs. Narrow it to one CVE - a single justification cannot " +
                 "honestly cover several vulnerabilities.";
             summary.className = "rk-exc-summary rk-exc-bad";
             button.disabled = true;
@@ -149,7 +149,7 @@
         var ok = rows.length === 1;
         summary.textContent = !rows.length ? ""
             : (ok ? rows[0].CVE + " · " + (rows[0]["Applies to"] || "")
-                  : rows.length + " selected — " + verb + " one at a time, so each keeps its own justification.");
+                  : rows.length + " selected - " + verb + " one at a time, so each keeps its own justification.");
         summary.className = "rk-exc-summary " + (ok ? "rk-exc-ok" : (rows.length ? "rk-exc-bad" : ""));
         buttonIds.forEach(function (id) {
             var b = document.getElementById(id);
@@ -256,8 +256,8 @@
         var box = el("div", "rk-exc-dialog");
 
         box.appendChild(el("h3", null,
-            (mode === "create" ? "Accept risk — " :
-             mode === "reactivate" ? "Re-accept — " : "Edit exception — ") + cve));
+            (mode === "create" ? "Accept risk - " :
+             mode === "reactivate" ? "Re-accept - " : "Edit exception - ") + cve));
 
         if (editing) {
             var ctx = el("div", "rk-exc-help");
@@ -285,10 +285,10 @@
         if (editing) { scopeSel.disabled = true; }
         var scopeOpts = [
             ["finding", "Only the " + selection.length + " selected finding" +
-                        (selection.length === 1 ? "" : "s") + " — this exact path"],
+                        (selection.length === 1 ? "" : "s") + " - this exact path"],
             ["host_cve", "This CVE on " +
                          (hosts.length === 1 ? hosts[0] : hosts.length + " selected hosts") +
-                         " — every path"],
+                         " - every path"],
             ["fleet_cve", "This CVE on EVERY host, including ones added later"],
         ];
         scopeOpts.forEach(function (o) {
@@ -309,10 +309,10 @@
             }).then(function (c) {
                 scopeSel.options[0].textContent =
                     "Only the selected finding" + (c.finding === 1 ? "" : "s") +
-                    " — this exact path (" + c.finding + ")";
+                    " - this exact path (" + c.finding + ")";
                 scopeSel.options[1].textContent =
                     "This CVE on " + (hosts.length === 1 ? hosts[0] : hosts.length + " hosts") +
-                    " — every path (" + c.host_cve + ")";
+                    " - every path (" + c.host_cve + ")";
                 scopeSel.options[2].textContent =
                     "This CVE on EVERY host, now and in future (" + c.fleet_cve +
                     " across " + c.fleet_hosts + " host" + (c.fleet_hosts === 1 ? "" : "s") + ")";
@@ -325,7 +325,7 @@
                         "This CVE appears " + c.host_cve + " times on " +
                         (hosts.length === 1 ? "this host" : "these hosts") + ", at different " +
                         "paths. You selected " + c.finding + ". Accepting it host-wide also " +
-                        "accepts the " + (c.host_cve - c.finding) + " you did not look at — " +
+                        "accepts the " + (c.host_cve - c.finding) + " you did not look at - " +
                         "a copy inside an unused container base says nothing about the copy " +
                         "the service actually loads.";
                     scopeNote.className = "rk-exc-scopewarn rk-exc-scopewarn-on";
@@ -345,11 +345,11 @@
         box.appendChild(scopeNote);
         field(box, "What is being accepted", scopeSel,
               editing
-                ? "Fixed. Changing what an exception covers is a different decision — withdraw " +
+                ? "Fixed. Changing what an exception covers is a different decision - withdraw " +
                   "this one and accept the new scope, so the trail shows both."
                 : "Per-path is the safe default when a CVE appears more than once on a host: " +
                   "each copy is judged on its own. Host-wide is fewer entries and survives a " +
-                  "rebuild that moves the package, but it accepts every copy — including ones " +
+                  "rebuild that moves the package, but it accepts every copy - including ones " +
                   "you have not looked at.");
 
         var reasonSel = el("select", "rk-exc-input");
@@ -522,7 +522,7 @@
         var overlay = el("div", "rk-exc-overlay");
         overlay.id = "rk-exc-dialog";
         var box = el("div", "rk-exc-dialog");
-        box.appendChild(el("h3", null, "Return to the risk pool — " + row.CVE));
+        box.appendChild(el("h3", null, "Return to the risk pool - " + row.CVE));
         box.appendChild(el("div", "rk-exc-help",
             "The findings this covers start counting again immediately, and will reappear in " +
             "every risk number within the hour. The record is kept and marked withdrawn, not " +

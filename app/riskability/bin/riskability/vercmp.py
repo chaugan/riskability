@@ -217,7 +217,7 @@ def rpm_compare(a: str, b: str) -> int:
 
     Matches ``rpm.vercmp`` exactly, including that a missing release sorts below
     any present one: ``1.0`` < ``1.0-1``. Do not "helpfully" treat an absent
-    release as equal — an advisory that names a bare upstream version is a
+    release as equal - an advisory that names a bare upstream version is a
     different problem, solved by :func:`rpm_compare_version_only` at the
     matching layer where the caller knows which side is the advisory.
     """

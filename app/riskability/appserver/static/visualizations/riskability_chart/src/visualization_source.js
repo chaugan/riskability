@@ -894,6 +894,12 @@ function buildChainGraph(rows, t, config) {
 
     return {
         animation: false,
+        // Published for the view, which walks it on hover to light the whole
+        // route through a node rather than only its immediate neighbours.
+        rkChain: {
+            nodes: nodeData.map(function (n) { return n.name; }),
+            links: linkData.map(function (l) { return [l.source, l.target]; }),
+        },
         tooltip: {
             trigger: 'item',
             backgroundColor: t.tooltipBg,
@@ -927,7 +933,11 @@ function buildChainGraph(rows, t, config) {
             xAxisIndex: 0, yAxisIndex: 0, roam: false,
             edgeSymbol: ['none', 'arrow'], edgeSymbolSize: 7,
             lineStyle: { color: 'source', opacity: 0.45, curveness: 0.08 },
-            emphasis: { focus: 'adjacency', lineStyle: { opacity: 0.95, width: 3 } },
+            // focus: 'none' on purpose. ECharts' 'adjacency' lights one hop in
+            // each direction, which on a five-column route answers the wrong
+            // question -- "what touches this?" instead of "what is this on the
+            // end of?". The view replaces it with the transitive closure.
+            emphasis: { focus: 'none', itemStyle: { borderColor: t.text, borderWidth: 2 } },
             label: {
                 show: true, color: t.text, fontSize: 10,
                 formatter: function (p) { return shorten(chainNodeLabel(p.name), 34); },
@@ -1088,7 +1098,7 @@ export default SplunkVisualizationBase.extend({
             warn.textContent =
                 'Showing the first ' + ROW_CAP.toLocaleString() + ' rows. The ' +
                 'search returned at least this many, so this chart is ' +
-                'incomplete — aggregate further in the search.';
+                'incomplete - aggregate further in the search.';
             this.el.appendChild(warn);
         }
 
@@ -1103,6 +1113,10 @@ export default SplunkVisualizationBase.extend({
         // notMerge, or a previous series survives a token change and two
         // filters are drawn on top of each other.
         this.chart.setOption(option, { notMerge: true });
+
+        // Before the drilldown check: hovering must work on a panel whose
+        // drilldown is switched off.
+        if (chartType === 'chaingraph') { this._wireChainHover(option); }
 
         // Clicking a chart reports what was clicked, using the search's own
         // field names. A treemap tile of a package is only useful if the
@@ -1164,6 +1178,149 @@ export default SplunkVisualizationBase.extend({
                 data: payload,
             }, params.event && params.event.event);
         });
+    },
+
+    /* Light the whole route through whatever the pointer is on.
+     *
+     * ECharts' own emphasis.focus for a graph series offers 'adjacency', which
+     * lights one hop in each direction. On a five-column route that answers the
+     * wrong question: hovering a package tells you which process holds it and
+     * which CVEs it carries, but not which port lets the world in, which is the
+     * thing the reader came to find out. ('trajectory', which does walk the
+     * whole path, exists only for sankey.)
+     *
+     * So: walk every edge upstream and every edge downstream from the hovered
+     * node, and dim everything that is not on one of those paths. Because the
+     * lit set is a path rather than a neighbourhood, a node's labels are worth
+     * showing even when the layout had no room to label it, so hovering also
+     * reveals the names of nodes the label budget skipped.
+     *
+     * Cost is a breadth-first walk over a graph capped at 160 edges, on
+     * mouseover, with animation off. Nothing here needs to be clever.
+     */
+    _wireChainHover: function (option) {
+        var chain = option && option.rkChain;
+        var series = option && option.series && option.series[0];
+        if (!chain || !series || !series.data) { return; }
+
+        var self = this;
+        var baseNodes = series.data, baseLinks = series.links || [];
+        var out = {}, inn = {};
+        chain.links.forEach(function (l, i) {
+            (out[l[0]] = out[l[0]] || []).push(i);
+            (inn[l[1]] = inn[l[1]] || []).push(i);
+        });
+
+        function merge(a, b) {
+            var o = {}, k;
+            for (k in a) { if (Object.prototype.hasOwnProperty.call(a, k)) { o[k] = a[k]; } }
+            for (k in b) { if (Object.prototype.hasOwnProperty.call(b, k)) { o[k] = b[k]; } }
+            return o;
+        }
+
+        // Breadth-first in one direction, recording the edges it crosses --
+        // those edges ARE the path, so they are what gets lit.
+        function spread(seed, edgeMap, farEnd, nodes, edges) {
+            var queue = [], seen = {}, i;
+            for (i = 0; i < seed.length; i++) {
+                if (seen[seed[i]]) { continue; }
+                seen[seed[i]] = 1; nodes[seed[i]] = 1; queue.push(seed[i]);
+            }
+            while (queue.length) {
+                var cur = queue.shift();
+                var es = edgeMap[cur] || [];
+                for (i = 0; i < es.length; i++) {
+                    edges[es[i]] = 1;
+                    var nxt = farEnd(chain.links[es[i]]);
+                    if (!seen[nxt]) { seen[nxt] = 1; nodes[nxt] = 1; queue.push(nxt); }
+                }
+            }
+        }
+
+        var DIM_NODE = 0.12, DIM_EDGE = 0.04;
+
+        function apply(nodes, edges) {
+            var nd = baseNodes, ld = baseLinks;
+            if (nodes) {
+                nd = baseNodes.map(function (n) {
+                    var on = !!nodes[n.name];
+                    return merge(n, {
+                        itemStyle: merge(n.itemStyle, { opacity: on ? 1 : DIM_NODE }),
+                        label: merge(n.label, { show: on, opacity: on ? 1 : 0 }),
+                    });
+                });
+                ld = baseLinks.map(function (l, i) {
+                    var on = !!edges[i];
+                    return merge(l, {
+                        lineStyle: merge(l.lineStyle, {
+                            opacity: on ? 0.95 : DIM_EDGE,
+                            width: on ? ((l.lineStyle && l.lineStyle.width) || 1.4) + 1.2
+                                      : (l.lineStyle && l.lineStyle.width) || 1.4,
+                        }),
+                    });
+                });
+            }
+            try {
+                self.chart.setOption({ series: [{ data: nd, links: ld }] });
+            } catch (e) { /* torn down mid-hover */ }
+        }
+
+        var lit = null;
+
+        function light(seed, key) {
+            if (key === lit) { return; }
+            lit = key;
+            var nodes = {}, edges = {};
+            spread(seed, out, function (l) { return l[1]; }, nodes, edges);
+            spread(seed, inn, function (l) { return l[0]; }, nodes, edges);
+            apply(nodes, edges);
+        }
+
+        function restore() {
+            if (lit === null) { return; }
+            lit = null;
+            apply(null, null);
+        }
+
+        // Deliberately no mouseout handler.
+        //
+        // Applying the highlight redraws the series, which disposes the very
+        // element the pointer is over; zrender then reports a mouseout that
+        // nothing distinguishes from the pointer actually leaving. Restoring on
+        // it undoes the highlight a few milliseconds after drawing it, and the
+        // panel looks inert -- which is exactly how this behaved until the
+        // handler came out.
+        //
+        // So the route stays lit until the pointer lands on something else or
+        // leaves the chart entirely. Both of those are unambiguous, neither can
+        // be produced by our own redraw, and a route that stays put while you
+        // read it is better than one that vanishes when you look away from the
+        // node to follow the line.
+        this.chart.on('mouseover', function (ev) {
+            if (ev.dataType === 'edge' && ev.data) {
+                light([ev.data.source, ev.data.target],
+                      'e:' + ev.data.source + '>' + ev.data.target);
+            } else if (ev.name) {
+                light([ev.name], 'n:' + ev.name);
+            }
+        });
+        this.chart.on('globalout', restore);
+
+        // Releasing over empty canvas needs a live hit test rather than an
+        // event: zrender's own mouseout cannot be told apart from the one our
+        // redraw causes, but asking "is anything under the pointer right now"
+        // has no such ambiguity. Guarded because findHover is not part of the
+        // published API, and the panel is still usable without it - the route
+        // simply stays lit until the pointer leaves.
+        try {
+            var zr = this.chart.getZr();
+            if (zr && zr.handler && typeof zr.handler.findHover === 'function') {
+                zr.on('mousemove', function (e) {
+                    var h = zr.handler.findHover(e.offsetX, e.offsetY);
+                    if (!h || !h.target) { restore(); }
+                });
+            }
+        } catch (e) { /* older zrender: globalout still restores */ }
     },
 
     _opt: function (config, name) {

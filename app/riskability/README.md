@@ -31,8 +31,8 @@ upstream fixed in 3.0.14.
 Install with **`splunk install app riskability-0.1.0.spl`**, or through
 *Manage Apps → Install app from file* in Splunk Web.
 
-If instead you unpack the package by hand — which is the natural thing to do on
-an air-gapped box — the files end up owned by whoever ran `tar`, usually root,
+If instead you unpack the package by hand - which is the natural thing to do on
+an air-gapped box - the files end up owned by whoever ran `tar`, usually root,
 and splunkd cannot write inside its own app directory. The visible symptom is
 that **"this app has not been fully configured yet" keeps interrupting every
 navigation forever**, even with a feed fully imported, because clearing that
@@ -67,8 +67,8 @@ Splunk instance that is not the app's to change, and each is a single command.
 ## Inventory heartbeats (optional, and worth it above a few dozen hosts)
 
 swinv writes one NDJSON record per component per scan. That is the right shape
-for correctness — every scan is a complete statement of what is installed, so a
-package that disappears is genuinely gone rather than merely unmentioned — and
+for correctness - every scan is a complete statement of what is installed, so a
+package that disappears is genuinely gone rather than merely unmentioned - and
 it is the wrong shape for volume. Fourteen thousand components on five thousand
 hosts scanned hourly is 1.68 billion events a day, and the app's hourly "which
 hosts changed" decision reads every one of them. The matcher only works on hosts

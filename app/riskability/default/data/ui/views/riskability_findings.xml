@@ -53,7 +53,7 @@
       <html>
         <div id="rk-exc-toolbar" class="rk-exc-toolbar">
           <span class="rk-exc-hint">Select rows to accept a risk. Every selected row must share
-            one CVE &#8212; one justification cannot honestly cover several different
+            one CVE - one justification cannot honestly cover several different
             vulnerabilities.</span>
           <span id="rk-exc-summary" class="rk-exc-summary"></span>
           <button id="rk-exc-accept" class="rk-exc-btn" type="button" disabled="disabled">
@@ -88,7 +88,7 @@
              to abandon the dashboard for a raw search. -->
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.hideColumns">Key</option>
-        <option name="riskability.riskability_grid.emptyText">No findings matched. With the Confidence filter on "High only" this can mean the evidence was never strong enough to assert one, not that the fleet is clean — switch it to All to see what was found and why it was downgraded.</option>
+        <option name="riskability.riskability_grid.emptyText">No findings matched. With the Confidence filter on "High only" this can mean the evidence was never strong enough to assert one, not that the fleet is clean - switch it to All to see what was found and why it was downgraded.</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -112,13 +112,13 @@
       <html>
         <p>Confidence is about the strength of the evidence, not the severity of the vulnerability.</p>
         <ul>
-          <li><b>high</b> &#8212; a distro or ecosystem advisory names this package and release, and both
+          <li><b>high</b> - a distro or ecosystem advisory names this package and release, and both
               versions parsed cleanly under that ecosystem's rules.</li>
-          <li><b>informational</b> &#8212; an upstream version range covers a distribution package.
+          <li><b>informational</b> - an upstream version range covers a distribution package.
               Ubuntu and Red Hat backport fixes without changing the upstream version, so
               <code>openssl 3.0.13-0ubuntu3.4</code> may well already be patched against a CVE that
               upstream fixed in 3.0.14. Shown so it is not hidden; not asserted, because it is not known.</li>
-          <li><b>low</b> &#8212; the comparison could not be made properly: no comparator for the
+          <li><b>low</b> - the comparison could not be made properly: no comparator for the
               ecosystem, an unparseable version such as <code>UNKNOWN</code>, or an identity inferred
               from a binary rather than a package record.</li>
         </ul>

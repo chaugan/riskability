@@ -38,7 +38,7 @@
       <html>
         <div class="rk-start-lede">
           <h2>Riskability finds known vulnerabilities in the software your fleet actually has
-              installed &#8212; using CVE databases you carry in by hand.</h2>
+              installed - using CVE databases you carry in by hand.</h2>
           <p>
             It is built for search heads that can never reach the internet. Nothing here
             calls out to anything: the vulnerability data arrives as a file you build on a
@@ -138,8 +138,8 @@
         <div class="rk-status" style="margin:0">
           <b>A host reporting nothing new is not a host that stopped reporting.</b>
           <span>
-            swinv sends a small <b>heartbeat</b> every scan &#8212; a digest of the machine's
-            component list and nothing else &#8212; and sends the full list only when that digest
+            swinv sends a small <b>heartbeat</b> every scan - a digest of the machine's
+            component list and nothing else - and sends the full list only when that digest
             changes. On a fleet that is not being patched every hour, most scans are a few hundred
             bytes rather than a few megabytes, and the app re-matches only the hosts whose
             software actually moved.
@@ -152,7 +152,7 @@
           </span>
           <span>
             The findings themselves come from the last full component list a host sent, which may
-            be older than its last heartbeat and is still current &#8212; the digest is how the app
+            be older than its last heartbeat and is still current - the digest is how the app
             knows nothing has changed since. A collector that does not send heartbeats at all
             works exactly as before: the app computes the digest itself from the component list.
           </span>
@@ -251,7 +251,7 @@
             <div>
               <b>swinv walks the machine</b>
               <p>Not just the package manager. It looks inside container images, snap bases
-                 and chroots, and records the <em>path</em> of every copy it finds &#8212; which is
+                 and chroots, and records the <em>path</em> of every copy it finds - which is
                  how this app can tell a patched host from one with a stale copy still sitting
                  in an image.</p>
             </div>
@@ -261,7 +261,7 @@
             <div>
               <b>Each component gets an identity</b>
               <p>A <b>PURL</b> when a package manager installed it (<code>pkg:deb/ubuntu/openssl</code>),
-                 or a <b>CPE</b> when nothing did &#8212; which is most Windows software. A PURL is
+                 or a <b>CPE</b> when nothing did - which is most Windows software. A PURL is
                  read from a package record; a CPE is inferred from a display name. That
                  difference is why Windows findings are always reported at low
                  <b>confidence</b>.</p>
@@ -295,7 +295,7 @@
                  process holds the socket, and which containers are running behind it. That
                  supplies the one thing an offline CVE feed cannot: whether this copy answers
                  the network. On this fleet it separates a few findings that are reachable
-                 from tens of thousands that are not &#8212; see <b>Exposure</b>. It changes the
+                 from tens of thousands that are not - see <b>Exposure</b>. It changes the
                  order, never the list: an unreachable vulnerability is still a
                  vulnerability, and a host whose collector is too old to report ports is
                  shown as <b>not assessed</b> rather than quietly counted as safe.</p>
@@ -346,7 +346,7 @@
             A CVE with no CWE recorded simply never reaches the matrix, so a technique
             missing from the ATT&amp;CK page is not a technique you are safe from. And because
             one weakness maps to several techniques, a single vulnerability is drawn several
-            times &#8212; the widths never add up to a total.
+            times - the widths never add up to a total.
           </p>
           <p class="rk-funnel-warn">
             What this chain says is <em>&#8220;this class of weakness is the kind of thing that
@@ -386,7 +386,7 @@
       </viz>
       <html>
         <div class="rk-start-note">
-          The drop between these bars is not a defect &#8212; it is what the mapping costs. Read
+          The drop between these bars is not a defect - it is what the mapping costs. Read
           the ATT&amp;CK page as <em>&#8220;capabilities our open findings could hand an
           attacker&#8221;</em>, never as a complete picture of exposure.
         </div>
@@ -405,7 +405,7 @@
             <span>What to patch, ranked by likelihood of exploitation rather than by severity
               score. This is the working list.</span></div>
           <div class="rk-guide-item"><b>Remediation</b>
-            <span>What actually got fixed, with the version change that proves it &#8212; and what
+            <span>What actually got fixed, with the version change that proves it - and what
               merely stopped being reported.</span></div>
           <div class="rk-guide-item"><b>MITRE ATT&amp;CK</b>
             <span>Lossy classification of what your open findings could enable. Context, not
@@ -444,7 +444,7 @@
             <dt>CAPEC</dt><dd>A catalogued pattern of attack that abuses such a weakness.</dd>
             <dt>ATT&amp;CK</dt><dd>MITRE's catalogue of what adversaries actually do, organised
               by tactic. Reached here through CWE and CAPEC, so lossily.</dd>
-            <dt>PURL</dt><dd>A package URL &#8212; an identity read from a package manager's own
+            <dt>PURL</dt><dd>A package URL - an identity read from a package manager's own
               records. Precise.</dd>
             <dt>CPE</dt><dd>A vendor/product naming scheme used when no package manager was
               involved. Inferred, so weaker evidence.</dd>
@@ -456,7 +456,7 @@
               itself, a snap base, a container image, a chroot.</dd>
             <dt>confidence</dt><dd>How strong the evidence is, not how bad the vulnerability is.
               <em>high</em> means both identity and version came from package records.</dd>
-            <dt>authority</dt><dd>Who said this version is affected &#8212; the distribution, the
+            <dt>authority</dt><dd>Who said this version is affected - the distribution, the
               upstream ecosystem, or NVD. Distributions win, because they backport.</dd>
             <dt>generation</dt><dd>One complete import of the feed. Findings are always matched
               against a single generation, never a half-written one.</dd>
