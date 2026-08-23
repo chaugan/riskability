@@ -840,16 +840,25 @@ function buildChainGraph(rows, t, config) {
         });
     }
 
-    // Label the busiest nodes in each column and leave the rest to the tooltip.
-    // A CVE column is routinely fifty nodes deep, and fifty ten-pixel labels
-    // stacked in one column render as a solid block of grey that hides the
-    // graph behind it. ECharts' hideOverlap does not save this: it drops
-    // labels only once they collide after layout, which in a column this tight
-    // means it drops almost all of them and keeps an arbitrary few.
-    var LABEL_PER_LAYER = 12;
+    // Label every node there is vertical room to label.
+    //
+    // This was a flat twelve per column, which is why the CVE column drew a
+    // dozen names and a dozen anonymous dots: a dot you cannot identify is not
+    // a smaller piece of information, it is none. The budget comes from the
+    // geometry instead -- the plot's height divided by the space a label needs
+    // -- so on a panel with room every node is named, and a column dense enough
+    // to overrun it degrades in a way that can be reasoned about rather than at
+    // a number someone once typed.
+    //
+    // ECharts' hideOverlap cannot do this job: it drops labels only after they
+    // have collided, so in a tight column it discards most of them and keeps an
+    // arbitrary few.
+    var LABEL_PITCH = 15;
+    var plotHeight = Math.max(160, (config && config.height ? config.height : 480) - 62);
+    var room = Math.max(4, Math.floor(plotHeight / LABEL_PITCH));
     Object.keys(byLayer).forEach(function (L) {
         byLayer[L].slice().sort(function (a, b) { return b.v - a.v; })
-            .forEach(function (n, k) { n.labelled = k < LABEL_PER_LAYER; });
+            .forEach(function (n, k) { n.labelled = k < room; });
     });
 
     var nodeData = Object.keys(nodes).map(function (id) {
@@ -862,7 +871,10 @@ function buildChainGraph(rows, t, config) {
             value: [n.layer, n.y],
             symbolSize: size,
             rkKind: n.kind,
-            label: { show: n.labelled, position: n.layer >= 4 ? 'left' : 'right' },
+            // Every label to the right of its node, including the last
+            // column's -- the grid reserves margin for them, so they land in
+            // clear space instead of on top of the edges feeding the node.
+            label: { show: n.labelled, position: 'right' },
             itemStyle: {
                 color: n.color,
                 borderColor: n.dashed ? '#f8be34' : t.axis,
@@ -900,7 +912,7 @@ function buildChainGraph(rows, t, config) {
                     'do not sum.</span>';
             },
         },
-        grid: { left: 18, right: 18, top: 46, bottom: 16, containLabel: false },
+        grid: { left: 18, right: 176, top: 46, bottom: 16, containLabel: false },
         xAxis: {
             type: 'category', data: CHAIN_LAYERS, position: 'top', boundaryGap: true,
             axisTick: { show: false },
@@ -918,7 +930,7 @@ function buildChainGraph(rows, t, config) {
             emphasis: { focus: 'adjacency', lineStyle: { opacity: 0.95, width: 3 } },
             label: {
                 show: true, color: t.text, fontSize: 10,
-                formatter: function (p) { return shorten(chainNodeLabel(p.name), 26); },
+                formatter: function (p) { return shorten(chainNodeLabel(p.name), 34); },
             },
             labelLayout: { hideOverlap: true },
             data: nodeData,
@@ -1029,6 +1041,10 @@ export default SplunkVisualizationBase.extend({
         try {
             option = builder(rows, theme(), {
                 valueLabel: this._opt(config, 'valueLabel'),
+                // The panel's pixel height, so a builder can decide what fits
+                // rather than guess at a row count. Zero while the panel is
+                // still hidden, hence the fallback at the point of use.
+                height: this.el.clientHeight || 0,
             });
         } catch (e) {
             this._message('bad', 'The chart could not be drawn', String(e && e.message || e));

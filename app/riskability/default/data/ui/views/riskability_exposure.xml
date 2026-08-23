@@ -143,6 +143,7 @@
 | streamstats count AS rk_rank BY source, rk_cve
 | eval rk_drop = if(rk_cve==1 AND rk_kev!=1 AND rk_rank &gt; 3, 1, 0)
 | eventstats sum(rk_drop) AS rk_hidden BY source
+| eval rk_drop = if(rk_hidden == 1, 0, rk_drop), rk_hidden = if(rk_hidden == 1, 0, rk_hidden)
 | where rk_drop = 0
 | appendpipe
     [ stats max(rk_hidden) AS n BY source, source_kind
@@ -155,7 +156,7 @@
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No chain to draw: no open finding is behind a listening port. That is a real answer, not a missing one — check the assessment coverage panel below to be sure the ports were measured at all.</option>
-        <option name="height">560</option>
+        <option name="height">620</option>
         <drilldown>
           <set token="node_filter">rk_nodes="$row.node$"</set>
           <set token="drill_note">$row.node_kind$ $row.node$</set>
@@ -177,8 +178,10 @@
             them never reach this graph at all, because nothing can be matched against them;
             they are counted in <b>Ports with no package</b> below. Each package shows its known-exploited CVEs and its three highest-scoring
             others by name; the rest are collected into a single "N more in &lt;package&gt;"
-            node rather than drawn as fifty unreadable bubbles. Only the twelve busiest nodes
-            in a column carry a label &#8212; hover any unlabelled one to read it.
+            node rather than drawn as fifty unreadable bubbles &#8212; unless the roll-up would
+            hold a single CVE, which is named instead. Every node is named where the
+            panel has the height to name it; if a column is ever dense enough to run out of
+            room, the busiest keep their labels and the rest can be read by hovering.
           </span>
         </div>
       </html>
