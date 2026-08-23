@@ -10,14 +10,19 @@
        No panel is hidden behind a token. Simple XML can do it, but conditional
        visibility here has a habit of leaving a page that is blank for reasons
        the reader cannot see. Each panel says what it is waiting for instead. -->
+  <!-- Both labels are kept to one line deliberately. Splunk stacks an input's
+       label above its field and does not equalise label heights across a
+       fieldset, so a label that wraps pushes its own field a line lower than
+       its neighbours and the row looks broken. What to type is explained in the
+       panel notes and empty states, which have room for it. -->
   <fieldset submitButton="false" autoRun="true">
     <input type="text" token="q_tok" searchWhenChanged="true">
-      <label>Search a product, vendor or phrase</label>
+      <label>Product or phrase</label>
       <default></default>
       <initialValue></initialValue>
     </input>
     <input type="text" token="cve_tok" searchWhenChanged="true">
-      <label>Or a CVE id</label>
+      <label>CVE id</label>
       <default></default>
       <initialValue></initialValue>
     </input>

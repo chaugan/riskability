@@ -779,6 +779,20 @@ formatter in the table visualization rather than a per panel drilldown, so it
 works everywhere a CVE appears, shows the reader that the cell is live, and
 cannot fight the row selection that Findings needs for accepting a risk.
 
+That link is also why the page is ordered the way it is. Most arrivals already
+know their CVE and want to know what it is, so the score, the KEV status and
+the description come first, and the search box that serves the other route sits
+below them. Three independent model reviews all landed on the same complaint
+about the original order, which put an empty search table above the answer.
+
+The graph at the foot of the page is the chain from **Exposure**, reused: it
+reads ecosystem, then package, then the version that fixes it, and shows one
+vulnerability across every packaging of it. CVE-2023-4863 in libwebp fans out
+across eight ecosystems there, which is the clearest illustration in the app of
+why a single CVE can need a dozen separate upgrades. It is the feed's published
+fix versions and knows nothing about which of them you run; the fleet table
+above it is the panel that does.
+
 Screenshots below are from a two-host test fleet - one Linux, one Windows - built
 from nothing by `tools/build_demo_instance.sh`, with a feed carrying 793,058
 advisories. The numbers in them are the ones this README quotes.

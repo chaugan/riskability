@@ -400,6 +400,10 @@
           <div class="rk-guide-item"><b>Coverage</b>
             <span>What the app <em>cannot</em> see: ecosystems in the fleet the imported feed
               knows nothing about.</span></div>
+          <div class="rk-guide-item"><b>CVE encyclopaedia</b>
+            <span>What a vulnerability actually is, offline. Every CVE id in every table on
+              every page opens it here, so you never have to leave an air-gapped room to look
+              one up.</span></div>
           <div class="rk-guide-item"><b>Risk exceptions</b>
             <span>Findings handled another way, and how. Excluded from every risk number and
               counted separately, so they are never hidden.</span></div>
