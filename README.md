@@ -424,28 +424,6 @@ Ten views, in nav order.
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **Feed administration** | Build, upload and import bundles |
 
-### Exposure
-
-Reachability re-orders the work. It never shortens it.
-
-![Exposure](docs/screenshots/exposure.png)
-
-### Fleet overview
-
-![Fleet overview](docs/screenshots/fleet-overview.png)
-
-### Coverage
-
-The page that says what the app cannot assess, which is the one a low finding
-count has to be read against.
-
-![Coverage](docs/screenshots/coverage.png)
-
-### MITRE ATT&CK
-
-![MITRE ATT&CK](docs/screenshots/mitre-attack.png)
-
-More in [`docs/screenshots/`](docs/screenshots).
 
 ---
 

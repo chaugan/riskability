@@ -31,3 +31,8 @@ app/riskability/appserver/static/scripts/riskability-feedbuilder.zip
 # Build-time only: 93MB of webpack/ECharts sources. visualization.js is the
 # built artefact that actually ships; see the viz THIRD-PARTY.md to rebuild.
 app/riskability/appserver/static/visualizations/*/node_modules/
+
+# Internal working notes: measurements, failure post-mortems and the
+# running scale plan. Useful to keep beside the code, not part of what is
+# published with it.
+SCALE-TODO.md
