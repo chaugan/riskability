@@ -902,20 +902,32 @@ function buildChainGraph(rows, t, config) {
         },
         tooltip: {
             trigger: 'item',
+            confine: true,
             backgroundColor: t.tooltipBg,
             borderColor: t.axis,
-            textStyle: { color: t.text },
+            textStyle: { color: t.text, fontSize: 11 },
+            padding: [4, 8],
+            // Pinned to the bottom edge, tracking the pointer horizontally.
+            // A tooltip that follows the pointer freely sits on top of the
+            // graph, and on a five-column route it covers two columns and the
+            // edges between them -- so hovering a node to find out what it is
+            // hides the thing you were trying to read. The bottom strip is the
+            // emptiest part of the plot and, more to the point, it is the same
+            // place every time.
+            position: function (point, params, dom, rect, size) {
+                var x = point[0] + 14;
+                var maxX = size.viewSize[0] - size.contentSize[0] - 6;
+                if (x > maxX) { x = Math.max(6, point[0] - size.contentSize[0] - 14); }
+                return [x, size.viewSize[1] - size.contentSize[1] - 6];
+            },
             formatter: function (p) {
                 if (p.dataType === 'edge') {
                     return escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
-                        escapeHtml(chainNodeLabel(p.data.target)) + '<br/><b>' +
-                        p.data.value + '</b> distinct CVEs reachable through this hop';
+                        escapeHtml(chainNodeLabel(p.data.target)) + ' &#183; <b>' +
+                        p.data.value + '</b> CVEs through this hop';
                 }
-                return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b><br/>' +
-                    escapeHtml(CHAIN_LAYERS[p.value[0]] || 'unclassified') +
-                    '<br/><span style="color:' + t.muted + '">size is the most CVEs ' +
-                    'reachable through any one hop touching this node. Sibling sizes ' +
-                    'do not sum.</span>';
+                return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b> &#183; ' +
+                    escapeHtml(CHAIN_LAYERS[p.value[0]] || 'unclassified');
             },
         },
         grid: { left: 18, right: 176, top: 46, bottom: 16, containLabel: false },

@@ -181,6 +181,21 @@ def _distro_matches(component: dict, row: dict) -> bool:
     if comp_release == row_release:
         return True
 
+    # Alpine publishes security branches as major.minor and the installed
+    # system reports a patch level: /etc/os-release inside an Alpine 3.21
+    # container says 3.21.6, and the purl it stamps on every apk says
+    # distro=alpine-3.21.6, while every advisory for that branch is keyed
+    # 3.21. Compared literally they never meet, so an Alpine host or container
+    # matches no Alpine advisory at all -- which looks exactly like a clean
+    # bill of health. Measured on this fleet: 426 apk components inside
+    # containers, of which the ones on a release the feed carries reported
+    # 3.21.3 and 3.21.6 against a feed keyed 3.21.
+    #
+    # Only Alpine. Debian-family releases are dotted minor versions in their
+    # own right, so folding 24.04 into 24 would match it against 24.10.
+    if comp_distro == "alpine":
+        return comp_release.split(".")[:2] == row_release.split(".")[:2]
+
     # Only Red Hat-family advisories are legitimately keyed on the major
     # version. Debian-family releases are dotted minor versions in their own
     # right, so a major-only fallback there matches 24.04 against 24.10 and

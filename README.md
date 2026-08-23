@@ -71,9 +71,9 @@ host is more dangerous than one that admits it.
 exploit a vulnerability and the KEV catalogue says whether anyone already has;
 neither can know whether *this* copy answers a socket. swinv reports each host's
 listening ports, the process holding each one, and the containers behind them,
-and Riskability joins that to the findings. On the test fleet it splits 22,578
+and Riskability joins that to the findings. On the test fleet it splits 22,925
 open findings into 17 reachable from any network - two of them known-exploited -
-335 reachable only from the machine itself, and 22,226 with nothing listening at
+383 reachable only from the machine itself, and 22,525 with nothing listening at
 all. It is a re-ordering, never a filter: an unreachable vulnerability is still a
 vulnerability, and a host running a collector too old to report ports is shown as
 *not assessed* rather than counted as safe.
@@ -154,7 +154,7 @@ distinguished by `record_type`:
 |---|---|---|
 | *(absent)* | one installed component | there is nothing to assess |
 | `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
-| `exposure` | one listening port, the process holding it, and the packages behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
+| `exposure` | one listening port, the process holding it, and the package behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
 | `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
 
 The last two are what the **Exposure** page is built on. A collector that does
@@ -162,6 +162,21 @@ not emit them leaves the page honest but empty: hosts appear under "never
 reported a listening port" and their findings sit in the dashed *not assessed*
 row of the matrix, which is deliberately not the same place as "nothing is
 listening".
+
+An `exposure` record carries one port and one component, so a port served by
+three packages arrives as three records. The package **name** is derived here
+rather than shipped: from the purl's name segment, with the distro namespace
+dropped for `deb`, `rpm` and `apk`, and from the `Name@Version` string on
+Windows, where there is no purl to give. Checked against the component records
+of both dev hosts - 22 of 22 Linux purls and 18 of 18 Windows strings derive the
+same name the inventory reports, which is what lets a finding be joined to a
+port by package alone.
+
+`os_component` on an exposure record means the port is answered by the operating
+system itself - Windows `System` and `svchost`. Those are counted separately
+from ports nothing could be attributed to, because they are not the same fact:
+one is a listener the app can see and cannot assess against a package feed, the
+other is one it could not identify at all.
 
 ### Configuring the universal forwarder
 

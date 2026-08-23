@@ -22,6 +22,7 @@ host's numbers.
 from __future__ import annotations
 
 import re
+import urllib.parse
 from typing import Dict, List, Optional, Sequence, Tuple
 
 SCOPE_HOST = "host"
@@ -146,6 +147,31 @@ def component_scope(component: dict) -> Dict[str, str]:
     return {"scope": kind, "scope_id": scope_id, "scope_release": release}
 
 
+def purl_distro(purl: str) -> Tuple[str, str]:
+    """Split a purl's distro qualifier into (id, release).
+
+    Syft writes it as "distro=<id>-<versionID>", and the id itself can contain a
+    hyphen -- "opensuse-leap-15.5". Splitting on the first hyphen would call that
+    release "leap-15.5" and splitting on the last would call it "15.5" only by
+    luck. The boundary is the first hyphen followed by a digit, which is the one
+    place a version can start.
+
+    Returns ("", "") for a purl with no distro qualifier, which is most of them:
+    a Go module or an npm package has no distribution and must not be given one.
+    """
+    if "?" not in purl:
+        return "", ""
+    for part in purl.split("?", 1)[1].split("&"):
+        if not part.startswith("distro="):
+            continue
+        value = urllib.parse.unquote(part[len("distro="):]).strip()
+        m = re.search(r"-(?=\d)", value)
+        if not m:
+            return value.lower(), ""
+        return value[:m.start()].lower(), value[m.start() + 1:]
+    return "", ""
+
+
 def apply_scope(component: dict) -> dict:
     """Return a copy of the component with scope fields resolved.
 
@@ -173,6 +199,30 @@ def apply_scope(component: dict) -> dict:
         if root_os:
             out["os_id"] = root_os
             out["os_version_id"] = (component.get("root_os_version_id") or "").strip()
+            return out
+        # No root_os_id: read the distro out of the purl instead, but only for
+        # a root the collector NAMED as a container. A path-classified one --
+        # a dpkg status file spotted under /var/lib/docker/overlay2 -- is an
+        # inference, and the case directly below this one exists because a
+        # component whose evidence spans two roots can arrive carrying the
+        # HOST's distro qualifier on a foreign package. Trusting the qualifier
+        # there would match a Debian package against Ubuntu advisories, which
+        # is the confident wrong answer this whole function is built to avoid.
+        #
+        #
+        # Where the collector did name it, the package's own purl is not an
+        # inference: an apk inside an Alpine container carries
+        # distro=alpine-3.21.3 because that is the distribution that built it.
+        # No collector this app has seen has ever sent root_os_id -- checked
+        # against every event ever ingested -- so without this every container
+        # package falls through to "refuse to assert a release" and can only be
+        # matched on ecosystem, never against a distro security tracker.
+        named = str(info.get("scope_id") or "").startswith("container:")
+        distro_id, distro_release = purl_distro(component.get("purl") or "") if named \
+            else ("", "")
+        if distro_id:
+            out["os_id"] = distro_id
+            out["os_version_id"] = distro_release
             return out
 
     if info["scope_release"]:

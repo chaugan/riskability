@@ -239,8 +239,9 @@
     <panel depends="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">This page is narrowed. The matrix and the chain stay whole
-            so you can pick something else.</span>
+          <span class="rk-drill-hint">This page is narrowed. The matrix and the ranked host list
+            stay whole so you can pick something else. Clear also puts away the container detail
+            panel, if one is open.</span>
           <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
              href="riskability_exposure?form.conf_tok=$conf_tok|u$">Clear</a>
@@ -344,7 +345,9 @@
             not see your firewall, your reverse proxy or your network segmentation. A wildcard
             bind means the process would answer any address that reaches the host - not
             that the internet can. Bubble size is the largest number of CVEs reachable through
-            any single hop touching that node, so sibling sizes do not add up. Only the 160
+            any single hop touching that node, so sibling sizes do not add up - the tooltip no
+            longer repeats that sentence, because one large enough to hold it covered two
+            columns of the graph it was explaining. Only the 160
             busiest hops are drawn. A dashed node is a hole in what the collector could see
             - a port answering with no process attributed to it - which is a
             different thing from a hop that is known and harmless. Ports with no package behind
@@ -369,19 +372,21 @@
           <query>| `riskability_hosts_seen`
 | search (hostname=$host_tok$)
 | lookup riskability_exposure_hoststate_lookup hostname OUTPUT listeners, wildcard_listeners,
-    unattributed_listeners, packages_behind_ports, containers, assessed_at
+    unattributed_listeners, os_listeners, packages_behind_ports, containers, assessed_at
 | eval status = if(isnull(assessed_at), "never reported a listening port", "assessed")
 | eval assessed = if(isnull(assessed_at), "never", strftime(assessed_at, "%Y-%m-%d %H:%M"))
 | eval listeners = coalesce(listeners, 0), wildcard_listeners = coalesce(wildcard_listeners, 0),
        unattributed_listeners = coalesce(unattributed_listeners, 0),
+       os_listeners = coalesce(os_listeners, 0),
        packages_behind_ports = coalesce(packages_behind_ports, 0),
        containers = coalesce(containers, 0)
-| table hostname, status, assessed, listeners, wildcard_listeners, unattributed_listeners,
-        packages_behind_ports, containers
+| table hostname, status, assessed, listeners, wildcard_listeners, os_listeners,
+        unattributed_listeners, packages_behind_ports, containers
 | sort 5000 status, - wildcard_listeners
 | rename hostname AS "Host", status AS "Exposure", assessed AS "Measured at",
          listeners AS "Ports", wildcard_listeners AS "Any-address ports",
-         unattributed_listeners AS "Ports with no package", packages_behind_ports AS "Packages",
+         os_listeners AS "Held by the OS", unattributed_listeners AS "Ports with no package",
+         packages_behind_ports AS "Packages",
          containers AS "Containers behind ports"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
@@ -394,9 +399,11 @@
           <span>
             Older collectors report inventory but no exposure. Their findings land in the
             <b>not assessed</b> row of the matrix rather than in the calm one, so that a fleet
-            does not look safer for being less well instrumented. "Ports with no package" is the
-            other honest gap: something is listening and the app cannot say what code is behind
-            it.
+            does not look safer for being less well instrumented. "Held by the OS" and "Ports
+            with no package" are the other two honest gaps, and they are not the same one. The
+            first is a port answered by the operating system itself - Windows <code>System</code>
+            and <code>svchost</code> - which the app can see and cannot assess against a package
+            feed. The second is a port it could not identify at all.
           </span>
         </div>
       </html>
@@ -425,9 +432,17 @@
         <option name="riskability.riskability_grid.drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No open finding is scoped to a container. Either no containers were reported, or their images carry no matched vulnerability.</option>
         <option name="height">320</option>
+        <!-- Also raises the page's shared filter state, so the "Inside ..."
+             panel this opens is covered by the one Clear control rather than
+             staying on screen through every later click with no way to put it
+             away. A panel that appears on a click and never leaves is worse
+             than one that never appears: the next number read next to it looks
+             related to it. -->
         <drilldown>
           <set token="ctr_tok">$row.Container$</set>
           <set token="ctr_host_tok">$row.Host$</set>
+          <set token="drill_note">container $row.Container$</set>
+          <set token="any_filter">1</set>
         </drilldown>
       </viz>
       <html>
@@ -469,6 +484,10 @@
       <html>
         <div class="rk-status" style="margin:8px 0 0">
           <b>These findings are the image's, not the host's.</b>
+          <span>
+            Opened by clicking a container above. Use <b>Clear</b> in the filter bar higher up
+            the page to put it away again.
+          </span>
           <span>
             They were matched against the operating system declared inside the container, which
             is often a different distribution from the host it runs on. Fixing them means

@@ -92,6 +92,70 @@ def main() -> int:
           prepared["os_id"] == "" and prepared["os_version_id"] == "",
           f"got {prepared['os_id']!r}/{prepared['os_version_id']!r}")
 
+    # A container the collector NAMED is a different case, and the difference
+    # decides whether its packages can be matched at all. No collector has ever
+    # sent root_os_id, so without reading the purl's own distro qualifier every
+    # container package is matched with no release and no distro tracker can
+    # apply to it.
+    named_container = {
+        "name": "nginx", "version": "1.27.5-r1", "type": "apk",
+        "root": "container:9d5a98d0dc04",
+        "purl": "pkg:apk/alpine/nginx@1.27.5-r1?arch=x86_64&distro=alpine-3.21.3",
+        "os_id": "ubuntu", "os_version_id": "26.04",
+    }
+    got = scope.apply_scope(named_container)
+    check("a named container takes its distro from the package's own purl",
+          got["os_id"] == "alpine" and got["os_version_id"] == "3.21.3",
+          f"got {got['os_id']!r}/{got['os_version_id']!r}")
+
+    # But a container INFERRED from a path is not, for the same reason the
+    # nested case above is not: the qualifier on such a component can be the
+    # host's, left behind by a merge across roots.
+    guessed_container = {
+        "name": "openssl", "version": "3.0.11-1~deb12u2", "type": "deb",
+        "purl": "pkg:deb/ubuntu/openssl@3.0.11-1~deb12u2?arch=amd64&distro=ubuntu-26.04",
+        "path": "/var/lib/docker/overlay2/a/diff/var/lib/dpkg/status",
+        "os_id": "ubuntu", "os_version_id": "26.04",
+    }
+    got = scope.apply_scope(guessed_container)
+    check("a container inferred from a path still refuses to assert a distro",
+          got["os_id"] == "" and got["os_version_id"] == "",
+          f"got {got['os_id']!r}/{got['os_version_id']!r}")
+
+    alpine_row = {"ecosystem": "apk", "distro": "alpine", "distro_release": "3.21",
+                  "package": "zlib", "source_package": "zlib"}
+    alpine_comp = {"name": "zlib", "version": "1.3.1-r1", "type": "apk",
+                   "os_id": "alpine", "os_version_id": "3.21.6"}
+    check("an Alpine branch advisory matches a patch-level release",
+          match._distro_matches(alpine_comp, alpine_row),
+          "3.21.6 should match a feed keyed 3.21")
+    check("an Alpine advisory does not cross a branch",
+          not match._distro_matches(
+              dict(alpine_comp, os_version_id="3.22.1"), alpine_row),
+          "3.22.1 must not match 3.21")
+    ubuntu_row = {"ecosystem": "deb", "distro": "ubuntu", "distro_release": "24.10",
+                  "package": "zlib", "source_package": "zlib"}
+    ubuntu_comp = {"name": "zlib", "version": "1.3", "type": "deb",
+                   "os_id": "ubuntu", "os_version_id": "24.04"}
+    check("the Alpine rule does not loosen Debian-family releases",
+          not match._distro_matches(ubuntu_comp, ubuntu_row),
+          "24.04 must not match 24.10")
+
+    for value, want in [
+        ("pkg:apk/alpine/nginx@1.27.5-r1?arch=x86_64&distro=alpine-3.21.3",
+         ("alpine", "3.21.3")),
+        ("pkg:deb/debian/libssl3@3.0?distro=debian-12", ("debian", "12")),
+        # The id itself can contain a hyphen, so the boundary is the first
+        # hyphen followed by a digit rather than the first or the last one.
+        ("pkg:rpm/opensuse/zlib@1.2?distro=opensuse-leap-15.5",
+         ("opensuse-leap", "15.5")),
+        # A Go module has no distribution and must not be given one.
+        ("pkg:golang/github.com/chaugan/relay@v0.9.0", ("", "")),
+        ("Bonjour@3.1.0.1", ("", "")),
+    ]:
+        check(f"purl distro {value[:52]:<52}", scope.purl_distro(value) == want,
+              f"got {scope.purl_distro(value)}")
+
     ubuntu_advisory = {
         "advisory_id": "CVE-2025-15467", "cve_id": "CVE-2025-15467",
         "ecosystem": "deb", "package": "openssl", "fixed": "3.5.5-1ubuntu1",
