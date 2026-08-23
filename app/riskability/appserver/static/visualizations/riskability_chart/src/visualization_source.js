@@ -798,11 +798,36 @@ function chainNodeLabel(id) {
     return s.slice(s.indexOf(RK_SEP) + 1);
 }
 
+// The chain draws a fixed set of columns and consolidates the nodes in each one
+// when a column gets crowded. That shape is not specific to the exposure story
+// it was written for, so a panel can supply its own columns as
+// "kind:Label,kind:Label" in layer order. The encyclopaedia reuses it for
+// package, fixed version and CVE rather than growing a second graph
+// visualization that would then have to be kept in step with this one.
+function chainSchema(config) {
+    var spec = String((config && config.chainKinds) || '').trim();
+    if (!spec) { return { kinds: CHAIN_KIND, layers: CHAIN_LAYERS }; }
+    var kinds = {}, layers = [];
+    var palette = ['#dc4e41', '#f8be34', '#7cc0ec', '#6e9c4f', '#708794'];
+    spec.split(',').forEach(function (pair) {
+        var bits = String(pair).split(':');
+        var kind = (bits[0] || '').trim();
+        if (!kind) { return; }
+        kinds[kind] = { layer: layers.length, color: palette[layers.length % palette.length] };
+        layers.push((bits[1] || kind).trim());
+    });
+    return layers.length ? { kinds: kinds, layers: layers }
+                         : { kinds: CHAIN_KIND, layers: CHAIN_LAYERS };
+}
+
 function buildChainGraph(rows, t, config) {
     var nodes = {}, links = [], i, vmax = 0;
+    var schema = chainSchema(config);
+    var KINDS = schema.kinds;
+    var LAYERS = schema.layers;
 
     function touch(name, kind, v) {
-        var k = CHAIN_KIND[kind] || { layer: 4, color: '#6b5a2a', dashed: true };
+        var k = KINDS[kind] || { layer: LAYERS.length - 1, color: '#6b5a2a', dashed: true };
         var id = k.layer + RK_SEP + name;
         if (!nodes[id]) {
             nodes[id] = { id: id, name: name, layer: k.layer, kind: kind,
@@ -944,12 +969,12 @@ function buildChainGraph(rows, t, config) {
                         p.data.value + '</b> CVEs through this hop';
                 }
                 return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b> &#183; ' +
-                    escapeHtml(CHAIN_LAYERS[p.value[0]] || 'unclassified');
+                    escapeHtml(LAYERS[p.value[0]] || 'unclassified');
             },
         },
         grid: { left: 18, right: 176, top: 46, bottom: 16, containLabel: false },
         xAxis: {
-            type: 'category', data: CHAIN_LAYERS, position: 'top', boundaryGap: true,
+            type: 'category', data: LAYERS, position: 'top', boundaryGap: true,
             axisTick: { show: false },
             axisLine: { show: false },
             splitLine: { show: true, lineStyle: { color: t.axis, type: 'dashed' } },
@@ -1080,6 +1105,8 @@ export default SplunkVisualizationBase.extend({
         try {
             option = builder(rows, theme(), {
                 valueLabel: this._opt(config, 'valueLabel'),
+                // Lets a panel relabel the chain's columns. See chainSchema.
+                chainKinds: this._opt(config, 'chainKinds'),
                 // The panel's pixel height, so a builder can decide what fits
                 // rather than guess at a row count. Zero while the panel is
                 // still hidden, hence the fallback at the point of use.

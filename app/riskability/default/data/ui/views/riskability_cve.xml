@@ -41,80 +41,7 @@
 
   <row>
     <panel>
-      <title>Vulnerabilities matching your search</title>
-      <viz type="riskability.riskability_grid">
-        <search>
-          <query>| inputlookup riskability_cvedetail_lookup
-| search products="*$q_tok$*" OR description="*$q_tok$*"
-| eval Product = mvindex(split(products, "
-"), 0)
-| lookup riskability_advisories_lookup cve_id OUTPUT severity, cvss_score, epss, kev_added
-| eval Severity = coalesce(severity, ""), CVSS = coalesce(cvss_score, ""),
-       "EPSS %" = if(isnotnull(epss), round(epss*100, 1), null()),
-       KEV = if(coalesce(kev_added, "")!="", "yes", "")
-| join type=left cve_id [| inputlookup riskability_findings_state_lookup where status="open"
-                         | stats dc(hostname) AS rk_hosts BY cve_id]
-| eval "In fleet" = if(isnull(rk_hosts), "", rk_hosts . " hosts")
-| table cve_id, Product, Severity, CVSS, "EPSS %", KEV, "In fleet"
-| rename cve_id AS CVE
-| sort 200 - CVSS</query>
-        </search>
-        <option name="riskability.riskability_grid.emptyText">Type a product, a vendor or a phrase above. "openssl", "Red Hat", "buffer overflow". Searching matches the CVE Program's product names and description text, so it finds vulnerabilities by what they are rather than by which package your distribution named.</option>
-        <drilldown>
-          <set token="cve_tok">$row.CVE$</set>
-        </drilldown>
-      </viz>
-      <html>
-        <div class="rk-status" style="margin:8px 0 0">
-          <span>
-            Click a row to open it below. <b>In fleet</b> is the only column that comes from this
-            instance rather than the feed; blank means nothing here reports an affected package,
-            not that you are unaffected. Capped at 200, worst CVSS first.
-          </span>
-        </div>
-      </html>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Which upgrade clears which vulnerabilities</title>
-      <viz type="riskability.riskability_chart">
-        <search>
-          <query>| inputlookup riskability_ranges_lookup
-| search package="*$q_tok$*" OR cve_id="$cve_tok$"
-| where fixed != "" AND cve_id != ""
-| eval rk_pkg = ecosystem . " " . package
-| eval rk_fix = package . " " . fixed
-| eval rk_hops = mvappend(rk_pkg . "	" . rk_fix, rk_fix . "	" . cve_id)
-| mvexpand rk_hops
-| eval rk_p = split(rk_hops, "	")
-| eval rk_src = mvindex(rk_p, 0), rk_dst = mvindex(rk_p, 1)
-| stats dc(cve_id) AS cves BY rk_src, rk_dst
-| sort 120 - cves</query>
-        </search>
-        <option name="riskability.riskability_chart.chartType">sankey</option>
-        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">Search a package name above, or open a CVE, to see which fixed version clears which vulnerabilities. Nothing is drawn for advisories that name no fixed version, because there is no upgrade to point at.</option>
-        <option name="height">520</option>
-      </viz>
-      <html>
-        <div class="rk-status" style="margin:8px 0 0">
-          <span>
-            Read left to right: the package, the version that fixes something, and the
-            vulnerabilities that version closes. A thick band into one version is an upgrade worth
-            doing once rather than five times. The version node is labelled with its package
-            because two packages fixing at "1.2.3" are not the same node and merging them would
-            invent a route that does not exist. Capped at 120 links.
-          </span>
-        </div>
-      </html>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Severity, as scored</title>
+      <title>CVSS base score</title>
       <single>
         <search>
           <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(isnull(cvss_score), "not scored", tostring(round(cvss_score,1))) | fields v</query>
@@ -124,11 +51,11 @@
         <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
         <option name="rangeValues">[4,7,9]</option>
         <option name="useColors">1</option>
-        <option name="underLabel">CVSS base score</option>
+        <option name="underLabel">as published, not measured here</option>
       </single>
     </panel>
     <panel>
-      <title>Exploitation likelihood</title>
+      <title>Modelled chance of exploitation</title>
       <single>
         <search>
           <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(isnull(epss), "unscored", tostring(round(epss*100,1)) . "%") | fields v</query>
@@ -138,7 +65,7 @@
       </single>
     </panel>
     <panel>
-      <title>Known exploited</title>
+      <title>Listed in CISA KEV</title>
       <single>
         <search>
           <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(kev_added != "", "YES", "not listed") | fields v</query>
@@ -151,7 +78,7 @@
       </single>
     </panel>
     <panel>
-      <title>In this fleet</title>
+      <title>Hosts here with it open</title>
       <single>
         <search>
           <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$" AND status="open" | stats dc(hostname) AS v</query>
@@ -161,14 +88,14 @@
         <option name="useColors">1</option>
         <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
         <option name="rangeValues">[0]</option>
-        <option name="underLabel">hosts with it open</option>
+        <option name="underLabel">hosts reporting it open; zero is not "unaffected"</option>
       </single>
     </panel>
   </row>
 
   <row>
     <panel>
-      <title>What it is</title>
+      <title>What the feed says this CVE is</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
@@ -185,10 +112,13 @@
 | eval "What CISA requires" = if(coalesce(kev_action,"") != "", kev_action, "")
 | eval "Ransomware campaigns" = if(coalesce(kev_ransomware,"") != "", kev_ransomware, "")
 | eval Published = trim(coalesce(rk_assigner,"") . " " . coalesce(rk_pub, published))
-| table Product, Description, "Also known as", "What CISA requires", "Ransomware campaigns", Published
-| transpose 6 column_name="Field"
-| rename "row 1" AS "Value"
-| where Value != ""</query>
+| eval CVE = cve_id
+| eval "Exploitation percentile" = if(isnotnull(epss_percentile),
+        "more likely to be exploited than " . round(epss_percentile*100, 0) . "% of all scored CVEs", "")
+| table CVE, Product, Description, "Also known as", "Ransomware campaigns", "Exploitation percentile", Published
+| transpose 7 column_name="rk_label"
+| rename rk_label AS "About", "row 1" AS "What the feed wrote"
+| where 'What the feed wrote' != ""</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
@@ -211,7 +141,41 @@
 
   <row>
     <panel>
-      <title>What an attacker needs, read from the CVSS vector</title>
+      <title>What CISA says, and by when</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_cve_facts($cve_tok$)`
+| where kev_added != ""
+| eval "Added to the catalogue" = kev_added
+| eval "Remediate by" = if(kev_due != "", kev_due, "no date given")
+| eval "Used in ransomware" = if(kev_ransomware != "", kev_ransomware, "not stated")
+| eval "CISA calls it" = if(kev_title != "", kev_title, "")
+| eval "What CISA requires" = if(kev_action != "", kev_action, "The catalogue entry in this bundle carries no required action. Bundles built before this app kept those fields hold only the dates.")
+| table "Added to the catalogue", "Remediate by", "Used in ransomware", "CISA calls it", "What CISA requires"
+| transpose 5 column_name="rk_label"
+| rename rk_label AS "About", "row 1" AS "What CISA wrote"
+| where 'What CISA wrote' != ""</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.emptyText">Not in the CISA KEV catalogue, or no CVE is selected. Absence from the catalogue is not evidence that a vulnerability is unexploited; it means CISA has not observed and published exploitation of it.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            The catalogue is the one source here that reports observation rather than modelling: an
+            entry means exploitation was seen in the wild, not predicted. <b>Remediate by</b> is
+            CISA's deadline for US federal agencies. It carries no legal weight elsewhere, and is
+            still the most defensible date to argue a change window against.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What an attacker needs, from the CVSS vector</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
@@ -225,8 +189,8 @@
         <div class="rk-status" style="margin:8px 0 0">
           <span>
             The vector spelled out, nothing more. It describes the vulnerability as published, not
-            this fleet. Whether your copy answers a network address is a different question, and
-            <b>Exposure</b> answers it.
+            this fleet. Whether your copy answers a network address is a different question, and the
+            <b>Exposure</b> page answers it.
           </span>
         </div>
       </html>
@@ -235,7 +199,7 @@
 
   <row>
     <panel>
-      <title>Weakness class, and the techniques it would enable</title>
+      <title>Weakness class, and the techniques mapped to it</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
@@ -258,7 +222,42 @@
 
   <row>
     <panel>
-      <title>In this fleet</title>
+      <title>Find a vulnerability by product or phrase</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_cvedetail_lookup
+| search products="*$q_tok$*" OR description="*$q_tok$*" OR cve_id="*$q_tok$*"
+| head 200
+| eval Product = mvindex(split(products, "
+"), 0)
+| lookup riskability_advisories_lookup cve_id OUTPUT severity, cvss_score, epss, kev_added
+| eval Severity = coalesce(severity, ""), CVSS = coalesce(cvss_score, ""),
+       "EPSS %" = if(isnotnull(epss), round(epss*100, 1), null()),
+       KEV = if(coalesce(kev_added, "")!="", "yes", "")
+| table cve_id, Product, Severity, CVSS, "EPSS %", KEV
+| rename cve_id AS CVE
+| sort 200 - CVSS</query>
+        </search>
+        <option name="riskability.riskability_grid.emptyText">Type a product, a vendor or a phrase in the search box at the top. "openssl", "Red Hat", "buffer overflow". This searches the CVE Program product names and description text, so it finds vulnerabilities by what they are rather than by what your distribution happened to call the package. It needs a bundle built with the CVE Program source; without one, use the CVE box instead.</option>
+        <drilldown>
+          <set token="cve_tok">$row.CVE$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            Click any row to load it above. This searches the feed, not this fleet, which is the
+            point: an encyclopaedia has to be able to tell you about something you do not run.
+            Capped at 200, worst CVSS first.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Matching hosts in this fleet</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$"
@@ -281,7 +280,52 @@
 
   <row>
     <panel>
-      <title>What the feed says is affected</title>
+      <title>Every version that fixes this, across distributions</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| inputlookup riskability_ranges_lookup where cve_id="$cve_tok$"
+| where fixed != ""
+| eval rk_eco = replace(ecosystem, "[|]", "_")
+| eval rk_pkg = replace(ecosystem . " " . package, "[|]", "_")
+| eval rk_fix = replace(package . " " . fixed . if(distro="", "", " (" . distro . ")"), "[|]", "_")
+| eval rk_hops = mvappend(rk_eco . "|eco|" . rk_pkg . "|pkg",
+                          rk_pkg . "|pkg|" . rk_fix . "|fix")
+| mvexpand rk_hops
+| eval rk_p = split(rk_hops, "|")
+| eval source = mvindex(rk_p, 0), source_kind = mvindex(rk_p, 1),
+       target = mvindex(rk_p, 2), target_kind = mvindex(rk_p, 3)
+| stats count AS cves BY source, source_kind, target, target_kind
+| sort 200 - cves
+| fields source, source_kind, target, target_kind, cves</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">chaingraph</option>
+        <option name="riskability.riskability_chart.chainKinds">eco:ecosystem,pkg:package,fix:version that fixes it</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No fixed version for this CVE in the bundle. That is common and is not an error: an advisory that names no fix has none published, so there is no upgrade to point at. Check the affected ranges below for whether a later version is merely "last affected".</option>
+        <option name="height">560</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            One vulnerability, every packaging of it. Read left to right: the ecosystem, the
+            package each one calls it, and the version that fixes it there. A component vendored
+            into many products fans out widely here, which is the point: it is why a single CVE can
+            need a dozen separate upgrades.
+            <b>These are the feed's fix versions, not a patch plan for this fleet.</b> Nothing here
+            knows which of these you run or at what version. <b>Matching hosts in this fleet</b>
+            above is the panel that does. Version nodes carry their package and distribution,
+            because two packages fixing at "1.2.3" are not one node and merging them would draw a
+            route that does not exist. Crowded columns collapse into a single node rather than
+            becoming unreadable.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Affected packages and fixed versions</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_ranges_lookup where cve_id="$cve_tok$"
