@@ -71,7 +71,7 @@
         <option name="riskability.riskability_chart.chartType">heatmap</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No tactic data. The ATT&amp;CK tactic mapping is missing from the bundle, not the exposure - rebuild with --mitre and import.</option>
-        <option name="height">520</option>
+        <option name="height">1040</option>
         <drilldown>
           <set token="tech_name_tok">$row.technique_name$</set>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
@@ -189,7 +189,7 @@
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open finding has a CWE that MITRE links to a technique.</option>
-        <option name="height">460</option>
+        <option name="height">920</option>
         <drilldown>
           <set token="cwe_filter">cwe="$row.cwe$"</set>
           <set token="cwe_label"> and $row.cwe$</set>
@@ -232,7 +232,7 @@
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">EPSS</option>
         <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to plot a distribution. EPSS comes from the feed; without it in the bundle there is nothing to plot.</option>
-        <option name="height">420</option>
+        <option name="height">504</option>
         <drilldown>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
           <set token="tech_label">$row.technique_name$</set>

@@ -536,15 +536,34 @@ export default SplunkVisualizationBase.extend({
     _watchSettling: function (host, gen) {
         var self = this;
 
-        // The HOST, not the table holder. The holder's own width changes when
-        // the vertical scrollbar comes and goes, which a settle can cause --
-        // observing it would let this retrigger itself forever. The host is
-        // sized by the panel and by nothing this code does.
+        // The host, and the rows.
+        //
+        // The host is the panel's width arriving. Not the table holder: the
+        // holder's own width changes when the vertical scrollbar comes and
+        // goes, which a settle can cause, so observing it would let this
+        // retrigger itself. The host is sized by the panel and by nothing this
+        // code does.
+        //
+        // The rows are watched for their HEIGHT, which sounds like the wrong
+        // axis and is the important one. When the rows grow past the holder a
+        // vertical scrollbar appears and takes about fifteen pixels out of the
+        // width the columns were fitted to -- and not one element on the page
+        // changed width, so nothing else can notice. That is a table laid out
+        // for a box it no longer has, with no resize of any kind to correct it,
+        // which is the shape of a scrollbar that only a manual resize clears.
+        //
+        // A settle does change the rows' width, so this observer fires itself
+        // once more. It converges: the second pass finds the holder the same
+        // width, does no relayout, and its shave is already satisfied.
         if (typeof ResizeObserver === 'function') {
             this._observer = new ResizeObserver(function () {
                 self._scheduleSettle(gen, 120);
             });
-            try { this._observer.observe(host); } catch (e) { /* torn down */ }
+            var rows = this.el.querySelector('.tabulator-tableholder .tabulator-table');
+            try {
+                this._observer.observe(host);
+                if (rows) { this._observer.observe(rows); }
+            } catch (e) { /* torn down */ }
         }
 
         // Fonts change text metrics, text metrics change what fits, and Windows
@@ -617,7 +636,41 @@ export default SplunkVisualizationBase.extend({
                 this._scrolledVertically = holder.scrollHeight > holder.clientHeight;
             }
             this._shaveHairlineOverflow();
+
+            // Check the work, once. After a settle there is exactly one honest
+            // reason for a horizontal scrollbar: the columns are down at their
+            // floor and the table really is wider than the panel, which is the
+            // Findings grid and is correct. Anything else is a layout fitted to
+            // a box that has since moved -- most often a vertical scrollbar
+            // that arrived with the rows, taking a scrollbar's width out of the
+            // room the columns were just given. The shave declines that one on
+            // purpose, because a whole scrollbar's width is too much to take
+            // out of one column, and a relayout is the right answer anyway.
+            if (this._overflowingAboveFloor(holder)) {
+                this._fitColumnFloor();
+                this.table.redraw(true);
+                this._scrolledVertically = holder.scrollHeight > holder.clientHeight;
+                this._shaveHairlineOverflow();
+            }
         } catch (e) { /* torn down mid-pass */ }
+    },
+
+    /* Does this table overflow while its columns still have room to give?
+     *
+     * fitColumns pushes every flexible column down to its floor before it lets
+     * a table overflow, so a table that overflows with columns ABOVE the floor
+     * was not laid out against the width it currently has. Cheap enough to ask
+     * after every settle and the only way to tell a stale layout from a table
+     * that is honestly too wide. */
+    _overflowingAboveFloor: function (holder) {
+        if (holder.scrollWidth <= holder.clientWidth) { return false; }
+        var slack = false;
+        this.table.getColumns().forEach(function (c) {
+            if (!c.isVisible() || (c.getDefinition() || {}).width) { return; }
+            var col = c._getSelf ? c._getSelf() : null;
+            if (col && col.minWidth && c.getWidth() > col.minWidth) { slack = true; }
+        });
+        return slack;
     },
 
     /* Take a rounding remainder off the widest column, so no scrollbar is drawn
