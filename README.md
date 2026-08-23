@@ -42,13 +42,15 @@ reachability first and reports plainly when there is none.
 
 ## Contents
 
-**Start here** &nbsp; [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong) · [Installing](#installing) · [Getting vulnerability data in](#getting-vulnerability-data-in)
+**Start here** &nbsp; [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong) · [Installing](#installing)
 
-**Deploying** &nbsp; [What the app reads from the collector](#what-the-app-reads-from-the-collector) · [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
+**Getting data in** &nbsp; [What the app reads from the collector](#what-the-app-reads-from-the-collector) · [Getting vulnerability data in](#getting-vulnerability-data-in)
 
-**Using it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
+**Where it goes** &nbsp; [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-**Running it** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
+**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
+
+**At fleet scale** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
 **The project** &nbsp; [Why this exists rather than "just match CPEs against NVD"](#why-this-exists-rather-than-just-match-cpes-against-nvd) · [Architecture](#architecture) · [Development](#development) · [Licence](#licence)
 
@@ -295,6 +297,39 @@ Three things are **not** app configuration and must be done on the deployment:
 
 The KV Store must be running on the search head; the feed lives there.
 
+## What the app reads from the collector
+
+Every line the forwarder ships is one JSON object. The app reads four kinds,
+distinguished by `record_type`:
+
+| `record_type` | Carries | Without it |
+|---|---|---|
+| *(absent)* | one installed component | there is nothing to assess |
+| `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
+| `exposure` | one listening port, the process holding it, and the package behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
+| `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
+
+The last two are what the **Exposure** page is built on. A collector that does
+not emit them leaves the page honest but empty: hosts appear under "never
+reported a listening port" and their findings sit in the dashed *not assessed*
+row of the matrix, which is deliberately not the same place as "nothing is
+listening".
+
+An `exposure` record carries one port and one component, so a port served by
+three packages arrives as three records. The package **name** is derived here
+rather than shipped: from the purl's name segment, with the distro namespace
+dropped for `deb`, `rpm` and `apk`, and from the `Name@Version` string on
+Windows, where there is no purl to give. Checked against the component records
+of both dev hosts - 22 of 22 Linux purls and 18 of 18 Windows strings derive the
+same name the inventory reports, which is what lets a finding be joined to a
+port by package alone.
+
+`os_component` on an exposure record means the port is answered by the operating
+system itself - Windows `System` and `svchost`. Those are counted separately
+from ports nothing could be attributed to, because they are not the same fact:
+one is a listener the app can see and cannot assess against a package feed, the
+other is one it could not identify at all.
+
 ## Getting vulnerability data in
 
 On a machine with internet access:
@@ -354,39 +389,6 @@ survives into Splunk. Building a bundle for your own organisation is
 uncontroversial; redistributing one is your decision, not this app's.
 
 ---
-
-## What the app reads from the collector
-
-Every line the forwarder ships is one JSON object. The app reads four kinds,
-distinguished by `record_type`:
-
-| `record_type` | Carries | Without it |
-|---|---|---|
-| *(absent)* | one installed component | there is nothing to assess |
-| `heartbeat` | a digest and a component count, sent when nothing changed | every quiet scan ships the whole inventory again |
-| `exposure` | one listening port, the process holding it, and the package behind it | every finding is reported as **not assessed** on the Exposure page - never as safe |
-| `container` | one container, its image, its state and its published ports | container findings are still matched, but nothing says which of them are running or reachable |
-
-The last two are what the **Exposure** page is built on. A collector that does
-not emit them leaves the page honest but empty: hosts appear under "never
-reported a listening port" and their findings sit in the dashed *not assessed*
-row of the matrix, which is deliberately not the same place as "nothing is
-listening".
-
-An `exposure` record carries one port and one component, so a port served by
-three packages arrives as three records. The package **name** is derived here
-rather than shipped: from the purl's name segment, with the distro namespace
-dropped for `deb`, `rpm` and `apk`, and from the `Name@Version` string on
-Windows, where there is no purl to give. Checked against the component records
-of both dev hosts - 22 of 22 Linux purls and 18 of 18 Windows strings derive the
-same name the inventory reports, which is what lets a finding be joined to a
-port by package alone.
-
-`os_component` on an exposure record means the port is answered by the operating
-system itself - Windows `System` and `svchost`. Those are counted separately
-from ports nothing could be attributed to, because they are not the same fact:
-one is a listener the app can see and cannot assess against a package feed, the
-other is one it could not identify at all.
 
 ## Configuring the universal forwarder
 
