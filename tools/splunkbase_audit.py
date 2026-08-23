@@ -164,6 +164,55 @@ def audit(path):
                 else:
                     note(WARN, pkg, f"possible dev path or secret in {rel_name}: {txt[:40]}")
 
+        # AppInspect Cloud vetting, learned from a rejected submission.
+        # is_configured = true asserts a setup has already been performed,
+        # which cannot be true of an app somebody is installing for the
+        # first time.
+        if cp.has_option("install", "is_configured"):
+            v = cp.get("install", "is_configured").strip().lower()
+            if v in ("1", "true", "yes"):
+                note(FAIL, pkg, "app.conf [install] is_configured must be false in a shipped app")
+            else:
+                note(OK, pkg, f"[install] is_configured = {v}")
+
+        # An [id] stanza with a name is required for installation, and is where
+        # the semantic-version check reads the version from.
+        if not cp.has_section("id"):
+            note(FAIL, pkg, "app.conf needs an [id] stanza with a name attribute")
+        else:
+            idn = cp.get("id", "name", fallback="")
+            idv = cp.get("id", "version", fallback="")
+            if idn != root:
+                note(FAIL, pkg, f"[id] name {idn!r} must match the root folder {root!r}")
+            else:
+                note(OK, pkg, f"[id] name = {idn}")
+            lv = cp.get("launcher", "version", fallback="")
+            if idv and lv and idv != lv:
+                note(FAIL, pkg, f"[id] version {idv} disagrees with [launcher] version {lv}")
+
+        # Splunk Cloud accepts only these properties in indexes.conf, and every
+        # path must sit under $SPLUNK_DB. A volume: path is refused even though
+        # it works perfectly on-premises.
+        ipath = f"{root}/default/indexes.conf"
+        if ipath in names:
+            allowed = {"homepath", "coldpath", "thawedpath", "frozentimeperiodinsecs",
+                       "disabled", "datatype", "repfactor"}
+            icp = configparser.ConfigParser(strict=False)
+            icp.read_string(tf.extractfile(ipath).read().decode())
+            offenders = 0
+            for stanza in icp.sections():
+                if stanza.startswith("volume:") or stanza == "default":
+                    continue
+                for key, val in icp.items(stanza):
+                    if key.lower() not in allowed:
+                        note(FAIL, pkg, f"indexes.conf [{stanza}]: {key} is not accepted by Splunk Cloud")
+                        offenders += 1
+                    elif key.lower().endswith("path") and "$SPLUNK_DB" not in val:
+                        note(FAIL, pkg, f"indexes.conf [{stanza}]: {key} must contain $SPLUNK_DB")
+                        offenders += 1
+            if not offenders:
+                note(OK, pkg, f"indexes.conf: {len(icp.sections())} stanzas, Cloud-safe properties only")
+
         for doc in ("README.md", "README.txt", "README"):
             if f"{root}/{doc}" in names:
                 note(OK, pkg, f"ships {doc}")
