@@ -40,6 +40,28 @@ reachability first and reports plainly when there is none.
 
 ---
 
+## Contents
+
+- [Why this exists rather than "just match CPEs against NVD"](#why-this-exists-rather-than-just-match-cpes-against-nvd)
+- [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong)
+- [Architecture](#architecture)
+  - [How it actually works](#how-it-actually-works)
+- [Installing](#installing)
+  - [What the app reads from the collector](#what-the-app-reads-from-the-collector)
+  - [Configuring the universal forwarder](#configuring-the-universal-forwarder)
+  - [Index names](#index-names)
+  - [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
+- [Getting vulnerability data in](#getting-vulnerability-data-in)
+  - [Why a normalised bundle rather than the raw feeds](#why-a-normalised-bundle-rather-than-the-raw-feeds)
+  - [Licensing](#licensing)
+- [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
+- [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop)
+- [Dashboards](#dashboards)
+  - [The CVE encyclopaedia, and why it needs a source of its own](#the-cve-encyclopaedia-and-why-it-needs-a-source-of-its-own)
+- [Development](#development)
+- [Status](#status)
+- [Licence](#licence)
+
 ## Why this exists rather than "just match CPEs against NVD"
 
 Because that approach produces a flood of false positives on exactly the hosts
@@ -301,7 +323,7 @@ confirms it is stable.
 | `tools/pipeline_cycle.sh` | Runs one full pass of the hourly pipeline on demand, rather than waiting for the hour |
 | `tools/test_*.py`, `tools/audit_claims.py` | Matching, scope and comparator suites; recomputes this file's numbers |
 
-### Installing
+## Installing
 
 #### 0. Install the collector first
 
