@@ -2,10 +2,40 @@
   <label>Exposure</label>
   <description>Which open findings the network can actually reach, and which of them sit inside containers.</description>
   <fieldset submitButton="false" autoRun="true">
-    <input type="text" token="host_tok" searchWhenChanged="true">
-      <label>Host (wildcards allowed)</label>
+    <!-- A multiselect, not a text box. At five thousand machines, typing a
+         hostname is worse than picking one, and comparing two is the thing this
+         page is for: the same CVE answering the network on one host and not on
+         another is the comparison that decides what to do about it.
+         The predicate is applied after the macro rather than inside it, and
+         that is not a preference: Splunk's macro parser rejects an argument
+         containing both quotes and spaces, so a host list cannot travel as a
+         macro argument at all. The cost is the KV Store pushdown on the
+         single-host case - selecting one machine now reads the fleet's open
+         findings and filters them, where the old text box narrowed the read
+         itself. The worst case is unchanged, because this page is fleet-wide by
+         construction: the matrix has to count every finding to draw thirty
+         cells and the ranking has to see every host to order ten.
+         Populated from the hourly host snapshot, one row per host, never from
+         the inventory index. -->
+    <input type="multiselect" token="host_tok" searchWhenChanged="true">
+      <label>Hosts</label>
+      <choice value="*">Any host</choice>
       <default>*</default>
       <initialValue>*</initialValue>
+      <!-- Joined with ' OR hostname=' rather than a comma. A comma-delimited
+           token turns a two-host call into a three-argument macro, because
+           Splunk splits macro arguments on commas and does not care that they
+           came from one token. -->
+      <delimiter> OR hostname=</delimiter>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <fieldForLabel>hostname</fieldForLabel>
+      <fieldForValue>hostname</fieldForValue>
+      <search>
+        <query>| `riskability_hosts_seen` | sort 50000 hostname | fields hostname</query>
+        <earliest>0</earliest>
+        <latest>now</latest>
+      </search>
     </input>
     <!-- Defaults to All, unlike every other page in this app, and the difference
          is deliberate. What answers a network port is usually a compiled binary,
@@ -28,7 +58,8 @@
        this is the same read the matrix above already does and doing it twice
        for one number would be careless. -->
   <search id="rk_exposed_hosts">
-    <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+    <query>| `riskability_reachability_for("*", $conf_tok|s$)`
+| search (hostname=$host_tok$)
 | search $reach_filter$ $exploit_filter$
 | eval rk_reach = if(reach_rank &gt;= 2, 1, 0), rk_local = if(reach_rank == 1, 1, 0),
        rk_unknown = if(reach_rank &lt; 0, 1, 0),
@@ -41,25 +72,17 @@
 | sort 50000 - kev_reachable, - reachable, - findings</query>
     <earliest>0</earliest>
     <latest>now</latest>
-    <!-- This is also where the chain gets its host.
-         There is no host picker: with thousands of machines a dropdown is a
-         scrolling exercise, and the list below already ranks them. So the chain
-         follows the first row of that ranking unless the reader clicks another,
-         which means a page opened cold shows the route into the worst machine
-         in view rather than an empty panel with an instruction in it.
-         Re-running this search re-points the chain, and that is wanted: narrow
-         the matrix to known-exploited-and-reachable and the chain moves to a
-         host that actually has one. A row click does not re-run it, so a
-         deliberate choice is not overwritten. -->
+    <!-- Where the host ranking, and the count above it, come from. One
+         aggregation over the open findings, shared by the panel and by the
+         numbers in its caption, because this is the same read the matrix
+         already does and doing it twice for one number would be careless. -->
     <done>
       <condition match="'job.resultCount' &gt; 0">
-        <set token="chain_host">$result.hostname$</set>
         <set token="fleet_hosts">$result.fleet_hosts$</set>
         <set token="shown_hosts">$result.shown_hosts$</set>
         <set token="fleet_reachable">$result.fleet_reachable$</set>
       </condition>
       <condition>
-        <set token="chain_host">*</set>
         <set token="fleet_hosts">0</set>
         <set token="shown_hosts">0</set>
         <set token="fleet_reachable">0</set>
@@ -80,6 +103,11 @@
     <set token="exploit_filter">exploit_class=*</set>
     <set token="node_filter">rk_nodes=*</set>
     <set token="host_focus_filter">hostname=*</set>
+    <!-- Which hosts the chain draws, independent of the page filter. A row
+         click points the chain at one machine without collapsing the ranked
+         list that the click came from - narrowing the page instead would leave
+         a list of one, with no way back to the others. -->
+    <set token="chain_filter">hostname=*</set>
     <set token="drill_note"></set>
   </init>
 
@@ -115,7 +143,8 @@
       <title>What to do first - open findings by reach and by exploit likelihood</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+          <query>| `riskability_reachability_for("*", $conf_tok|s$)`
+| search (hostname=$host_tok$)
 | stats count AS findings BY exploit_class, reach_class, tier
 | fields exploit_class, reach_class, findings, tier</query>
         </search>
@@ -166,7 +195,7 @@
         <option name="riskability.riskability_grid.emptyText">No host has an open finding at this filter.</option>
         <option name="height">300</option>
         <drilldown>
-          <set token="form.chain_host">$row.Host$</set>
+          <set token="chain_filter">hostname="$row.Host$"</set>
           <set token="host_focus_filter">hostname="$row.Host$"</set>
           <set token="drill_note">host $row.Host$</set>
           <set token="any_filter">1</set>
@@ -214,7 +243,7 @@
             so you can pick something else.</span>
           <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
-             href="riskability_exposure?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
+             href="riskability_exposure?form.conf_tok=$conf_tok|u$">Clear</a>
         </div>
       </html>
     </panel>
@@ -222,14 +251,27 @@
 
   <row>
     <panel>
-      <title>How the network gets there on $chain_host$ - port, process, container, package, CVE</title>
+      <title>How the network gets there - port, process, container, package, CVE</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_exposure_chain_for($chain_host|s$, $conf_tok|s$)`
+          <query>| `riskability_reachability_for("*", $conf_tok|s$)`
+| search (hostname=$host_tok$)
+| search $chain_filter$
 | search $reach_filter$ $exploit_filter$
-| eventstats dc(cve_id) AS rk_port_cves BY n_edge
-| sort 200000 - rk_port_cves, n_edge
-| streamstats dc(n_edge) AS rk_port_rank
+| where reach_rank &gt;= 1 AND isnotnull(chain_text) AND chain_text != ""
+| eventstats dc(cve_id) AS rk_host_cves BY hostname
+| sort 200000 - rk_host_cves, hostname
+| streamstats dc(hostname) AS rk_host_rank
+| where rk_host_rank &lt;= 3
+| `riskability_chain_hops`
+| eventstats dc(hostname) AS rk_drawn
+| eval source = if(rk_drawn &gt; 1 AND source_kind IN ("edge", "listener",
+      "listener-unknown", "container"), source . " @" . hostname, source)
+| eval target = if(rk_drawn &gt; 1 AND target_kind IN ("edge", "listener",
+      "listener-unknown", "container"), target . " @" . hostname, target)
+| eventstats dc(cve_id) AS rk_port_cves BY hostname, n_edge
+| sort 200000 hostname, - rk_port_cves, n_edge
+| streamstats dc(n_edge) AS rk_port_rank BY hostname
 | where rk_port_rank &lt;= 10
 | eval rk_epss = coalesce(epss, 0)
 | stats max(rk_epss) AS rk_epss, max(is_kev) AS rk_kev, dc(cve_id) AS cves
@@ -253,7 +295,7 @@
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
-        <option name="riskability.riskability_chart.emptyText">No chain to draw. Three things look identical here and are not: this host may have nothing behind a listening port at all; the matrix cell you selected may be one of the unreachable rows, which by definition have no route - that is the answer, not a missing panel; or this host may simply have none of the findings in that cell, in which case the host list above says which hosts do. Check the assessment coverage panel below to be sure its ports were measured at all.</option>
+        <option name="riskability.riskability_chart.emptyText">No chain to draw. Three things look identical here and are not: these hosts may have nothing behind a listening port at all; the matrix cell you selected may be one of the unreachable rows, which by definition have no route - that is the answer, not a missing panel; or these hosts may simply have none of the findings in that cell, in which case the ranked list above says which hosts do. Check the assessment coverage panel below to be sure their ports were measured at all.</option>
         <option name="height">620</option>
         <drilldown>
           <set token="node_filter">rk_nodes="$row.node$"</set>
@@ -263,15 +305,24 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>One host at a time, and that is not a limitation of the panel.</b>
+          <b>A few machines at a time, and that is not a limitation of the panel.</b>
           <span>
             A chain is a route through one machine. Drawn across a fleet it merges every
             copy of <code>sshd</code> into a single node, sums edge widths over machines that
             have nothing to do with each other, and stops describing a route anyone could
-            follow. There is no host picker, because with thousands of machines a dropdown is a
-            scrolling exercise: the chain follows the top row of the ranked list above unless
-            you click another row, so it opens on the machine most worth opening rather than
-            on an instruction to choose one. Selecting a cell
+            follow. So it draws <b>at most three hosts at once</b> - the three most exposed of
+            whatever is selected at the top of the page - and when more than one is drawn every
+            port, process and container carries the machine it belongs to, so two hosts running
+            the same service never merge into one node that claims a route neither of them has.
+            Packages and CVEs are deliberately left shared: three machines converging on one
+            vulnerable library is the thing worth seeing.
+          </span>
+          <span>
+            <b>Three, not ten.</b> Ten would be about 120 CVE nodes in a column 620 pixels
+            tall, which is five pixels a node and unreadable; the two hosts here come to 24, so
+            three is the point where it still reads. Pick the ones you want at the top of the
+            page, or click a row in the ranked list to point the chain at one machine without
+            collapsing the list you picked it from. Selecting a cell
             in the matrix narrows this chain to those findings as well - picking
             <em>known-exploited, answers any address</em> draws only the routes the world can
             walk to a CVE someone is already exploiting. Picking one of the unreachable rows
@@ -316,7 +367,7 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_hosts_seen`
-| search hostname=$host_tok|s$
+| search (hostname=$host_tok$)
 | lookup riskability_exposure_hoststate_lookup hostname OUTPUT listeners, wildcard_listeners,
     unattributed_listeners, packages_behind_ports, containers, assessed_at
 | eval status = if(isnull(assessed_at), "never reported a listening port", "assessed")
@@ -357,7 +408,8 @@
       <title>Containers - a stopped container is not a safe container</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_container_findings_for($host_tok|s$)`
+          <query>| `riskability_container_findings_for("*")`
+| search (hostname=$host_tok$)
 | stats dc(cve_id) AS cves, count AS findings, dc(package) AS packages,
         max(epss) AS peak_epss, sum(if(isnotnull(kev_added) AND kev_added!="", 1, 0)) AS kev
         BY hostname, container_label, image_label, state, published, ctr_tier
@@ -432,7 +484,8 @@
       <title>The findings behind this - $drill_note$</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+          <query>| `riskability_reachability_for("*", $conf_tok|s$)`
+| search (hostname=$host_tok$)
 | search $reach_filter$ $exploit_filter$ $host_focus_filter$
 | eval rk_nodes = mvappend(package, cve_id, split(coalesce(ports_text, ""), ", "),
         split(coalesce(listener_text, ""), ", "), split(coalesce(container_text, ""), ", "))

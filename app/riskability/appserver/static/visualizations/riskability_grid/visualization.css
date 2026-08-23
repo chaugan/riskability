@@ -100,3 +100,12 @@
    enough to need no vertical scrollbar got columns fifteen pixels wider than
    the box they sit in, and a horizontal scrollbar under a table that plainly
    fits. Tabulator's own accounting is correct; leave it alone. */
+
+/* Tabulator's per-column filter box is an <input type="search">, and Chrome
+   reports one pixel of horizontal overflow on it at a fractional device pixel
+   ratio - 212 client, 213 scroll, at 125% Windows scaling. It paints nothing,
+   because the computed overflow-x is clip, but it turns up in any measurement
+   of "what on this page overflows" and sends the next person hunting a
+   scrollbar that is not there. Stated explicitly so it stops being a red
+   herring. */
+.riskability-grid .tabulator-header-filter input { overflow: hidden; }
