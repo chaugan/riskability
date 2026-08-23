@@ -327,6 +327,8 @@ export default SplunkVisualizationBase.extend({
         }).length;
         var floor = columnFloor(host.clientWidth - 2, visibleCount);
 
+        var wrapText = String(this._opt(config, 'wrap') || 'no') === 'yes';
+        if (wrapText) { host.classList.add('rk-grid-wrap'); }
         var columns = fields.map(function (f, i) {
             var title = f.name;
             var numeric = looksNumeric(rows, i);
@@ -352,6 +354,17 @@ export default SplunkVisualizationBase.extend({
             }
             if (numeric) { col.hozAlign = 'right'; }
             if (hidden.indexOf(title.toLowerCase()) !== -1) { col.visible = false; }
+            // Prose needs to wrap. Every other table in this app holds short
+            // values where truncating with an ellipsis is the right call, but
+            // a CVE description truncated at the column edge is useless, and
+            // the encyclopaedia is mostly prose. Tabulator's textarea
+            // formatter wraps and grows the row; it is opt in per panel so no
+            // existing table changes shape.
+            if (wrapText) {
+                col.formatter = 'textarea';
+                col.variableHeight = true;
+            }
+
             // A CVE id is rendered as a link into the encyclopaedia, wherever
             // it appears and whatever the column is called. Done as a
             // formatter rather than a click handler on purpose: a link shows

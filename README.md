@@ -713,7 +713,7 @@ about when the lag is longer than it should be.
 
 ## Dashboards
 
-Ten views, in nav order.
+Eleven views, in nav order.
 
 | View | Answers |
 |---|---|
@@ -726,7 +726,58 @@ Ten views, in nav order.
 | **Hosts** | Per-host detail, split by filesystem root |
 | **Coverage** | What the feed *cannot* say anything about |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
+| **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
 | **Feed administration** | Build, upload and import bundles |
+
+### The CVE encyclopaedia, and why it needs a source of its own
+
+Every other page answers "where is this in my fleet". This one answers "what is
+this", which on a search head with no route to the internet you otherwise have
+to leave the room to find out.
+
+Most of what it shows was already in the feed and being thrown away. The CISA
+KEV catalogue carries a vendor, a product, a plain English description and the
+remediation CISA requires, and the importer kept three date fields out of ten.
+Descriptions were truncated at 500 characters. Distribution advisories carry no
+summary at all, which is why 114,560 rows have an empty title, but several
+advisories describe one CVE and the others usually do have text: taking the
+longest recovers a description for 640,830 of the 641,374 CVEs a full bundle
+knows about.
+
+What the feed genuinely lacked is a product name in the words a person uses.
+Distro and ecosystem advisories describe packaging: `pkg:deb/ubuntu/libwebp`,
+not "Google Chrome". The CVE Program's own records carry a vendor and product
+per affected entry, so `--cve-list` adds them:
+
+```sh
+riskability-feed build --out feed.tar.gz \
+    --ecosystem Ubuntu --nvd 2015-2026 --kev --epss --mitre \
+    --cve-list
+```
+
+It is opt in because it is not free: about 600 MB to download on the connected
+machine and roughly 120 MB in the bundle you carry. Without it the page still
+works and still shows a description for almost every CVE; it simply cannot name
+a product for the ones CISA has not catalogued.
+
+The catalogue lives in the KV Store rather than in a file, which was not the
+first answer. A local file suits the access pattern better, since a page reads
+exactly one row and an import replaces the lot. It was built that way, tested,
+and then discarded, because `var/` is replicated nowhere: on a search head
+cluster every member would have needed its own copy, its own command to build
+it, and nothing to reconcile them. The KV Store already holds 1.6 GB across
+5.78 million documents here and every import already replaces 4,991,357 of
+them, so another 290,000 rows is a 5% increase in documents to make
+distribution somebody else's problem.
+
+References are deliberately not carried. Measured across the catalogue they
+cost 52 MB to store URLs that cannot be followed from a machine with no
+internet. Product names cost 10 MB, and are the entire point.
+
+**Any CVE id in any table in the app is a link to this page.** It is a cell
+formatter in the table visualization rather than a per panel drilldown, so it
+works everywhere a CVE appears, shows the reader that the cell is live, and
+cannot fight the row selection that Findings needs for accepting a risk.
 
 Screenshots below are from a two-host test fleet - one Linux, one Windows - built
 from nothing by `tools/build_demo_instance.sh`, with a feed carrying 793,058
@@ -758,6 +809,9 @@ advisories. The numbers in them are the ones this README quotes.
 
 ### Risk exceptions
 ![Risk exceptions](docs/screenshots/risk-exceptions.png)
+
+### CVE encyclopaedia
+![CVE encyclopaedia](docs/screenshots/cve-encyclopaedia.png)
 
 ### Feed administration
 ![Feed administration](docs/screenshots/feed-administration.png)

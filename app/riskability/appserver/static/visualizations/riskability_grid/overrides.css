@@ -108,3 +108,22 @@
    scrollbar that is not there. Stated explicitly so it stops being a red
    herring. */
 .riskability-grid .tabulator-header-filter input { overflow: hidden; }
+
+/* Wrapping prose.
+
+   Tabulator's own stylesheet sets white-space:nowrap and text-overflow:ellipsis
+   on every cell, which is right for the short values every other table in this
+   app holds and wrong for a CVE description, where the ellipsis lands after
+   about a dozen words and hides the entire point of the page. The textarea
+   formatter alone does not win against that rule, so the panel opts in with a
+   class and the override is scoped to it: no existing table changes shape. */
+.rk-grid-wrap .tabulator-cell {
+    white-space: pre-wrap !important;
+    text-overflow: clip !important;
+    overflow: visible !important;
+    height: auto !important;
+    line-height: 1.45;
+}
+.rk-grid-wrap .tabulator-row {
+    height: auto !important;
+}
