@@ -185,6 +185,7 @@ need riskability "riskability/default/commands.conf"               "custom searc
 need riskability "riskability/default/restmap.conf"                "admin REST endpoint"
 need riskability "riskability/default/web.conf"                    "exposes the endpoint to Splunk Web"
 need riskability "riskability/default/inputs.conf"                 "the feed worker input"
+need riskability "riskability/default/indexes.conf"                "the four indexes; without them a single instance installs to empty dashboards"
 need riskability "riskability/default/savedsearches.conf"          "scheduled searches"
 need riskability "riskability/default/data/ui/views/riskability_exceptions.xml" "the risk-exception register"
 need riskability "riskability/default/data/ui/views/riskability_start.xml" "the landing page, and the app's default view"

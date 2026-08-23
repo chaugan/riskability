@@ -19,12 +19,19 @@ upstream fixed in 3.0.14.
 
 - Splunk Enterprise 9.0 or later. Python 3.9 or 3.13.
 - The KV Store must be running; the vulnerability feed lives there.
-- **TA-riskability** deployed to forwarders (inputs) and indexers (parsing).
-- **TA-riskability-indexes** deployed to indexers. It creates the four indexes
-  this app writes to. Without it every dashboard reads zero and reports it as
-  "no findings" rather than as an error, because a search against an index that
-  does not exist returns no events rather than failing.
 - swinv installed on monitored hosts, writing NDJSON.
+- On a **single instance** - one Splunk that is both search head and indexer -
+  nothing else. The four indexes and the index-time parsing ship inside this
+  app.
+- On a **distributed** deployment, two additions. A universal forwarder cannot
+  run this app: it has no Python for the modular input and would log an error
+  on every restart. See "Three things this app cannot do for you" below for the
+  forwarder input, and copy this app's `default/indexes.conf` and the
+  `[riskability:swinv]` stanza from its `props.conf` to the indexers - a
+  forwarder does not parse, so index-time settings belong where data is
+  indexed. Without the indexes every dashboard reads zero and reports it as "no
+  findings" rather than as an error, because a search against an index that
+  does not exist returns no events rather than failing.
 
 ## Installing
 
@@ -49,14 +56,22 @@ Splunk instance that is not the app's to change, and each is a single command.
 
 1. **Enable receiving on the indexer**, if forwarders are not already sending:
    `splunk enable listen 9997`
-2. **Enable the inventory input.** `TA-riskability` ships its monitor input
-   **disabled**, because installing an add-on must not silently start reading a
-   customer's filesystem. Enable it from your deployment server, or with a
-   `local/inputs.conf` on the forwarder:
+2. **Add the inventory input on each forwarder.** This app does not go on a
+   universal forwarder, and an app must not silently start reading a customer's
+   filesystem. Six lines, in an app of your own on the forwarder or pushed from
+   a deployment server:
    ```
    [monitor:///var/lib/swinv/*.ndjson]
    disabled = 0
+   index = riskability_inventory
+   sourcetype = riskability:swinv
+   crcSalt = <SOURCE>
+   blacklist = -latest\.ndjson$
    ```
+   `crcSalt` is not optional: swinv output is deterministic apart from
+   timestamps, so without it Splunk mistakes each new scan for one it has
+   already read. The blacklist keeps it off the `-latest` symlink, which would
+   re-read the whole inventory every scan.
    Note `local/`, not `default/`: Splunk resolves configuration by layer before
    app name, so an override in another app's `default/` loses to this add-on's
    own `default/`.

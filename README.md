@@ -184,18 +184,29 @@ flowchart LR
   BUNDLE -.->|"carried by hand"| IMP
 ```
 
-Three packages ship, because Splunk resolves these settings on different tiers
-and putting them in one app puts most of them in the wrong place:
+One package ships. `riskability` carries everything a search head needs, plus
+the index definitions and the index-time parsing, so a single instance - one
+Splunk that is both search head and indexer - works on install:
 
 | Package | Deploy to | Contains |
 |---|---|---|
-| **`riskability`** | search heads | dashboards, matcher, admin backend, KV Store collections, search-time field extraction |
-| **`TA-riskability`** | **forwarders and indexers** | the file input (forwarders) and index-time parsing (indexers) |
-| **`TA-riskability-indexes`** | **indexers only** | the index definitions |
+| **`riskability`** | search heads, and single instances | dashboards, matcher, admin backend, KV Store collections, field extraction, index definitions, index-time parsing |
 
-`indexes.conf` is a separate package deliberately. A universal forwarder does
-not index, and loading index definitions there makes it log
-`Required parameter=tstatsHomePath not configured` on every start.
+The one thing that cannot go everywhere is the app itself, on a **universal
+forwarder**. A forwarder ships no Python, so the modular input cannot be
+introspected and splunkd logs an error on every restart. A forwarder needs six
+lines of `inputs.conf` and nothing more.
+
+For convenience the repository also builds `TA-riskability` (that input, for
+forwarders) and `TA-riskability-indexes` (the index definitions alone, for
+indexers that should not carry the whole app). Neither is on Splunkbase,
+because a listing takes exactly one archive.
+
+An earlier version of this app really could not put `indexes.conf` on a
+forwarder: it set `tstatsHomePath` to a `volume:` path a forwarder cannot
+resolve. Splunk sets that setting globally for every index anyway, so naming it
+per stanza only restated the default. Removing it - which Splunk Cloud vetting
+required independently - is what made a single package possible.
 
 ### How it actually works
 
@@ -296,9 +307,29 @@ confirms it is stable.
 tools/package.sh --verify        # builds dist/*.spl and checks each is complete
 ```
 
-Install `riskability-<version>.spl` on the search heads,
-`TA-riskability-<version>.spl` on **both** forwarders and indexers, and
-`TA-riskability-indexes-<version>.spl` on indexers only.
+**The Splunkbase download is one archive, `riskability-<version>.tar.gz`, and
+it is the whole app.** Install it on the search head. On a single instance -
+one Splunk that is both search head and indexer, which is the usual shape for
+an air-gapped deployment - that is the entire installation. The four indexes
+and the index-time parsing ship inside it, so it works on install rather than
+after a manual step.
+
+A **distributed** deployment needs two small additions, because a universal
+forwarder cannot run this app: it has no Python for the modular input, and
+would log an introspection error on every restart. Both are a handful of lines,
+given in full under "Configuring the universal forwarder" and "Index names"
+below.
+
+| Role | What it needs |
+|---|---|
+| Search head | The app. Nothing else |
+| Indexer | The app's `default/indexes.conf` and its `[riskability:swinv]` parsing, copied into an app of your own. A universal forwarder does not parse, so this must be on the indexers |
+| Universal forwarder | Six lines of `inputs.conf`. Nothing else |
+
+The repository also carries `TA-riskability` and `TA-riskability-indexes`,
+prebuilt for those two roles if you would rather install an archive than paste
+a stanza. They are not on Splunkbase - a listing takes one archive - so build
+them with `tools/package.sh` or take them from the GitHub release.
 
 Everything the app needs at runtime is inside those archives - the KV Store
 collections and their indexes, the search commands, the modular input and its
@@ -355,19 +386,34 @@ other is one it could not identify at all.
 
 ### Configuring the universal forwarder
 
-`TA-riskability` already contains the input; it ships **disabled**, because
-installing an add-on must not silently start reading a customer's filesystem.
-Enable it the way you enable anything else - a deployment server, or a
-`local/inputs.conf` on the forwarder:
+Do not install the app itself on a universal forwarder. A forwarder ships no
+Python, so the app's modular input cannot be introspected and splunkd logs an
+error on every restart. The forwarder needs the input and nothing else.
+
+This is the whole of it. Put it in an app of your own on the forwarder, or use
+the prebuilt `TA-riskability`, or push it with a deployment server:
 
 ```ini
-# TA-riskability/local/inputs.conf on the forwarder
+# <your-app>/local/inputs.conf on the forwarder
 [monitor:///var/lib/swinv/*.ndjson]
 disabled = 0
 index = riskability_inventory
 sourcetype = riskability:swinv
 crcSalt = <SOURCE>
+blacklist = -latest\.ndjson$
 ```
+
+`crcSalt = <SOURCE>` matters. swinv's output is deterministic apart from
+timestamps, so two scans of an unchanged host share a long identical prefix,
+and without a source-based CRC salt Splunk treats the new file as one it has
+already read and skips it. The blacklist matters too: swinv writes a
+`<host>-latest.ndjson` symlink beside the real files, and monitoring it would
+re-read the entire inventory on every scan.
+
+If you install `TA-riskability` rather than pasting the above, note that it
+ships the input **disabled** - installing an add-on must not silently start
+reading a customer's filesystem - so you still set `disabled = 0` in its
+`local/inputs.conf`.
 
 and point the forwarder at your indexers as usual:
 
@@ -382,7 +428,7 @@ server = idx1.example.net:9997, idx2.example.net:9997
 
 ### Index names
 
-The app writes to four indexes, and `TA-riskability-indexes` defines them:
+The app writes to four indexes and ships their definitions in `default/indexes.conf`:
 
 | Index | Holds | Retention |
 |---|---|---|
@@ -398,9 +444,18 @@ everything follows: dashboards, the matcher, the lifecycle jobs, the audit
 trail. The **Feed administration** page writes those overrides for you.
 
 Two things do not follow automatically, because they are not the app's to
-change: the forwarder's `inputs.conf` must send to the same index, and the
-indexes themselves must exist. `TA-riskability-indexes` creates the default
-four; a site using its own names creates its own.
+change: the forwarder's `inputs.conf` must send to the same index, and on a
+distributed deployment the indexes must exist **on the indexers**. The app's
+own `indexes.conf` covers a single instance; for a distributed one, copy it to
+the indexers, or into the cluster manager's bundle, alongside the
+`[riskability:swinv]` parsing from the app's `props.conf` - a universal
+forwarder does not parse, so index-time settings have to be where the data is
+indexed. A site using its own index names creates those instead.
+
+Nothing here needs `tstatsHomePath`. Splunk's own `system/default/indexes.conf`
+sets it globally for every index, and naming it per stanza only restates the
+default - which is also why an earlier version of this app could not be
+deployed to a forwarder, and why Splunk Cloud rejected it.
 
 ### The forwarder input, and what it inherits
 
@@ -429,10 +484,10 @@ Have swinv write NDJSON, which is the format the input expects:
 swinv --format ndjson --out /var/lib/swinv
 ```
 
-Index-time parsing (line breaking and the timestamp) lives in the same add-on
-and takes effect on the **indexer**, because a universal forwarder does not
-parse. Both tiers get `TA-riskability`; only the indexers also get
-`TA-riskability-indexes`.
+Index-time parsing (line breaking and the timestamp) takes effect on the
+**indexer**, because a universal forwarder does not parse. On a single instance
+the app's own `props.conf` covers it. On a distributed one, copy the
+`[riskability:swinv]` stanza and `indexes.conf` to the indexers.
 
 Matching runs in Python because Splunk cannot express dpkg or RPM version
 ordering in SPL. It never streams over raw inventory: the caller reduces to
