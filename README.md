@@ -303,8 +303,56 @@ confirms it is stable.
 
 ### Installing
 
+#### 0. Install the collector first
+
+Riskability correlates what [`swinv`](https://github.com/chaugan/swinv)
+reports. It collects nothing itself. Install swinv on the hosts you want
+assessed, following its own instructions, and confirm it is writing NDJSON
+before going further:
+
 ```sh
-tools/package.sh --verify        # builds dist/*.spl and checks each is complete
+ls -l /var/lib/swinv/*.ndjson
+```
+
+Doing this first is worth the few minutes. With no inventory arriving there is
+nothing to correlate, every dashboard reads zero, and the app cannot tell that
+apart from a fleet with no vulnerabilities - which is why it says "no data"
+rather than showing a clean bill of health.
+
+#### 1. Get the package
+
+Download `riskability-<version>.tar.gz` from
+[Splunkbase](https://splunkbase.splunk.com/) or from the
+[GitHub releases page](https://github.com/chaugan/riskability/releases), or
+build it yourself:
+
+```sh
+tools/package.sh --verify        # builds dist/*.spl and .tar.gz, and checks each is complete
+```
+
+Each release carries a `SHA256SUMS.txt`. On an air-gapped transfer it is worth
+checking what arrived is what left:
+
+```sh
+sha256sum -c SHA256SUMS.txt
+```
+
+#### 2. Install it
+
+```sh
+# Splunk Web: Manage Apps, then Install app from file. Or on the command line:
+splunk install app riskability-<version>.tar.gz
+splunk restart
+```
+
+If you unpack the archive by hand instead, which is the natural thing to do on
+an air-gapped box, the files end up owned by whoever ran `tar` and splunkd
+cannot write inside its own app directory. The symptom is that **"this app has
+not been fully configured yet" keeps interrupting every navigation forever**,
+even with a feed imported, because clearing that gate is itself a write:
+
+```sh
+chown -R splunk:splunk $SPLUNK_HOME/etc/apps/riskability
 ```
 
 **The Splunkbase download is one archive, `riskability-<version>.tar.gz`, and
@@ -347,7 +395,10 @@ Three things are **not** app configuration and must be done on the deployment:
    deliberately.
 3. **Import a feed.** The app has no vulnerability data until you give it some,
    and says so on every dashboard rather than showing zeroes that look like
-   good news.
+   good news. Open **Feed administration**, which is where a fresh install
+   lands, download the feed builder, run it on a machine with internet access,
+   and bring the resulting `.tar.gz` back. Importing it is what clears the
+   setup gate.
 
 The KV Store must be running on the search head; the feed lives there.
 

@@ -35,8 +35,18 @@ upstream fixed in 3.0.14.
 
 ## Installing
 
-Install with **`splunk install app riskability-0.1.0.spl`**, or through
-*Manage Apps → Install app from file* in Splunk Web.
+### 0. Install the collector first
+
+This app correlates what swinv (https://github.com/chaugan/swinv) reports. It
+collects nothing itself. Install swinv on the hosts you want assessed,
+following its own instructions, and confirm it is writing NDJSON to
+/var/lib/swinv before going further. With no inventory arriving there is
+nothing to correlate, and every dashboard will read zero.
+
+### 1. Install the app
+
+Install with **`splunk install app riskability-<version>.tar.gz`**, or through
+*Manage Apps, then Install app from file* in Splunk Web.
 
 If instead you unpack the package by hand - which is the natural thing to do on
 an air-gapped box - the files end up owned by whoever ran `tar`, usually root,
