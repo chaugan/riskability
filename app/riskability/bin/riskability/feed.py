@@ -52,9 +52,17 @@ ATTACK_MEMBER = "attack.jsonl"
 # A missing member means "no tactic data", which the matrix panel says plainly
 # rather than drawing an empty grid.
 TACTICS_MEMBER = "tactics.jsonl"
+
+# The CVE Program catalogue: descriptions and product names for the
+# encyclopaedia. Optional for the same reason as the two above, and more
+# strongly: it is the largest member by far, an operator may reasonably decline
+# to carry it across an air gap, and a bundle without it must still import and
+# still match. Its absence means the encyclopaedia shows what the advisories
+# already say, which is a poorer page rather than a broken one.
+CVEDETAIL_MEMBER = "cvedetail.jsonl"
 MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
-           ATTACK_MEMBER, TACTICS_MEMBER)
-OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER)
+           ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER)
+OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -331,12 +339,107 @@ def normalize_kev(catalog: dict) -> Dict[str, dict]:
         cve = (item.get("cveID") or "").upper()
         if not cve:
             continue
+        # The catalogue carries far more than the three date fields this used
+        # to keep, and it is the only source in the whole feed that names a
+        # product in the words a human would use. "TrueConf Server", not
+        # "pkg:deb/ubuntu/trueconf-server". It also says what the vulnerability
+        # actually does and what CISA requires be done about it. All of it is
+        # in a file already downloaded, and the catalogue is only a couple of
+        # thousand entries, so keeping it costs almost nothing and applies to
+        # exactly the vulnerabilities an operator most needs to understand.
+        vendor = (item.get("vendorProject") or "").strip()
+        product = (item.get("product") or "").strip()
         out[cve] = {
             "kev_added": item.get("dateAdded", ""),
             "kev_due": item.get("dueDate", ""),
             "kev_ransomware": item.get("knownRansomwareCampaignUse", ""),
+            "kev_vendor": vendor,
+            "kev_product": product,
+            # Pre-joined, because every consumer wants them together and a
+            # lookup cannot concatenate two fields without an eval per panel.
+            "kev_name": (vendor + " " + product).strip(),
+            "kev_title": (item.get("vulnerabilityName") or "").strip(),
+            "kev_description": (item.get("shortDescription") or "").strip(),
+            "kev_action": (item.get("requiredAction") or "").strip(),
+            # Semicolon separated in the source; kept verbatim so a dashboard
+            # can split it without guessing at the delimiter.
+            "kev_notes": (item.get("notes") or "").strip(),
         }
     return out
+
+
+def normalize_cvelist(record: dict) -> Optional[dict]:
+    """One CVE Program record (JSON 5.0) -> the fields worth carrying offline.
+
+    This is the only source in the feed that names a product the way a person
+    would: "Red Hat OpenShift Virtualization 4.17", not a purl. Distribution
+    advisories describe their own packaging and frequently carry no prose at
+    all, so without this the encyclopaedia has an id, a score and little else.
+
+    References are deliberately capped rather than kept whole. They are URLs,
+    and on a search head with no route to the internet nobody can follow one;
+    keeping every reference costs 52 MB across the catalogue to store links
+    that cannot be clicked. Three is enough to write down and look up later
+    from a machine that does have a connection.
+    """
+    meta = record.get("cveMetadata") or {}
+    cve_id = (meta.get("cveId") or "").upper()
+    if not cve_id:
+        return None
+    cna = (record.get("containers") or {}).get("cna") or {}
+
+    description = ""
+    for d in cna.get("descriptions") or []:
+        if (d.get("lang") or "").lower().startswith("en"):
+            description = (d.get("value") or "").strip()
+            break
+
+    products = []
+    for a in cna.get("affected") or []:
+        product = (a.get("product") or "").strip()
+        if not product or product == "n/a":
+            continue
+        vendor = (a.get("vendor") or "").strip()
+        if vendor and vendor != "n/a" and not product.lower().startswith(vendor.lower()):
+            product = vendor + " " + product
+        if product not in products:
+            products.append(product)
+
+    cwes = []
+    for pt in cna.get("problemTypes") or []:
+        for d in pt.get("descriptions") or []:
+            cwe = (d.get("cweId") or "").strip()
+            if cwe and cwe not in cwes:
+                cwes.append(cwe)
+
+
+    # A record with nothing to say is not worth a row. "state" is REJECTED for
+    # withdrawn CVE ids, which should not appear in an encyclopaedia as though
+    # they were real.
+    if (meta.get("state") or "").upper() == "REJECTED":
+        return None
+    if not description and not products:
+        return None
+
+    # Shaped for the KV Store here rather than at import time, because the
+    # decisions are about what is worth carrying across an air gap and that is
+    # a build question. _key is the CVE id, so re-importing cannot produce two
+    # rows for one CVE and a lookup is a primary key hit.
+    #
+    # References are deliberately absent. Measured across the catalogue they
+    # cost 52 MB to store URLs that cannot be followed from a search head with
+    # no route to the internet, which is the only kind this app is built for.
+    # Product names cost 10 MB and are the thing no other source in the feed
+    # provides, so they stay.
+    return {
+        "_key": cve_id,
+        "cve_id": cve_id,
+        "description": description,
+        "products": "\n".join(products[:12]),
+        "cwes": ",".join(cwes),
+        "assigner": (meta.get("assignerShortName") or "").strip(),
+        "published": (meta.get("datePublished") or "")[:10],
+    }
 
 
 def normalize_epss(lines: Iterable[str]) -> Dict[str, dict]:
@@ -571,6 +674,25 @@ def verify_members(path: str, manifest: dict) -> None:
                 "was damaged after it was built -- most likely an interrupted or "
                 "truncated copy. Nothing has been imported; the existing feed is "
                 "unchanged. Copy the bundle across again.")
+
+
+def has_member(path: str, member_name: str) -> bool:
+    """Whether a bundle carries an optional member, without reading it."""
+    with tarfile.open(path, "r:gz") as tar:
+        return any(m.name == member_name for m in _safe_members(tar))
+
+
+def read_cvedetail_member(path: str) -> Iterator[dict]:
+    """The CVE catalogue out of a bundle, or FileNotFoundError if absent.
+
+    Distinguished from an empty member on purpose. "This bundle was built
+    without the CVE Program source" and "this bundle's catalogue is empty" are
+    different problems with different fixes, and a caller that cannot tell them
+    apart will report the wrong one.
+    """
+    if not has_member(path, CVEDETAIL_MEMBER):
+        raise FileNotFoundError(CVEDETAIL_MEMBER)
+    return iter_member(path, CVEDETAIL_MEMBER)
 
 
 def iter_member(path: str, member_name: str) -> Iterator[dict]:

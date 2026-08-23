@@ -1,0 +1,251 @@
+<form version="1.1" theme="dark" stylesheet="application.css">
+  <label>CVE encyclopaedia</label>
+  <description>Everything the imported feed knows about one vulnerability, and where it sits in this fleet.</description>
+  <fieldset submitButton="false" autoRun="true">
+    <input type="text" token="cve_tok" searchWhenChanged="true">
+      <label>CVE</label>
+      <default>CVE-2023-4863</default>
+      <initialValue>CVE-2023-4863</initialValue>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-note" style="margin:0 0 4px">
+          <b>Offline. Nothing here is looked up on the internet.</b>
+          <span>
+            Every field below the fleet table comes from the bundle you imported, so it reads the
+            same on any instance holding the same feed. A CVE the feed has never heard of returns
+            nothing, which is not the same as a CVE that is harmless: check Coverage to see which
+            sources the bundle actually carries.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Severity, as scored</title>
+      <single>
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)` | eval v = if(isnull(cvss_score), "not scored", tostring(round(cvss_score,1))) | fields v</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorBy">value</option>
+        <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
+        <option name="rangeValues">[4,7,9]</option>
+        <option name="useColors">1</option>
+        <option name="underLabel">CVSS base score</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Exploitation likelihood</title>
+      <single>
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)`
+| eval v = if(isnull(epss), "unscored", tostring(round(epss*100,1)) . "%") | fields v</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="underLabel">EPSS, next 30 days</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Known exploited</title>
+      <single>
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)`
+| eval v = if(kev_added != "", "YES", "not listed") | fields v</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorBy">value</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="underLabel">CISA KEV catalogue</option>
+      </single>
+    </panel>
+    <panel>
+      <title>In this fleet</title>
+      <single>
+        <search>
+          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$" AND status="open"
+| stats dc(hostname) AS v</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorBy">value</option>
+        <option name="useColors">1</option>
+        <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
+        <option name="rangeValues">[0]</option>
+        <option name="underLabel">hosts with it open</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What it is</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)`
+| eval Product = if(kev_name != "", kev_name, "not named by the feed")
+| eval Name = if(kev_title != "", kev_title, "")
+| eval Description = case(kev_description != "", kev_description,
+                          best_title != "", best_title,
+                          1=1, "No description in any advisory the bundle carries for this CVE.")
+| eval "What CISA requires" = if(kev_action != "", kev_action, "")
+| eval Published = published, Modified = modified
+| table Product, Name, Description, "What CISA requires", Published, Modified
+| transpose 6 column_name="Field" header_field=Product
+| rename "Field" AS " ", "not named by the feed" AS "  "</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No advisory for that CVE in this feed.</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>The authoritative record</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_cvedetail_lookup where cve_id="$cve_tok$"
+| eval Product = if(products!="", replace(products, "\n", ", "), "not named by the CVE record")
+| eval Description = if(description!="", description, "The CVE record carries no English description.")
+| eval Weakness = if(cwes!="", cwes, "")
+| eval "Published by" = trim(assigner . " " . published)
+| table Product, Description, Weakness, "Published by"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Not in the CVE Program catalogue. Either this bundle was built without the CVE Program source, or the id was published after the bundle was built. It says nothing about whether the vulnerability affects this fleet.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            From the CVE Program's own record, which is the only source in the feed that names a
+            product the way a person would rather than as a package identifier. It arrives with the
+            feed you imported, so it is present on every search head the feed reached and nothing
+            here touches the network. Empty means the bundle was built without the CVE Program
+            source.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What an attacker needs, read from the CVSS vector</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)`
+| `riskability_cvss_english`
+| table Vector, Reach, Complexity, Privileges, "User interaction", Confidentiality, Integrity, Availability</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No CVSS vector for this CVE in the feed.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            This is the vector spelled out, nothing more. It describes the vulnerability as
+            published, not this fleet: whether your copy answers a network address is on the
+            <b>Exposure</b> page, and it is a different question.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Weakness class, and the techniques it would enable</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>`riskability_cve_facts($cve_tok$)`
+| fields cwes
+| mvexpand cwes
+| rename cwes AS cwe
+| where cwe != ""
+| lookup riskability_attack_lookup cwe OUTPUT technique, technique_name, tactics, via_capec
+| eval Technique = if(isnull(technique), "no ATT&amp;CK mapping in this bundle", technique . " " . technique_name)
+| eval Tactics = mvjoin(tactics, ", ")
+| eval Route = if(via_capec="1", "via CAPEC", "direct")
+| stats values(Technique) AS Technique, values(Tactics) AS Tactics, values(Route) AS Route BY cwe
+| rename cwe AS CWE</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No weakness class recorded for this CVE. Around a third of advisories carry no CWE, and the ATT&amp;CK mapping needs the MITRE source in the bundle.</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>In this fleet</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$"
+| eval rk_key = if(match(coalesce(scope_id, ""), "^container:"),
+      "container:" . substr(replace(scope_id, "^container:", ""), 1, 12), package)
+| lookup riskability_reach_lookup hostname, rk_key OUTPUT reach_class
+| eval Reach = coalesce(reach_class, "not assessed")
+| eval Accepted = if(accepted="1", "yes", "")
+| table hostname, package, last_version, fixed_version, scope, scope_id, confidence, Reach, status, Accepted, first_seen
+| rename hostname AS Host, package AS Package, last_version AS Installed, fixed_version AS "Fixed in",
+         scope AS Scope, scope_id AS Root, confidence AS Confidence, status AS Status,
+         first_seen AS "First seen"
+| sort 0 Host, Package</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing in this fleet matches this CVE. That means no host reports an affected package at an affected version, not that the fleet is immune: check Coverage for what the feed cannot assess.</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What the feed says is affected</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_ranges_lookup where cve_id="$cve_tok$"
+| eval Introduced = if(introduced="", "any earlier version", introduced)
+| eval Fixed = case(fixed != "", fixed, last_affected != "", "no fix; last affected " . last_affected, 1=1, "no fix published")
+| eval Distribution = trim(distro . " " . distro_release)
+| stats values(Fixed) AS Fixed, values(Introduced) AS Introduced BY ecosystem, package, Distribution
+| rename ecosystem AS Ecosystem, package AS Package
+| sort 0 Ecosystem, Package, Distribution</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No affected ranges for this CVE in the bundle.</option>
+      </viz>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Where this came from</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_advisories_lookup where cve_id="$cve_tok$"
+| eval Reference = if(url != "", url, "")
+| table feed_source, advisory_id, Reference, kev_notes
+| rename feed_source AS Source, advisory_id AS "Advisory id", kev_notes AS "CISA notes"
+| sort 0 Source</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No advisory rows for this CVE.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            One CVE usually has several advisories: the upstream one, plus one per distribution
+            that shipped a fix. They disagree about version numbers on purpose, because each
+            describes its own packaging.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</form>

@@ -48,6 +48,13 @@ COLLECTIONS = {
     "notaffected": "riskability_notaffected",
     "attack": "riskability_attack",
     "tactics": "riskability_tactics",
+    # The CVE encyclopaedia. Kept here rather than in a local file so that a
+    # search head cluster distributes it the way it distributes everything else
+    # in this feed: one import, replicated by the KV Store, no per-member
+    # command and no member quietly serving a stale copy. It is the largest
+    # collection by bytes and the smallest by rows read, since a page renders
+    # exactly one of them.
+    "cvedetail": "riskability_cvedetail",
 }
 
 MEMBER_FOR = {
@@ -56,6 +63,7 @@ MEMBER_FOR = {
     "notaffected": feedlib.NOTAFFECTED_NAME,
     "attack": feedlib.ATTACK_MEMBER,
     "tactics": feedlib.TACTICS_MEMBER,
+    "cvedetail": feedlib.CVEDETAIL_MEMBER,
 }
 
 # Per-ecosystem package counts, derived while streaming ranges rather than

@@ -91,6 +91,18 @@ function columnFloor(available, count) {
 /* The same semantic colours the charts use, so a "high" is the same red
  * wherever it appears. Keyed on the VALUE, not the column, because the same
  * words carry the same meaning in confidence, severity and status columns. */
+// Deliberately strict. A loose pattern would turn any string that merely
+// contains "CVE" into a link, including the free text of an advisory title.
+var CVE_RE = /^CVE-\d{4}-\d{4,7}$/i;
+
+// Built relative to the app root, which is what makes this survive a reverse
+// proxy or a root_endpoint prefix. An absolute /en-US/... path would escape the
+// prefix and 404 for anybody not reaching Splunk on its bare hostname.
+function cveHref(cve) {
+    var base = window.location.pathname.replace(/\/[^/]*$/, '');
+    return base + '/riskability_cve?form.cve_tok=' + encodeURIComponent(cve.toUpperCase());
+}
+
 var VALUE_COLOR = {
     critical: '#a4302a', high: '#dc4e41',
     medium: '#f8be34', moderate: '#f8be34',
@@ -340,6 +352,32 @@ export default SplunkVisualizationBase.extend({
             }
             if (numeric) { col.hozAlign = 'right'; }
             if (hidden.indexOf(title.toLowerCase()) !== -1) { col.visible = false; }
+            // A CVE id is rendered as a link into the encyclopaedia, wherever
+            // it appears and whatever the column is called. Done as a
+            // formatter rather than a click handler on purpose: a link shows
+            // the reader that the cell is clickable, opens in a new tab
+            // without any JavaScript of ours, and cannot fight the row
+            // selection that Findings needs for accepting a risk. A click
+            // handler would have had to guess whether it was competing with
+            // selection or with a drilldown.
+            if (!isColoured(title)) {
+                col.formatter = function (cell) {
+                    var v = cell.getValue();
+                    var text = v === null || v === undefined ? '' : String(v);
+                    if (!CVE_RE.test(text)) { return text; }
+                    var a = document.createElement('a');
+                    a.className = 'rk-grid-cve';
+                    a.textContent = text;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.title = 'Open ' + text + ' in the CVE encyclopaedia';
+                    a.href = cveHref(text);
+                    // Selecting a row and opening a reference are different
+                    // intentions; clicking the link must not also tick the box.
+                    a.addEventListener('click', function (ev) { ev.stopPropagation(); });
+                    return a;
+                };
+            }
             if (isColoured(title)) {
                 col.formatter = function (cell) {
                     var v = cell.getValue();
