@@ -44,6 +44,14 @@ for app in "${APPS[@]}"; do
   # artefact that ships; the sources it was built from stay in the repo, and
   # THIRD-PARTY.md records the pinned versions so the bundle is reproducible.
   find "$STAGE/$app" -name 'node_modules' -type d -prune -exec rm -rf {} + 2>/dev/null || true
+  # Anything git does not track has no business in a shipped package. The app
+  # directory is copied wholesale, so a gitignored directory sitting in a
+  # developer's tree rides along silently: app/riskability/vectors/ - 1.8 MB of
+  # lance index belonging to an unrelated tool - was inside every .spl built
+  # here. Nobody would have found it by reading the repository, because it is
+  # not in the repository.
+  rm -rf "$STAGE/$app/vectors"
+
 
   # Build artefacts. AppInspect fails a package containing bytecode.
   find "$STAGE/$app" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
@@ -201,6 +209,7 @@ need TA-riskability-indexes "TA-riskability-indexes/default/indexes.conf" "index
 for app in "${APPS[@]}"; do
   forbid "$app" "/local/"     "local/ is the user's layer and must not be shipped"
   forbid "$app" "__pycache__" "bytecode fails AppInspect"
+  forbid "$app" "vectors/" "untracked developer data must not ship"
 done
 
 # The modular input's mode must survive packaging.

@@ -260,8 +260,15 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         if not status or status.get("state") in ("done", "failed", None):
             try:
                 payload["verify"] = importer.verify(service.kvstore)
-            except Exception:
-                pass
+            except Exception as exc:
+                # Reported, not swallowed. A bare pass here hid a KeyError in
+                # verify() for its whole life: the key was simply absent from
+                # the reply, and the page only warns when it reads
+                # consistent === false, so a check that never ran looked
+                # exactly like a check that passed. consistent is None rather
+                # than False - the check did not fail, it did not run, and the
+                # page must not claim corruption it has not seen.
+                payload["verify"] = {"consistent": None, "error": str(exc)}
         return _reply(200, payload)
 
     def _post(self, request):

@@ -448,11 +448,20 @@ def verify(kvstore) -> dict:
     """
     state = current_state(kvstore) or {}
     gen = live_generation(kvstore)
+    # One key per entry in COLLECTIONS, and .get rather than [] on the way out.
+    # This dict was missing "tactics" while COLLECTIONS has had it, so the loop
+    # below raised KeyError('tactics') on every call. The REST handler catches
+    # Exception and drops the key from its reply, and the admin page only warns
+    # when it reads consistent === false, so the one check that catches a
+    # truncated collection masquerading as a healthy feed had never once run.
+    # A guard that fails silently is worse than no guard: it is a guard the
+    # reader believes in.
     claimed = {
         "ranges": int(state.get("range_count") or 0),
         "advisories": int(state.get("advisory_count") or 0),
         "notaffected": int(state.get("notaffected_count") or 0),
         "attack": int(state.get("attack_count") or 0),
+        "tactics": int(state.get("tactic_count") or 0),
     }
     out = {"generation": gen, "claimed": claimed, "readable": {}, "consistent": True}
 
@@ -460,7 +469,7 @@ def verify(kvstore) -> dict:
         return out
 
     for kind, collection in COLLECTIONS.items():
-        if claimed[kind] <= 0:
+        if claimed.get(kind, 0) <= 0:
             out["readable"][kind] = True
             continue
         try:
