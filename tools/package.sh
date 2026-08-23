@@ -161,6 +161,16 @@ forbid() {
   fi
 }
 
+# Splunk's runtime parser tolerates a continuation line that lost its trailing
+# backslash; the Splunkbase Packaging Toolkit refuses the whole submission over
+# it. Checked here so the answer arrives now rather than after an upload.
+if ! python3 "$ROOT/tools/conf_lint.py" > "$STAGE/conflint.txt" 2>&1; then
+  grep '  BAD' "$STAGE/conflint.txt" || cat "$STAGE/conflint.txt"
+  fail=1
+else
+  printf '  ok    %-52s\n' "every conf parses under strict rules"
+fi
+
 # The search-head app: everything the dashboards and matcher need at runtime.
 structure "$ROOT/app/riskability"
 
@@ -272,6 +282,28 @@ PYEOF
   fi
 else
   printf '  BAD   %-52s\n' "riskability: feed builder archive missing"; fail=1
+fi
+
+# The Splunkbase Packaging Toolkit is the thing that actually accepts or refuses
+# the upload, and Splunk ships it at /opt/splunk/bin/slim. Running it here turns
+# "the submission was rejected" into a build failure. Skipped LOUDLY when the
+# dev container is down: a check that silently does nothing is worse than one
+# that is absent.
+if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx riskability-splunk; then
+  for app in "${APPS[@]}"; do
+    docker cp "$DIST/${app}-${VERSION}.tar.gz" riskability-splunk:/tmp/ >/dev/null 2>&1
+    out=$(docker exec -u splunk riskability-splunk /opt/splunk/bin/slim validate \
+          "/tmp/${app}-${VERSION}.tar.gz" 2>&1 | grep -viE 'syntaxwarning|if self\.' || true)
+    if printf '%s' "$out" | grep -q 'ERROR'; then
+      printf '%s\n' "$out" | grep 'ERROR'
+      printf '  BAD   %-52s\n' "$app: slim validate reported errors"; fail=1
+    else
+      n=$(printf '%s' "$out" | grep -c 'WARNING' || true)
+      printf '  ok    %-52s (%s warnings)\n' "$app: slim validate passed" "$n"
+    fi
+  done
+else
+  echo "  SKIP  slim validate: riskability-splunk is not running"
 fi
 
 echo
