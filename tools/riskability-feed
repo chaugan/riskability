@@ -32,7 +32,9 @@ import argparse
 import io
 import json
 import os
+import shutil
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -60,6 +62,7 @@ NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.g
 NVD_FIRST_YEAR = 2002
 
 # MITRE's own catalogues. Small, and each hop is a published mapping.
+CVELIST_LATEST_API = "https://api.github.com/repos/CVEProject/cvelistV5/releases/latest"
 CWE_URL = "https://cwe.mitre.org/data/csv/1000.csv.zip"
 CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
 # The only published source for which tactic a technique belongs to. CAPEC gives
@@ -401,6 +404,46 @@ def cmd_build(args) -> int:
             advisory.update(epss[cve])
         writer.add_advisory(advisory)
 
+    # Last, because it is by far the largest fetch: everything above is already
+    # written by the time this runs, so a failure here still leaves a usable
+    # bundle rather than throwing away an hour of downloads.
+    if args.cve_list or args.cve_list_file:
+        try:
+            if args.cve_list_file:
+                blob, origin = args.cve_list_file, args.cve_list_file
+            else:
+                print(f"fetching CVE Program  {CVELIST_LATEST_API}", file=sys.stderr)
+                with _open(CVELIST_LATEST_API) as r:
+                    rel = json.loads(r.read().decode("utf-8"))
+                asset = next((a for a in rel.get("assets", [])
+                              if "all_CVEs" in a.get("name", "")), None)
+                if asset is None:
+                    raise RuntimeError("no all_CVEs asset in the latest cvelistV5 release")
+                origin = asset["browser_download_url"]
+                print(f"  {rel.get('tag_name','')}, {asset['size']/1e6:.0f} MB, "
+                      f"this takes a while", file=sys.stderr)
+                blob = os.path.join(tempfile.gettempdir(), "riskability-cvelist.zip")
+                with _open(origin) as r, open(blob, "wb") as fh:
+                    shutil.copyfileobj(r, fh, 1024 * 1024)
+            kept = 0
+            for record in feedlib.iter_cvelist_archive(blob):
+                row = feedlib.normalize_cvelist(record)
+                if row is None:
+                    continue
+                writer.write(feedlib.CVEDETAIL_MEMBER, row)
+                kept += 1
+                if kept % 25000 == 0:
+                    print(f"  {kept} CVEs", file=sys.stderr)
+            print(f"  {kept} CVEs with a description or a named product", file=sys.stderr)
+            sources.append({"name": "cve-program", "url": origin,
+                            "fetched_at": int(time.time()), "records": kept,
+                            "licence": "CVE Program terms of use, redistribution permitted"})
+            if not args.cve_list_file and os.path.exists(blob):
+                os.unlink(blob)
+        except Exception as exc:
+            print(f"  ERROR {exc} - continuing without the CVE Program catalogue",
+                  file=sys.stderr)
+
     manifest = writer.close(bundle_version=args.version or "")
 
     print(f"\nwrote {args.out}", file=sys.stderr)
@@ -444,6 +487,15 @@ def main(argv=None) -> int:
                         "Needed for Windows and other unmanaged software.")
     b.add_argument("--mitre", action="store_true",
                    help="include the MITRE CWE->CAPEC->ATT&CK mapping")
+    b.add_argument("--cve-list", action="store_true",
+                   help="include the CVE Program catalogue: descriptions and product "
+                        "names for the CVE encyclopaedia. About 600 MB to download and "
+                        "roughly 120 MB in the bundle, so it is opt in. Without it the "
+                        "encyclopaedia shows only what distribution advisories say, "
+                        "which is often an id and a score with no prose at all.")
+    b.add_argument("--cve-list-file", default="",
+                   help="read the CVE Program catalogue from an already downloaded "
+                        "release zip instead of fetching it")
     b.add_argument("--kev", action="store_true", help="include CISA KEV")
     b.add_argument("--kev-file", default="",
                    help="read the CISA KEV catalogue from a local JSON file instead of "

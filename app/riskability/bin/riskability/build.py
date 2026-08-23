@@ -19,6 +19,8 @@ import gzip
 import io
 import json
 import os
+import shutil
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -41,6 +43,12 @@ EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz"
 NVD_FIRST_YEAR = 2002
 NVD_LATEST_YEAR = 2026
+# The CVE Program's own records, which are the only source in the feed that
+# names a product the way a person says it. Published as a dated release asset
+# rather than a stable path, so the tag is resolved at fetch time. Large: about
+# 600 MB, which is why it is opt in.
+CVELIST_LATEST_API = "https://api.github.com/repos/CVEProject/cvelistV5/releases/latest"
+
 CWE_URL = "https://cwe.mitre.org/data/csv/1000.csv.zip"
 CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
 
@@ -209,6 +217,8 @@ def build_bundle(
     ecosystems: Optional[List[str]] = None,
     nvd: str = "",
     mitre: bool = False,
+    cve_list: bool = False,
+    cve_list_file: str = "",
     kev: bool = False,
     epss: bool = False,
     kev_file: str = "",
@@ -397,6 +407,46 @@ def build_bundle(
         if cve in epss_map:
             advisory.update(epss_map[cve])
         writer.add_advisory(advisory)
+
+    # The CVE Program catalogue, last because it is by far the largest fetch and
+    # everything above should already be safely written if it fails.
+    if cve_list or cve_list_file:
+        say("fetching the CVE Program catalogue (about 600 MB, this takes a while)")
+        try:
+            if cve_list_file:
+                blob_path = cve_list_file
+                origin = cve_list_file
+            else:
+                with _open(CVELIST_LATEST_API) as r:
+                    rel = json.loads(r.read().decode("utf-8"))
+                asset = next((a for a in rel.get("assets", [])
+                              if "all_CVEs" in a.get("name", "")), None)
+                if asset is None:
+                    raise feedlib.FeedError("no all_CVEs asset in the latest cvelistV5 release")
+                origin = asset["browser_download_url"]
+                say(f"  {rel.get('tag_name','')}, {asset['size']/1e6:.0f} MB")
+                blob_path = os.path.join(tempfile.gettempdir(),
+                                         "riskability-cvelist.zip")
+                with _open(origin) as r, open(blob_path, "wb") as fh:
+                    shutil.copyfileobj(r, fh, 1024 * 1024)
+
+            kept = 0
+            for record in feedlib.iter_cvelist_archive(blob_path):
+                row = feedlib.normalize_cvelist(record)
+                if row is None:
+                    continue
+                writer.write(feedlib.CVEDETAIL_MEMBER, row)
+                kept += 1
+                if kept % 25000 == 0:
+                    say(f"  {kept} CVEs")
+            say(f"  {kept} CVEs with a description or a named product")
+            sources.append({"name": "cve-program", "url": origin,
+                            "fetched_at": int(time.time()), "records": kept,
+                            "licence": "CVE Program terms of use, redistribution permitted"})
+            if not cve_list_file and os.path.exists(blob_path):
+                os.unlink(blob_path)
+        except Exception as exc:
+            failed("CVE Program catalogue", exc)
 
     manifest = writer.close(bundle_version=version or "", warnings=warnings)
 

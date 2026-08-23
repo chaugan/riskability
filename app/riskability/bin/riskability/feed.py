@@ -30,6 +30,7 @@ import json
 import os
 import re
 import tarfile
+import zipfile
 import time
 from typing import Dict, Iterable, Iterator, List, Optional, Tuple
 
@@ -368,6 +369,49 @@ def normalize_kev(catalog: dict) -> Dict[str, dict]:
     return out
 
 
+def iter_cvelist_archive(path: str) -> Iterable[dict]:
+    """Stream CVE records out of the cvelistV5 release archive.
+
+    Streamed from the file rather than read into memory: the archive is about
+    600 MB compressed and several GB expanded, and a build host is not
+    necessarily a large machine. The release asset is a zip whose entries are
+    themselves sometimes a nested zip, which is why the inner PK check exists;
+    the published name really is "...zip.zip".
+    """
+    with zipfile.ZipFile(path) as z:
+        for info in z.infolist():
+            if info.is_dir():
+                continue
+            name = info.filename
+            if name.endswith(".zip"):
+                with z.open(info) as fh:
+                    inner = fh.read()
+                if inner[:2] == b"PK":
+                    with zipfile.ZipFile(io.BytesIO(inner)) as z2:
+                        for i2 in z2.infolist():
+                            if i2.is_dir() or not i2.filename.endswith(".json"):
+                                continue
+                            with z2.open(i2) as f2:
+                                try:
+                                    yield json.loads(f2.read().decode("utf-8"))
+                                except (json.JSONDecodeError, UnicodeDecodeError):
+                                    continue
+                continue
+            if not name.endswith(".json"):
+                continue
+            # delta and metadata files sit alongside the records and are not
+            # CVE records; they have no cveMetadata and are skipped by the
+            # normaliser, but skipping them here avoids the parse entirely.
+            base = os.path.basename(name)
+            if not base.upper().startswith("CVE-"):
+                continue
+            with z.open(info) as fh:
+                try:
+                    yield json.loads(fh.read().decode("utf-8"))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    continue
+
+
 def normalize_cvelist(record: dict) -> Optional[dict]:
     """One CVE Program record (JSON 5.0) -> the fields worth carrying offline.
 
@@ -490,10 +534,11 @@ class BundleWriter:
         os.makedirs(self._dir, exist_ok=True)
         self._files: Dict[str, io.TextIOWrapper] = {}
         self._counts = {ADVISORIES_NAME: 0, RANGES_NAME: 0, NOTAFFECTED_NAME: 0,
-                        ATTACK_MEMBER: 0, TACTICS_MEMBER: 0}
+                        ATTACK_MEMBER: 0, TACTICS_MEMBER: 0, CVEDETAIL_MEMBER: 0}
         self._staging = self._tmp + ".d"
         os.makedirs(self._staging, exist_ok=True)
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
+                     CVEDETAIL_MEMBER,
                      TACTICS_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
@@ -522,6 +567,7 @@ class BundleWriter:
 
         digests = {}
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
+                     CVEDETAIL_MEMBER,
                      TACTICS_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
