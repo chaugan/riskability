@@ -7,7 +7,7 @@ collects from every host, correlates it against vulnerability data an operator
 supplies by hand, and reports what is actually exposed - on a search head that
 has no route to the internet.
 
-The app makes **no outbound network requests at all**. That is the point.
+The app makes **no outbound network requests at all**.
 
 ---
 
