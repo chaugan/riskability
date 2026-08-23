@@ -62,9 +62,18 @@ done
 # and node_modules/ are inputs to the build rather than served files, so a
 # change there only matters if it changed the bundle, which the hash of the
 # bundle already reflects.
+#
+# static/ as well as appserver/static/, and the two are different directories:
+# the app icons live in the first and the dashboards' scripts in the second.
+# Both go out behind the same cache key, so an icon replaced without a bump
+# would keep showing the old one for a year - which is the same defect this
+# hash was widened once before to catch, when it watched only the two
+# visualization bundles and a fix to riskability_exceptions.js shipped without
+# a bump.
 asset_hash() {
-  find "$ROOT/app/riskability/appserver/static" -type f \
-       \( -name '*.js' -o -name '*.css' -o -name '*.html' \) \
+  find "$ROOT/app/riskability/appserver/static" "$ROOT/app/riskability/static" \
+       -type f \
+       \( -name '*.js' -o -name '*.css' -o -name '*.html' -o -name '*.png' \) \
        -not -path '*/node_modules/*' -not -path '*/src/*' \
     | sort | xargs sha256sum | sha256sum | cut -d' ' -f1
 }

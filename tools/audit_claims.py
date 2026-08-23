@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import collections
 import json
+import pathlib
 import os
 import subprocess
 import sys
@@ -27,8 +28,14 @@ from riskability import purl as purllib    # noqa: E402
 from riskability import scope as scopelib  # noqa: E402
 from riskability import vercmp             # noqa: E402
 
-LINUX = "/var/lib/swinv/linux-host-01-20260821T131132.312Z.json"
-WINDOWS = "/opt/code/portal/data/files/windows-host-01-20260821T131234.095Z.json"
+# The checked-in fixtures, not absolute paths on one developer's machine.
+# A script whose job is to let a reader verify the README's numbers is worth
+# nothing if only one person can run it, and it pointed at two files outside
+# the repository -- which is also how it came to report "0 of 501 Windows
+# components carry a CPE" long after the collector had started emitting them:
+# it was still reading the scan from before that changed.
+LINUX = ROOT / "testdata" / "ndjson" / "linux-host-01.ndjson"
+WINDOWS = ROOT / "testdata" / "ndjson" / "windows-host-01-v2.ndjson"
 BUNDLE = ROOT / "testdata" / "feeds" / "riskability-feed-full.tar.gz"
 
 results = []
@@ -42,8 +49,25 @@ def claim(name, value, note=""):
 
 
 def load(path):
-    with open(path) as f:
-        return json.load(f)
+    """Read a swinv scan, whether it is a JSON document or an NDJSON stream.
+
+    Returns the same shape either way, so callers keep using ["components"].
+    A component record is the one carrying no record_type: heartbeats, exposure
+    rows and container rows share the stream and are not components.
+    """
+    text = pathlib.Path(path).read_text(encoding="utf-8")
+    stripped = text.lstrip()
+    if stripped.startswith("{") and "\n{" not in stripped[:4096]:
+        return json.loads(text)
+    components = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        record = json.loads(line)
+        if not record.get("record_type"):
+            components.append(record)
+    return {"components": components}
 
 
 def main() -> int:

@@ -35,6 +35,36 @@
 
   <!-- An air-gapped feed is only as good as the last upload, so how stale it
        is comes first, before any number derived from it. -->
+  <!-- How old the numbers on this page are.
+       Every count above comes from an hourly rollup rather than from the
+       finding state, because reading the state per panel does not survive a
+       real fleet. The cost is that this page lags, and a reader comparing it
+       against Findings - which is live - sees two different totals and has no
+       way to tell which is wrong. So the lag is stated, and stated loudly once
+       it is bigger than the interval that produced it. -->
+  <search id="rk_rollup_age">
+    <query>| inputlookup riskability_openstate_host_lookup
+| stats max(rolled_at) AS rolled
+| eval rolled_label = if(isnull(rolled), "never",
+      strftime(rolled, "%Y-%m-%d %H:%M")),
+      rolled_mins = if(isnull(rolled), 99999, round((now() - rolled) / 60))</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <!-- Every child of a done handler that uses conditions must itself be a
+         condition. A bare set alongside them is silently ignored, which showed
+         up as the literal string $rollup_at$ printed in the callout. -->
+    <done>
+      <condition match="$result.rolled_mins$ &gt; 90">
+        <set token="rollup_at">$result.rolled_label$</set>
+        <set token="rollup_stale">1</set>
+      </condition>
+      <condition>
+        <set token="rollup_at">$result.rolled_label$</set>
+        <unset token="rollup_stale"></unset>
+      </condition>
+    </done>
+  </search>
+
   <row>
     <panel>
       <title>Vulnerability feed</title>
@@ -128,6 +158,11 @@
         <search>
           <query>| inputlookup riskability_openstate_host_lookup | stats sum(findings) AS n</query>
         </search>
+        <!-- No token in here. A single value's underLabel is rendered once,
+             before a done handler has set anything, and Splunk drops the whole
+             option rather than showing an unresolved token - so putting the
+             rollup timestamp here silently deleted the label instead. It goes
+             in the callout below, which is ordinary HTML and substitutes. -->
         <option name="underLabel">excluding accepted risks</option>
         <option name="rangeColors">["0x708794","0xf8be34","0xdc4e41"]</option>
         <option name="rangeValues">[1,100]</option>
@@ -162,11 +197,28 @@
   </row>
 
   <row>
+    <panel depends="$rollup_stale$">
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px">
+          <b>These counts are behind the finding state.</b>
+          <span>
+            Every total on this page comes from an hourly rollup, last written
+            $rollup_at$, and that is more than an hour ago. <b>Findings</b> reads the
+            current state and will show more, or fewer. The rollups exist because
+            reading the finding state once per panel does not survive a real fleet;
+            when they lag it is because a scheduled search has not run, which
+            <b>Start here</b> reports.
+          </span>
+        </div>
+      </html>
+    </panel>
     <panel>
       <html>
         <div class="rk-status rk-warn" style="margin:0">
           <b>Accepted risks are excluded from every other number on this page.</b>
           <span>
+            Every count above comes from an hourly rollup, last written $rollup_at$;
+            <b>Findings</b> reads the current state and can differ between runs.
             An accepted risk was reviewed and assigned another treatment, recorded with it.
             The vulnerability is still present: no open findings plus many accepted ones is
             not a clean fleet. Manage them on <b>Risk exceptions</b>.

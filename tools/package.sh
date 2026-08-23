@@ -138,6 +138,8 @@ forbid() {
 # The search-head app: everything the dashboards and matcher need at runtime.
 structure "$ROOT/app/riskability"
 
+need riskability "riskability/static/appIcon.png"                  "36px app icon; Splunk Web shows a placeholder without it"
+need riskability "riskability/static/appIcon_2x.png"               "72px app icon for high-DPI displays"
 need riskability "riskability/default/app.conf"                    "app identity"
 need riskability "riskability/default/collections.conf"            "KV Store collections and their indexes"
 need riskability "riskability/default/transforms.conf"             "lookup definitions"
