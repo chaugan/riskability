@@ -60,6 +60,13 @@ for app in "${APPS[@]}"; do
   # so there is one licence file in the tree and it cannot drift.
   cp "$ROOT/LICENSE" "$STAGE/$app/LICENSE"
 
+  # The vendored SDK carries an optional AI subpackage this app never imports.
+  # It needs Python 3.10 syntax, so it does not even parse on the interpreter
+  # Splunk runs, and shipping twenty files that cannot be compiled invites a
+  # question from every scanner that walks the package. Stripped here rather
+  # than from the vendored source, which stays complete for the next upgrade.
+  rm -rf "$STAGE/$app/bin/splunklib/ai"
+
   # Build artefacts. AppInspect fails a package containing bytecode.
   find "$STAGE/$app" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
   find "$STAGE/$app" \( -name '*.pyc' -o -name '.DS_Store' -o -name '*.swp' \) -delete 2>/dev/null || true
