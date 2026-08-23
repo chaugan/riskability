@@ -420,9 +420,9 @@ export default SplunkVisualizationBase.extend({
         // a table long enough to need a vertical scrollbar Tabulator hands out
         // the full width, the scrollbar then takes about fifteen pixels of it,
         // and the difference becomes a horizontal scrollbar under a table that
-        // fits. Redrawing after the layout has settled measures the width that
-        // actually exists, and is also the first point at which the column
-        // floor can be fitted to it.
+        // fits. This redraw measures the width that exists a frame later, and
+        // is the first point at which the column floor can be fitted to it.
+        // Only the first, though: the box keeps moving after this.
         this.table.on('tableBuilt', function () {
             var gen = self._generation;
             requestAnimationFrame(function () { self._settle(gen, true); });
