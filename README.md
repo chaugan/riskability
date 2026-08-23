@@ -145,19 +145,41 @@ advisory id, a single flaw is reported up to nine times.
 
 ## Architecture
 
-```
-  host                          search head (air-gapped)
-  ┌──────────────┐              ┌────────────────────────────────────┐
-  │ swinv        │   NDJSON     │ index=riskability_inventory        │
-  │  ↓           │ ───────────► │        ↓ latest state per path     │
-  │ universal    │  forwarder   │ riskabilitymatch (Python)          │
-  │ forwarder    │              │        ↓ KV Store lookup           │
-  └──────────────┘              │ index=riskability_findings         │
-                                │        ↓                           │
-  ┌──────────────┐   upload     │ dashboards / alerts                │
-  │riskability-  │ ───────────► │ KV Store: advisories, ranges       │
-  │feed (offline)│   by hand    └────────────────────────────────────┘
-  └──────────────┘
+```mermaid
+flowchart LR
+  subgraph connected["Connected machine (never the search head)"]
+    B["riskability-feed<br/>or the downloadable<br/>feedbuilder.zip"]
+    OSV["OSV, NVD, CISA KEV,<br/>FIRST EPSS, MITRE technique data"] --> B
+    B --> BUNDLE["bundle.tar.gz<br/>normalised, deduplicated"]
+  end
+
+  subgraph fleet["Every host"]
+    SW["swinv"] --> ND["NDJSON: components,<br/>heartbeat, exposure, container"]
+    ND --> UF["universal forwarder<br/>TA-riskability"]
+  end
+
+  subgraph sh["Search head - no outbound network"]
+    IMP["Feed administration<br/>upload or stage a file"]
+    WORKER["riskability_feedworker<br/>modular input, 60s"]
+    IDX["index=riskability_inventory"]
+    KVF[("KV Store<br/>advisories, ranges,<br/>attack, tactics")]
+    MATCH["riskabilitymatch<br/>Python search command"]
+    FIND["index=riskability_findings"]
+    STATE[("KV Store<br/>findings_state")]
+    ROLL[("KV Store<br/>openstate rollups")]
+    DASH["10 dashboards"]
+
+    IMP --> WORKER --> KVF
+    IDX --> MATCH
+    KVF --> MATCH
+    MATCH -->|collect| FIND
+    FIND -->|fold in| STATE
+    STATE --> ROLL --> DASH
+    STATE --> DASH
+  end
+
+  UF -->|"port 9997"| IDX
+  BUNDLE -.->|"carried by hand"| IMP
 ```
 
 Three packages ship, because Splunk resolves these settings on different tiers
@@ -172,6 +194,99 @@ and putting them in one app puts most of them in the wrong place:
 `indexes.conf` is a separate package deliberately. A universal forwarder does
 not index, and loading index definitions there makes it log
 `Required parameter=tstatsHomePath not configured` on every start.
+
+### How it actually works
+
+Nothing here is a daemon. Every moving part is either a Splunk scheduled search,
+a Python search command, or a modular input, so it is all visible in Splunk's own
+job inspector and logs.
+
+| Component | Kind | Job |
+|---|---|---|
+| `riskabilitymatch` | custom search command (`bin/riskability_match.py`) | Takes inventory rows, decides which are actually vulnerable, emits findings |
+| `riskability_feedworker` | modular input, 60s interval | Imports a staged bundle into the KV Store; also performs the opt-in direct fetch |
+| `riskability_feed_admin` | REST handler (`/riskability/feed`) | What **Feed administration** talks to: upload, stage, import, verify |
+| `riskability_exceptions` | REST handler (`/riskability/exceptions`) | Create, edit and revoke risk exceptions; writes the audit trail |
+| `riskabilityvercmp` | custom search command | Compares two versions the way the matcher would, for debugging a verdict |
+| 28 scheduled searches | `savedsearches.conf` | The hourly pipeline below |
+
+The matcher is split into small modules with one job each, because each is a
+place a wrong answer comes from:
+
+| Module | Decides |
+|---|---|
+| `scope.py` | Which filesystem root a component belongs to, and therefore which OS it should be judged against |
+| `purl.py` | What a package really is: its name, its ecosystem, and the source package behind a binary |
+| `vercmp.py` | Whether one version precedes another, using each ecosystem's own rules rather than string order |
+| `match.py` | Whether an advisory applies at all: distro, release, variant, authority and confidence |
+| `feed.py` | The bundle format, and normalising a dozen upstream shapes into one |
+| `importer.py` | Loading a bundle into the KV Store atomically, by generation |
+| `build.py` | Fetching upstream feeds and assembling a bundle, on a connected machine |
+
+#### The hourly pipeline
+
+The order is a contract rather than a convenience. Closing a finding is gated on
+evidence that the matcher's output actually reached the state collection, and
+that evidence is produced by four different searches at four different minutes.
+`tools/pipeline_order.py` prints the real order from the shipped conf file.
+
+```mermaid
+flowchart TD
+  A[":17 materialise findings<br/>only hosts whose digest, feed generation<br/>or matcher version changed"] --> B[":19-:23 snapshots<br/>host scan times, inventory state,<br/>ecosystems, listening ports, containers"]
+  B --> C[":25 fold in new findings<br/>index rows become one row per finding"]
+  C --> D[":26 acknowledge<br/>proves the matcher's output landed"]
+  D --> E[":27 close what the matcher<br/>no longer reports"]
+  E --> F[":30 checkpoint matched hosts<br/>records digest, generation, version"]
+  F --> G[":35-:41 lifecycle<br/>silent hosts, exception expiry,<br/>accepted-risk reconciliation"]
+  G --> H[":42-:45 rollups<br/>per host, per CVE, per dimension"]
+  H --> I[":45-:50 archive and<br/>catch-up fold"]
+  I --> J[":55 pipeline did not complete<br/>alerts if any host stalled"]
+```
+
+Two properties fall out of that shape, and both are the point:
+
+**Only changed hosts are re-matched.** A host is due for re-matching when its
+inventory digest, the feed generation, or the matcher version has moved - or
+when it has not been matched for 24 hours, so a host that failed for any reason
+heals itself. Everything else is skipped, which turns the hourly cost from
+O(fleet) into O(changed). The collector can send a small heartbeat carrying a
+digest instead of its whole component list; the app computes the digest itself
+for collectors that do not.
+
+**Dashboards read rollups, not findings.** Hourly searches maintain per-host,
+per-CVE and per-dimension summaries, so a fleet total is a read of a few
+thousand rows rather than a few million. The cost is that those pages lag by up
+to an hour, which **Fleet overview** states next to the numbers and warns about
+when the lag is longer than it should be.
+
+**Convergence is two cycles**, measured on a rebuilt-from-nothing instance by
+`tools/test_fresh_install.sh`: the first produces the final count, the second
+confirms it is stable.
+
+#### Where state lives
+
+| Where | Holds | Why there |
+|---|---|---|
+| `index=riskability_inventory` | What swinv reported, 30 days | Append-only; every scan is a complete statement |
+| `index=riskability_findings` | Findings as produced, 1 year | The matcher's raw output, before lifecycle |
+| `index=riskability_findings_archive` | What was found and when it was fixed, 2 years | History, kept out of the working set |
+| `index=riskability_audit` | The risk-exception trail, 5 years | Append-only: a register anyone can rewrite is not an audit trail |
+| KV Store, 23 collections | The feed, current finding state, rollups, exceptions | Indexed lookups; a search-time join at fleet scale is not viable |
+
+#### The tools
+
+| Script | Does |
+|---|---|
+| `tools/riskability-feed` | Builds a bundle from upstream feeds, on a connected machine |
+| `tools/make-feedbuilder.sh` | Packs that builder into the self-contained zip the admin page offers |
+| `tools/riskability-scan` | Runs the exact matching logic against a swinv file with no Splunk at all |
+| `tools/package.sh --verify` | Builds the three `.spl` files and checks what is inside them |
+| `tools/deploy-dev.sh`, `tools/deploy-uf.sh` | Sync into the local Splunk and forwarder |
+| `tools/build-viz.sh` | Builds the two ECharts visualizations and bumps the asset cache key |
+| `tools/test_fresh_install.sh` | Rebuilds everything from nothing and asserts 95 things about it |
+| `tools/build_demo_instance.sh` | Builds a populated demo instance from nothing, in the order a user installs in |
+| `tools/pipeline_cycle.sh` | Runs one full pass of the hourly pipeline on demand, rather than waiting for the hour |
+| `tools/test_*.py`, `tools/audit_claims.py` | Matching, scope and comparator suites; recomputes this file's numbers |
 
 ### Installing
 
@@ -440,6 +555,45 @@ Ten views, in nav order.
 | **Coverage** | What the feed *cannot* say anything about |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **Feed administration** | Build, upload and import bundles |
+
+Screenshots below are from a two-host test fleet - one Linux, one Windows - built
+from nothing by `tools/build_demo_instance.sh`, with a feed carrying 793,058
+advisories. The numbers in them are the ones this README quotes.
+
+### Start here
+![Start here](docs/screenshots/start-here.png)
+
+### Fleet overview
+![Fleet overview](docs/screenshots/fleet-overview.png)
+
+### Findings
+![Findings](docs/screenshots/findings.png)
+
+### Remediation
+![Remediation](docs/screenshots/remediation.png)
+
+### MITRE ATT&CK
+![MITRE ATT&CK](docs/screenshots/mitre-attack.png)
+
+### Exposure
+![Exposure](docs/screenshots/exposure.png)
+
+### Hosts
+![Hosts](docs/screenshots/hosts.png)
+
+### Coverage
+![Coverage](docs/screenshots/coverage.png)
+
+### Risk exceptions
+![Risk exceptions](docs/screenshots/risk-exceptions.png)
+
+### Feed administration
+![Feed administration](docs/screenshots/feed-administration.png)
+
+An import runs on the server and does not need the page kept open. The active
+feed stays searchable throughout, so importing does not blind the fleet:
+
+![Feed import in progress](docs/screenshots/feed-import-progress.png)
 
 
 ---

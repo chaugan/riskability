@@ -36,3 +36,8 @@ app/riskability/appserver/static/visualizations/*/node_modules/
 # running scale plan. Useful to keep beside the code, not part of what is
 # published with it.
 SCALE-TODO.md
+
+# The forwarder watch directory is runtime staging: both harnesses need it to
+# start empty, and both used to get there by deleting tracked fixtures. The
+# canonical scans live in testdata/scans/ instead.
+/docker/uf/swinv-data/

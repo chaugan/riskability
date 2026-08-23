@@ -539,10 +539,11 @@ do_teardown() { # <stage>
   # a scan in it would have the forwarder ingest a host before the stage that
   # is supposed to introduce it.
   #
-  # Note for whoever runs this next: docker/uf/swinv-data is tracked, and the
-  # scans checked in there are deleted by this line. That is deliberate -- the
-  # directory has to start empty -- but it does leave the working tree dirty.
-  # "git checkout docker/uf/swinv-data" puts them back afterwards.
+  # Nothing tracked lives here any more: the watch directory is runtime staging
+  # and is gitignored, and the canonical scans sit in testdata/scans/. This
+  # clears only what a previous run left behind, so it no longer dirties the
+  # working tree. mkdir because a fresh clone does not carry the directory.
+  mkdir -p "$SWINV"
   rm -f "$SWINV"/*.ndjson "$SWINV"/*.partial
   local f; f=$(ls "$SWINV" 2>/dev/null | wc -l | tr -d ' ')
   assert_num "$st" "the forwarder's watch directory is empty" eq 0 "$f"
