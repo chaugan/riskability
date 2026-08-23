@@ -52,9 +52,8 @@
     <panel>
       <html>
         <div id="rk-exc-toolbar" class="rk-exc-toolbar">
-          <span class="rk-exc-hint">Select rows to accept a risk. Every selected row must share
-            one CVE - one justification cannot honestly cover several different
-            vulnerabilities.</span>
+          <span class="rk-exc-hint">Select rows to accept a risk. All selected rows must share
+            one CVE - one justification cannot cover several vulnerabilities.</span>
           <span id="rk-exc-summary" class="rk-exc-summary"></span>
           <button id="rk-exc-accept" class="rk-exc-btn" type="button" disabled="disabled">
             Accept risk&#8230;</button>
@@ -88,18 +87,16 @@
              to abandon the dashboard for a raw search. -->
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.hideColumns">Key</option>
-        <option name="riskability.riskability_grid.emptyText">No findings matched. With the Confidence filter on "High only" this can mean the evidence was never strong enough to assert one, not that the fleet is clean - switch it to All to see what was found and why it was downgraded.</option>
+        <option name="riskability.riskability_grid.emptyText">No findings matched. On "High only" the evidence may never have been strong enough to assert one, which is not a clean fleet. Switch to All to see what was found and why it was downgraded.</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>The column filters narrow what is shown, not what was searched.</b>
+          <b>Column filters narrow what is shown, not what was searched.</b>
           <span>
-            Typing in a column header filters the rows already loaded into the page. It does
-            not re-run the search, so it cannot reach findings the search did not return, and
-            it does not change the panels on any other dashboard. For anything you intend to
-            act on, narrow it with the Confidence, Root and Host inputs above, which filter in
-            the search itself. "Download shown rows" likewise exports what is currently
-            displayed and filtered, not the whole result set.
+            A column header filters the rows already loaded: no re-run, no reach beyond what
+            the search returned, no effect on other dashboards. Filter in the search itself
+            with the Confidence, Root and Host inputs above. "Download shown rows" exports the
+            displayed, filtered rows, not the whole result set.
           </span>
         </div>
       </html>
@@ -114,13 +111,15 @@
         <ul>
           <li><b>high</b> - a distro or ecosystem advisory names this package and release, and both
               versions parsed cleanly under that ecosystem's rules.</li>
-          <li><b>informational</b> - an upstream version range covers a distribution package.
+          <li><b>informational</b> - an upstream version range covers a package the distribution
+              installs and maintains.
               Ubuntu and Red Hat backport fixes without changing the upstream version, so
               <code>openssl 3.0.13-0ubuntu3.4</code> may well already be patched against a CVE that
               upstream fixed in 3.0.14. Shown so it is not hidden; not asserted, because it is not known.</li>
-          <li><b>low</b> - the comparison could not be made properly: no comparator for the
-              ecosystem, an unparseable version such as <code>UNKNOWN</code>, or an identity inferred
-              from a binary rather than a package record.</li>
+          <li><b>low</b> - the identity came from a generated CPE rather than a package record,
+              which is every Windows finding, or was inferred from a binary; or the versions could
+              not be compared properly - no comparator for the ecosystem, or an unparseable version
+              such as <code>UNKNOWN</code>.</li>
         </ul>
       </html>
     </panel>

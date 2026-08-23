@@ -24,9 +24,9 @@
       <html>
         <div class="rk-status rk-warn" style="margin:0 0 4px;">
           <b>A low finding count is not the same as a secure fleet.</b>
-          <span>Components below with no feed coverage are not "clean" - they are unassessed.
-          Kernel modules, GitHub Actions and unmanaged binaries have no vulnerability feed at all;
-          other gaps usually mean the relevant ecosystem was not included when the bundle was built.</span>
+          <span>Components below with no feed coverage are unassessed, not clean. Kernel
+          modules, GitHub Actions and unmanaged binaries have no vulnerability feed at all;
+          other gaps usually mean the ecosystem was left out of the bundle.</span>
         </div>
       </html>
     </panel>
@@ -49,7 +49,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
-        <option name="riskability.riskability_chart.emptyText">No inventory has been received. Nothing can be assessed until swinv data reaches the index.</option>
+        <option name="riskability.riskability_chart.emptyText">No inventory received. Nothing can be assessed until swinv data reaches the index.</option>
         <option name="height">380</option>
         <!-- Navigational, not illustrative: a click narrows the two tables
              below to that ecosystem. Splunk's default for a drilldown with no
@@ -70,7 +70,7 @@
     <panel rejects="$eco_any$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click an ecosystem above to narrow everything below it to that ecosystem.</span>
+          <span class="rk-drill-hint">Click an ecosystem above to narrow everything below it.</span>
         </div>
       </html>
     </panel>
@@ -102,7 +102,7 @@
          identifier_pct AS "Identifiable %"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+        <option name="riskability.riskability_grid.emptyText">No inventory received yet.</option>
         <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>
@@ -118,7 +118,7 @@
 | rename root AS "Root", hostname AS "Host", packages AS "Packages", cves AS "CVEs"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No inventory has been received yet.</option>
+        <option name="riskability.riskability_grid.emptyText">No inventory received yet.</option>
         <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>
@@ -156,7 +156,7 @@
 | fields "Ecosystem", "Components in fleet", "Packages in feed", "Version ranges reachable", "Status"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">Every ecosystem in the fleet is covered by the imported feed. This is the one empty table here that is genuinely good news.</option>
+        <option name="riskability.riskability_grid.emptyText">Every ecosystem in the fleet is covered by the imported feed - the one empty table here that is good news.</option>
         <option name="riskability.riskability_grid.filterNote">$eco_label$</option>
       </viz>
     </panel>

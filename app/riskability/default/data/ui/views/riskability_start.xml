@@ -38,20 +38,18 @@
       <html>
         <div class="rk-start-lede">
           <h2>Riskability finds known vulnerabilities in the software your fleet actually has
-              installed - using CVE databases you carry in by hand.</h2>
+              installed, using CVE databases you carry in by hand.</h2>
           <p>
-            It is built for search heads that can never reach the internet. Nothing here
-            calls out to anything: the vulnerability data arrives as a file you build on a
-            connected machine and import on the <b>Feed administration</b> page, and the
-            inventory arrives from <b>swinv</b> through your forwarders.
+            Built for search heads with no internet access. Nothing calls out: the vulnerability
+            data is a file you build on a connected machine and import on
+            <b>Feed administration</b>; inventory arrives from <b>swinv</b> through your
+            forwarders.
           </p>
           <p class="rk-start-honest">
-            <b>The most important thing to know about every number in this app:</b> an empty
-            panel means <em>nothing was found</em>, which is not the same as <em>there is
-            nothing to find</em>. A feed that was never imported, a host that stopped
-            reporting, and a package no advisory covers all produce the same reassuring
-            zero. That is why the three clocks below come first, and why
-            <b>Coverage</b> exists at all.
+            <b>An empty panel means <em>nothing was found</em>, not that there is nothing to
+            find.</b> A feed never imported, a host that stopped reporting, and a package no
+            advisory covers all produce the same zero. Hence the three clocks below and the
+            <b>Coverage</b> page.
           </p>
         </div>
       </html>
@@ -124,9 +122,8 @@
     <panel>
       <html>
         <div class="rk-start-note">
-          <b>Every number in this app is only as current as the oldest of those three.</b>
-          A fresh scan compared against a six-month-old feed finds six-month-old
-          vulnerabilities.
+          <b>Every number here is only as current as the oldest of those three.</b>
+          A fresh scan against a six-month-old feed finds six-month-old vulnerabilities.
         </div>
       </html>
     </panel>
@@ -136,25 +133,18 @@
     <panel>
       <html>
         <div class="rk-status" style="margin:0">
-          <b>A host reporting nothing new is not a host that stopped reporting.</b>
+          <b>A host with nothing new to report is not a host that stopped reporting.</b>
           <span>
-            swinv sends a small <b>heartbeat</b> every scan - a digest of the machine's
-            component list and nothing else - and sends the full list only when that digest
-            changes. On a fleet that is not being patched every hour, most scans are a few hundred
-            bytes rather than a few megabytes, and the app re-matches only the hosts whose
-            software actually moved.
+            swinv sends a <b>heartbeat</b> every scan - a digest of the component list - and the
+            full list only when that digest changes, so most scans are a few hundred bytes
+            rather than a few megabytes and only changed hosts are re-matched.
           </span>
           <span>
-            So <b>Last inventory</b> above tracks heartbeats, not full scans: it answers "is this
-            machine still talking to us", which is the question that matters for trusting a low
-            finding count. A host whose software has not changed in a month is silent in one sense
-            and perfectly healthy in another, and those must not look alike.
-          </span>
-          <span>
-            The findings themselves come from the last full component list a host sent, which may
-            be older than its last heartbeat and is still current - the digest is how the app
-            knows nothing has changed since. A collector that does not send heartbeats at all
-            works exactly as before: the app computes the digest itself from the component list.
+            <b>Last inventory</b> above therefore tracks heartbeats, not full scans: it shows the
+            host is still talking. Findings come from its last full component list, which may
+            predate the last heartbeat and is still current, because the digest confirms nothing
+            changed. Collectors that send no heartbeat still work; the app computes the digest
+            itself.
           </span>
         </div>
       </html>
@@ -167,10 +157,9 @@
         <div class="rk-status rk-bad">
           <b>Some hosts have been matched but their results have not been folded in.</b>
           <span>
-            The open counts on this page are stale-high for those hosts, and closing is being
-            withheld for them until the fold completes. Nothing here is under-reporting risk;
-            it may be over-reporting it. The hosts are listed below. This normally clears by
-            itself within the hour; if it does not, the pipeline has stopped and
+            Open counts for those hosts are stale-high and closing is withheld until the fold
+            completes, so risk may be over-reported, never under-reported. Usually clears within
+            the hour; if not, the pipeline has stopped and
             <a href="riskability_admin">Admin</a> shows which job.
           </span>
         </div>
@@ -250,10 +239,9 @@
             <div class="rk-step-n">1</div>
             <div>
               <b>swinv walks the machine</b>
-              <p>Not just the package manager. It looks inside container images, snap bases
-                 and chroots, and records the <em>path</em> of every copy it finds - which is
-                 how this app can tell a patched host from one with a stale copy still sitting
-                 in an image.</p>
+              <p>Not just the package manager: also container images, snap bases and chroots.
+                 It records the <em>path</em> of every copy, which separates a patched host
+                 from one with a stale copy in an image.</p>
             </div>
           </div>
           <div class="rk-step">
@@ -261,10 +249,9 @@
             <div>
               <b>Each component gets an identity</b>
               <p>A <b>PURL</b> when a package manager installed it (<code>pkg:deb/ubuntu/openssl</code>),
-                 or a <b>CPE</b> when nothing did - which is most Windows software. A PURL is
-                 read from a package record; a CPE is inferred from a display name. That
-                 difference is why Windows findings are always reported at low
-                 <b>confidence</b>.</p>
+                 otherwise a <b>CPE</b>, which is most Windows software. PURLs come from
+                 package records; CPEs are inferred from a display name, so Windows findings
+                 are always low <b>confidence</b>.</p>
             </div>
           </div>
           <div class="rk-step">
@@ -272,33 +259,29 @@
             <div>
               <b>Versions are compared using the right rules</b>
               <p>Debian, RPM, Alpine, npm, Python, Maven and Go each order versions
-                 differently, and comparing them as text gets the answer wrong. Where a
-                 comparison cannot be made properly the finding is marked
-                 <b>informational</b> or <b>low</b> rather than asserted.</p>
+                 differently; text comparison gets it wrong. Where the comparison cannot be made
+                 properly the finding is marked <b>low</b> rather than asserted.</p>
             </div>
           </div>
           <div class="rk-step">
             <div class="rk-step-n">4</div>
             <div>
               <b>The finding is tracked over time</b>
-              <p>A finding that stops appearing is not automatically a fixed one. If the
-                 package is still installed at a newer version it is <b>mitigated</b>; if it is
-                 gone it is <b>removed</b>; if the host simply stopped reporting it is
-                 <b>unknown</b>. Silence is never counted as success.</p>
+              <p>A finding that stops appearing is not automatically fixed. Newer version at
+                 the same path: <b>mitigated</b>. Gone: <b>removed</b>. Host stopped reporting:
+                 <b>unknown</b>. Silence is never success.</p>
             </div>
           </div>
           <div class="rk-step">
             <div class="rk-step-n">5</div>
             <div>
               <b>Reach decides the order of the work</b>
-              <p>The collector also records what is <em>listening</em> on each machine, which
-                 process holds the socket, and which containers are running behind it. That
-                 supplies the one thing an offline CVE feed cannot: whether this copy answers
-                 the network. On this fleet it separates a few findings that are reachable
-                 from tens of thousands that are not - see <b>Exposure</b>. It changes the
-                 order, never the list: an unreachable vulnerability is still a
-                 vulnerability, and a host whose collector is too old to report ports is
-                 shown as <b>not assessed</b> rather than quietly counted as safe.</p>
+              <p>The collector also records what is <em>listening</em>, which process holds the
+                 socket, and which containers run behind it. On this fleet that separates a few
+                 reachable findings from tens of thousands that are not; see <b>Exposure</b>.
+                 Reach re-orders the work, never shortens it: an unreachable vulnerability is
+                 still a vulnerability, and a host whose collector is too old to report ports is
+                 shown as <b>not assessed</b>, not safe.</p>
             </div>
           </div>
         </div>
@@ -343,16 +326,15 @@
           </div>
           <p class="rk-funnel-warn">
             <b>Every hop is a mapping MITRE publishes, and every hop loses information.</b>
-            A CVE with no CWE recorded simply never reaches the matrix, so a technique
-            missing from the ATT&amp;CK page is not a technique you are safe from. And because
-            one weakness maps to several techniques, a single vulnerability is drawn several
-            times - the widths never add up to a total.
+            A CVE with no CWE never reaches the matrix, so a technique missing from the
+            ATT&amp;CK page is not one you are safe from. One weakness maps to several
+            techniques, so a vulnerability is drawn several times: the widths never add up to a
+            total.
           </p>
           <p class="rk-funnel-warn">
-            What this chain says is <em>&#8220;this class of weakness is the kind of thing that
-            enables that technique&#8221;</em>. It does not say an adversary used it, and it does not
-            say this vulnerability is exploitable in your environment. For that, use the
-            <b>KEV</b> and <b>EPSS</b> columns on <b>Findings</b>, which are about real-world
+            The chain says <em>&#8220;this class of weakness enables that technique&#8221;</em>. It
+            does not say an adversary used it, or that it is exploitable in your environment. Use
+            the <b>KEV</b> and <b>EPSS</b> columns on <b>Findings</b> for that: real-world
             exploitation rather than classification.
           </p>
         </div>
@@ -386,8 +368,8 @@
       </viz>
       <html>
         <div class="rk-start-note">
-          The drop between these bars is not a defect - it is what the mapping costs. Read
-          the ATT&amp;CK page as <em>&#8220;capabilities our open findings could hand an
+          The drop between these bars is what the mapping costs, not a defect. Read the
+          ATT&amp;CK page as <em>&#8220;capabilities our open findings could hand an
           attacker&#8221;</em>, never as a complete picture of exposure.
         </div>
       </html>
@@ -402,28 +384,25 @@
           <div class="rk-guide-item"><b>Fleet overview</b>
             <span>The numbers, and how stale they are.</span></div>
           <div class="rk-guide-item"><b>Findings</b>
-            <span>What to patch, ranked by likelihood of exploitation rather than by severity
-              score. This is the working list.</span></div>
+            <span>The working list: what to patch, ranked by likelihood of exploitation rather
+              than severity.</span></div>
           <div class="rk-guide-item"><b>Remediation</b>
-            <span>What actually got fixed, with the version change that proves it - and what
-              merely stopped being reported.</span></div>
+            <span>What was fixed, with the version change proving it, and what merely stopped
+              being reported.</span></div>
           <div class="rk-guide-item"><b>MITRE ATT&amp;CK</b>
-            <span>Lossy classification of what your open findings could enable. Context, not
+            <span>Lossy classification of what open findings could enable. Context, not
               evidence.</span></div>
           <div class="rk-guide-item"><b>Exposure</b>
-            <span>Which findings the network can actually reach, and which sit inside containers.
-              The one axis EPSS and the KEV catalogue cannot supply: whether <em>this</em> copy is
-              answering a socket. It re-orders the work; it never removes any of it.</span></div>
+            <span>Which findings the network can reach, and which sit inside containers.
+              Re-orders the work, never removes any of it.</span></div>
           <div class="rk-guide-item"><b>Hosts</b>
-            <span>One machine at a time, split by the filesystem root each component came
-              from.</span></div>
+            <span>One machine at a time, split by filesystem root.</span></div>
           <div class="rk-guide-item"><b>Coverage</b>
-            <span>What the app <em>cannot</em> see: ecosystems present in the fleet that the
-              imported feed knows nothing about. The most honest page here.</span></div>
+            <span>What the app <em>cannot</em> see: ecosystems in the fleet the imported feed
+              knows nothing about.</span></div>
           <div class="rk-guide-item"><b>Risk exceptions</b>
-            <span>Findings someone has decided to handle another way, with what that way is.
-              Excluded from every risk number, and counted separately so they are never
-              hidden.</span></div>
+            <span>Findings handled another way, and how. Excluded from every risk number and
+              counted separately, so they are never hidden.</span></div>
           <div class="rk-guide-item"><b>Feed administration</b>
             <span>Import the offline CVE data, and download the builder that makes it.</span></div>
         </div>
@@ -437,29 +416,29 @@
       <html>
         <div class="rk-glossary">
           <dl>
-            <dt>CVE</dt><dd>One specific vulnerability in one specific product, with an
-              identifier everyone shares.</dd>
-            <dt>CWE</dt><dd>The <em>class</em> of programming mistake behind it. Most CVEs never
-              get one assigned.</dd>
-            <dt>CAPEC</dt><dd>A catalogued pattern of attack that abuses such a weakness.</dd>
-            <dt>ATT&amp;CK</dt><dd>MITRE's catalogue of what adversaries actually do, organised
-              by tactic. Reached here through CWE and CAPEC, so lossily.</dd>
-            <dt>PURL</dt><dd>A package URL - an identity read from a package manager's own
-              records. Precise.</dd>
-            <dt>CPE</dt><dd>A vendor/product naming scheme used when no package manager was
-              involved. Inferred, so weaker evidence.</dd>
-            <dt>EPSS</dt><dd>A published estimate of how likely a CVE is to be exploited in the
-              next 30 days. Better for prioritising than a severity score.</dd>
-            <dt>KEV</dt><dd>CISA's list of vulnerabilities known to be exploited in the wild
-              right now. The strongest signal available offline.</dd>
-            <dt>scope / root</dt><dd>Which filesystem the component was found in: the host
-              itself, a snap base, a container image, a chroot.</dd>
-            <dt>confidence</dt><dd>How strong the evidence is, not how bad the vulnerability is.
-              <em>high</em> means both identity and version came from package records.</dd>
-            <dt>authority</dt><dd>Who said this version is affected - the distribution, the
-              upstream ecosystem, or NVD. Distributions win, because they backport.</dd>
-            <dt>generation</dt><dd>One complete import of the feed. Findings are always matched
-              against a single generation, never a half-written one.</dd>
+            <dt>CVE</dt><dd>One vulnerability in one product.</dd>
+            <dt>CWE</dt><dd>The <em>class</em> of mistake. Most CVEs never get one assigned.</dd>
+            <dt>CAPEC</dt><dd>An attack pattern abusing such a weakness.</dd>
+            <dt>ATT&amp;CK</dt><dd>Adversary behaviour by tactic. Reached here through CWE and
+              CAPEC, so lossily.</dd>
+            <dt>PURL</dt><dd>Identity read from package manager records. Precise.</dd>
+            <dt>CPE</dt><dd>Identity inferred where no package manager was involved. Weaker
+              evidence.</dd>
+            <dt>EPSS</dt><dd>Published estimate of exploitation within 30 days. Better for
+              prioritising than severity.</dd>
+            <dt>KEV</dt><dd>CISA's exploited-in-the-wild list. The strongest signal available
+              offline.</dd>
+            <dt>scope / root</dt><dd>Filesystem the component was found in: host, snap base,
+              container image, chroot.</dd>
+            <dt>confidence</dt><dd>Strength of the evidence, not severity. <em>high</em>:
+              identity and version both from package records. <em>informational</em>: an
+              upstream version range covering a distribution-maintained package, which the
+              vendor may have patched by backport. <em>low</em>: identity inferred from a
+              generated CPE, or the version could not be compared properly.</dd>
+            <dt>authority</dt><dd>Who says the version is affected: distribution, upstream
+              ecosystem, or NVD. Distributions win, because they backport.</dd>
+            <dt>generation</dt><dd>One complete feed import. Findings match a single generation,
+              never a half-written one.</dd>
           </dl>
         </div>
       </html>

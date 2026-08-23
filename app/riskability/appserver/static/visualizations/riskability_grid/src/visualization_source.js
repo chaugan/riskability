@@ -156,6 +156,17 @@ export default SplunkVisualizationBase.extend({
         this.el.classList.add('riskability-grid');
         this.table = null;
         this._scrolledVertically = null;
+        this._observer = null;
+        this._timers = [];
+        this._debounce = null;
+        // Width the columns were last fitted to. A settling pass that finds the
+        // same number does not pay for a relayout of ten thousand rows.
+        this._laidOutAt = -1;
+        // Every deferred pass carries the generation it was scheduled under.
+        // This viz is destroyed and rebuilt on every search, so a callback can
+        // easily land on a table that is not the one it measured -- or on no
+        // table at all.
+        this._generation = 0;
     },
 
     getInitialDataParams: function () {
@@ -170,6 +181,17 @@ export default SplunkVisualizationBase.extend({
     },
 
     _clear: function () {
+        // Invalidate anything already queued BEFORE tearing the table down, so
+        // a pass in flight cannot resize the table that replaces this one.
+        this._generation++;
+        if (this._observer) {
+            try { this._observer.disconnect(); } catch (e) { /* already gone */ }
+            this._observer = null;
+        }
+        this._timers.forEach(function (t) { clearTimeout(t); });
+        this._timers = [];
+        if (this._debounce) { clearTimeout(this._debounce); this._debounce = null; }
+        this._laidOutAt = -1;
         if (this.table) {
             // Tabulator keeps listeners and a virtual-DOM scroll observer;
             // dropping the element alone leaks both across dashboard nav.
@@ -402,16 +424,12 @@ export default SplunkVisualizationBase.extend({
         // actually exists, and is also the first point at which the column
         // floor can be fitted to it.
         this.table.on('tableBuilt', function () {
-            requestAnimationFrame(function () {
-                try {
-                    self._fitColumnFloor();
-                    self.table.redraw(true);
-                    var holder = self.el.querySelector('.tabulator-tableholder');
-                    self._scrolledVertically = !!holder &&
-                        holder.scrollHeight > holder.clientHeight;
-                    self._shaveHairlineOverflow();
-                } catch (e) { /* torn down */ }
-            });
+            var gen = self._generation;
+            requestAnimationFrame(function () { self._settle(gen, true); });
+            // One pass on the next frame is not enough, and believing it was is
+            // what left a hairline scrollbar on a panel that plainly fits. See
+            // _watchSettling.
+            self._watchSettling(host, gen);
         });
         this.table.on('dataFiltered', function (filters, filteredRows) {
             setCount(filteredRows ? filteredRows.length : rows.length);
@@ -493,31 +511,178 @@ export default SplunkVisualizationBase.extend({
         }
     },
 
+    /* Keep watching after the table is built, because the box it was built for
+     * is not the box it ends up in.
+     *
+     * The layout this table gets at tableBuilt is provisional in three ways at
+     * once: a Splunk panel is still settling its width while sibling panels
+     * finish their own searches, web fonts have not necessarily loaded so every
+     * header and cell is being measured in a fallback face, and the vertical
+     * scrollbar may not exist yet -- and its arrival takes about fifteen pixels
+     * out of the width the columns were just fitted to. One pass on the next
+     * animation frame measures all three before they are true, finds an
+     * overflow of zero, and correctly does nothing to a layout that goes on to
+     * overflow by a pixel a moment later.
+     *
+     * Nothing then re-ran the layout, because Tabulator's ResizeTable module is
+     * deliberately not registered -- it redraws without re-fitting the column
+     * floor or shaving the remainder, which is half the job -- so the only
+     * relayout was Splunk's reflow() on a WINDOW resize. A container that moved
+     * on its own was never noticed. That is exactly the reported symptom: a
+     * hairline scrollbar that no measurement could find and that any resize,
+     * including opening devtools to go looking for it, cleared for good.
+     *
+     * So every settling event gets a pass, and each is idempotent. */
+    _watchSettling: function (host, gen) {
+        var self = this;
+
+        // The HOST, not the table holder. The holder's own width changes when
+        // the vertical scrollbar comes and goes, which a settle can cause --
+        // observing it would let this retrigger itself forever. The host is
+        // sized by the panel and by nothing this code does.
+        if (typeof ResizeObserver === 'function') {
+            this._observer = new ResizeObserver(function () {
+                self._scheduleSettle(gen, 120);
+            });
+            try { this._observer.observe(host); } catch (e) { /* torn down */ }
+        }
+
+        // Fonts change text metrics, text metrics change what fits, and Windows
+        // ships different metrics from this build machine -- which is why a
+        // remainder that is zero here is a pixel there.
+        if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+            document.fonts.ready.then(function () {
+                self._settle(gen, true);
+            }, function () { /* no fonts API answer; the backstops still run */ });
+        }
+
+        // Backstop, for the case neither of the above reports: the panel simply
+        // finishes laying out a few frames after the table was built, at the
+        // same width, and the only thing that changed is that the numbers are
+        // now true.
+        this._backstop(gen, 300);
+        this._backstop(gen, 1500);
+    },
+
+    _backstop: function (gen, delay) {
+        var self = this;
+        var t = setTimeout(function () {
+            var i = self._timers.indexOf(t);
+            if (i !== -1) { self._timers.splice(i, 1); }
+            self._settle(gen, true);
+        }, delay);
+        this._timers.push(t);
+    },
+
+    /* Coalesced, because a container resize arrives as a burst and a redraw of
+     * ten thousand rows per frame of a drag is not free. */
+    _scheduleSettle: function (gen, delay) {
+        var self = this;
+        if (this._debounce) { clearTimeout(this._debounce); }
+        this._debounce = setTimeout(function () {
+            self._debounce = null;
+            self._settle(gen, false);
+        }, delay);
+    },
+
+    /* One settling pass, and the only order of operations in this file: fit the
+     * floor to the width that exists, lay out against it, then take off the
+     * remainder. Callers do not do these separately.
+     *
+     * force is for events that change what the columns measure rather than how
+     * much room they have -- fonts arriving, a Splunk reflow -- where the
+     * holder is the same width but the layout inside it is not. Without it a
+     * pass at an unchanged width skips straight to the shave, which is what
+     * makes the repeated backstops cheap. */
+    _settle: function (gen, force) {
+        if (!this.table || gen !== this._generation) { return; }
+        var holder = this.el.querySelector('.tabulator-tableholder');
+        // A panel laid out while hidden measures zero, and a layout against
+        // zero is worse than no layout at all.
+        if (!holder || !holder.clientWidth) { return; }
+        try {
+            if (force || holder.clientWidth !== this._laidOutAt) {
+                this._laidOutAt = holder.clientWidth;
+                this._fitColumnFloor();
+                this.table.redraw(true);
+                // The redraw itself can bring the vertical scrollbar in or take
+                // it away, and that is fifteen pixels off the width the columns
+                // were just fitted to. Once more, at most, is enough: the
+                // scrollbar cannot change again without the row count changing.
+                if (holder.clientWidth !== this._laidOutAt) {
+                    this._laidOutAt = holder.clientWidth;
+                    this._fitColumnFloor();
+                    this.table.redraw(true);
+                }
+                this._scrolledVertically = holder.scrollHeight > holder.clientHeight;
+            }
+            this._shaveHairlineOverflow();
+        } catch (e) { /* torn down mid-pass */ }
+    },
+
     /* Take a rounding remainder off the widest column, so no scrollbar is drawn
-     * for it. See HAIRLINE_OVERFLOW. Deliberately does not redraw: fitColumns
-     * would recompute the very widths this is correcting. Every caller runs it
-     * as the last step after its own redraw, so the correction survives until
-     * the next layout, which corrects itself again. */
+     * for it. See HAIRLINE_OVERFLOW.
+     *
+     * Measured against Tabulator's own column widths, NOT against
+     * scrollWidth - clientWidth, because those two are integers and this
+     * overflow is not. fitColumns divides the holder's fractional
+     * getBoundingClientRect() width among the columns, and subtracts the
+     * vertical scrollbar as offsetWidth - clientWidth -- the difference of two
+     * ROUNDED numbers. At 125% Windows scaling a scrollbar is not a whole
+     * number of CSS pixels, so that estimate can come out a fraction short, the
+     * columns sum to a fraction more than the box they sit in, and Chrome
+     * answers a third of a pixel with a full-height scrollbar. The DOM then
+     * rounds the same fraction back to zero, so every probe of "how much does
+     * this overflow" honestly answers "nothing" while the bar sits there in
+     * front of the reader. That is why this was measured clean four times.
+     * Tabulator's numbers are exact; they are what is used.
+     *
+     * The target is a whole pixel INSIDE clientWidth, which is itself rounded
+     * and can therefore claim up to half a pixel of room that does not exist.
+     * So a table that already fits gives up one pixel at its right edge, which
+     * nobody can see, rather than landing exactly on a boundary that is only
+     * approximately where the DOM says it is.
+     *
+     * Deliberately does not redraw: fitColumns would recompute the very widths
+     * this is correcting. Every caller runs it as the last step after its own
+     * redraw, so the correction survives until the next layout, which corrects
+     * itself again. */
     _shaveHairlineOverflow: function () {
         if (!this.table) { return; }
         var holder = this.el.querySelector('.tabulator-tableholder');
         if (!holder || !holder.clientWidth) { return; }
-        var over = holder.scrollWidth - holder.clientWidth;
-        if (over <= 0 || over > HAIRLINE_OVERFLOW) { return; }
 
-        var flex = this.table.getColumns().filter(function (c) {
-            return c.isVisible() && !(c.getDefinition() || {}).width;
+        var total = 0, flex = [];
+        this.table.getColumns().forEach(function (c) {
+            if (!c.isVisible()) { return; }
+            total += c.getWidth() || 0;
+            // A column with a declared width (the selection checkbox) is not
+            // the layout's to give away.
+            if (!(c.getDefinition() || {}).width) { flex.push(c); }
         });
         if (!flex.length) { return; }
-        var widest = flex[0], i;
-        for (i = 1; i < flex.length; i++) {
-            if (flex[i].getWidth() > widest.getWidth()) { widest = flex[i]; }
+
+        var over = total - (holder.clientWidth - 1);
+        // The DOM gets the last word when it reports MORE overflow than the
+        // column widths account for: something the sum cannot see, a cell that
+        // refuses to be narrowed, is a real overflow.
+        var domOver = holder.scrollWidth - holder.clientWidth;
+        if (domOver > 0 && domOver + 1 > over) { over = domOver + 1; }
+        if (over <= 0 || over > HAIRLINE_OVERFLOW) { return; }
+
+        // The widest column that can actually pay. A column already at the
+        // floor has nothing to give, and forcing it below would start the fight
+        // fitColumns is meant to settle -- setWidth would silently clamp back
+        // to the floor and leave the scrollbar exactly where it was.
+        var widest = null, i, col, min;
+        for (i = 0; i < flex.length; i++) {
+            col = flex[i]._getSelf ? flex[i]._getSelf() : null;
+            min = col && col.minWidth ? col.minWidth : MIN_COL_WIDTH;
+            if (flex[i].getWidth() - over < min) { continue; }
+            if (!widest || flex[i].getWidth() > widest.getWidth()) { widest = flex[i]; }
         }
-        // A column already at the floor has nothing to give, and forcing it
-        // below would start the fight fitColumns is meant to settle.
-        var want = widest.getWidth() - over - 1;
-        if (want < MIN_COL_WIDTH) { return; }
-        try { widest.setWidth(want); } catch (e) { /* torn down */ }
+        if (!widest) { return; }
+        try { widest.setWidth(widest.getWidth() - over); } catch (e) { /* torn down */ }
     },
 
     /* Redraw only if the vertical scrollbar has appeared or disappeared since
@@ -529,12 +694,7 @@ export default SplunkVisualizationBase.extend({
         if (!holder) { return; }
         var scrolls = holder.scrollHeight > holder.clientHeight;
         if (scrolls === this._scrolledVertically) { return; }
-        this._scrolledVertically = scrolls;
-        try {
-            this._fitColumnFloor();
-            this.table.redraw(true);
-            this._shaveHairlineOverflow();
-        } catch (e) { /* torn down */ }
+        this._settle(this._generation, true);
     },
 
     /* Re-fit the per-column floor to the width the table actually has.
@@ -570,16 +730,7 @@ export default SplunkVisualizationBase.extend({
     reflow: function () {
         // A panel initialised while hidden measures 0x0, and Tabulator's
         // virtual renderer then believes no rows are visible.
-        if (this.table) {
-            try {
-                this._fitColumnFloor();
-                this.table.redraw(true);
-                var holder = this.el.querySelector('.tabulator-tableholder');
-                this._scrolledVertically = !!holder &&
-                    holder.scrollHeight > holder.clientHeight;
-                this._shaveHairlineOverflow();
-            } catch (e) { /* not built yet */ }
-        }
+        this._settle(this._generation, true);
     },
 
     remove: function () {

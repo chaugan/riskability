@@ -43,7 +43,7 @@
       <html>
         <div class="rk-drill-bar">
           <span class="rk-drill-hint">Every host that has reported an inventory. Click one to
-            narrow the whole page to it; the picker above puts it back to all hosts.</span>
+            narrow the page; the picker above resets it.</span>
         </div>
       </html>
       <viz type="riskability.riskability_grid">
@@ -73,7 +73,7 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="riskability.riskability_grid.emptyText">No host has reported an inventory yet. Until swinv data reaches the index there is nothing to assess.</option>
+        <option name="riskability.riskability_grid.emptyText">No host has reported an inventory. Nothing can be assessed until swinv data reaches the index.</option>
         <option name="height">300</option>
         <drilldown>
           <!-- form.hostname, not hostname: setting the bare token narrows the
@@ -142,7 +142,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No findings on this host. That may also mean it has not reported since the feed was imported.</option>
+        <option name="riskability.riskability_chart.emptyText">No findings on this host, or it has not reported since the feed was imported.</option>
         <option name="height">360</option>
         <!-- Twelve bars, then a roll-up. With a host selected there are rarely
              more than a handful of roots; with "All hosts" there is one root per
@@ -173,7 +173,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">heatmap</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No open findings for this host. That can also mean the host has not reported inventory recently - check its last scan time above.</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings for this host, or it has not reported recently - check its last scan above.</option>
         <option name="height">380</option>
         <drilldown>
           <set token="sev_filter">sev="$row.sev$"</set>
@@ -212,7 +212,7 @@
 | sort 50000 - epss</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No open findings, or nothing has reported inventory recently.</option>
+        <option name="riskability.riskability_grid.emptyText">No open findings, or nothing has reported recently.</option>
         <option name="riskability.riskability_grid.filterNote">$host_note$</option>
       </viz>
     </panel>

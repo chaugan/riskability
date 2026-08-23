@@ -117,21 +117,19 @@
         <div class="rk-status rk-warn" style="margin:0">
           <b>Reachability re-orders work. It does not remove any.</b>
           <span>
-            Every finding on this page is still a real vulnerability. What this page adds is
-            the one thing EPSS and the KEV catalogue cannot know: whether <em>this</em> copy is
-            answering the network. A package with no listening port is not safe - it is
-            reached by something other than a socket, or by an attacker who is already inside
-            - but it is not the thing to fix tonight. Nothing here is ever coloured green,
-            because nothing here is finished.
+            Every finding here is still a real vulnerability. This page adds what EPSS and the
+            KEV catalogue cannot: whether <em>this</em> copy answers the network. A package
+            with no listening port is not safe - it is reached by something other than a
+            socket, or by an attacker already inside - but it is not tonight's fix. Nothing is
+            ever coloured green, because nothing here is finished.
             <b>Read a quiet row as "later", never as "no".</b>
           </span>
           <span>
-            This page opens with <b>all matches</b> rather than high-confidence ones only. What
-            listens on a port is usually a compiled binary, and a binary is exactly what this app
-            matches least confidently - it can tell that a Go executable is serving and
-            still be unsure which module versions are inside it. Filtering those out would empty
-            the reachable rows and hide the finding you came for, so they are shown and labelled
-            instead: check the <b>Confidence</b> column before you act on one.
+            Defaults to <b>all matches</b>, not high confidence only. What listens on a port is
+            usually a compiled binary, this app's least confident match: it can tell a Go
+            executable is serving without knowing which module versions are inside. Filtering
+            those out would empty the reachable rows, so they are shown and labelled instead.
+            Check the <b>Confidence</b> column before acting on one.
           </span>
         </div>
       </html>
@@ -150,7 +148,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">prioritymatrix</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>
-        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either there are no open findings for this host filter, or the exposure snapshot has not run yet - see the assessment coverage panel below.</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either no open findings match this host filter, or the exposure snapshot has not run yet - see the assessment coverage panel below.</option>
         <option name="height">460</option>
         <!-- The chart reports a click under the SEARCH's field names, not under
              the contract's slot names, so these are $row.reach_class$ and
@@ -166,14 +164,11 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>Colour is priority, not volume.</b>
           <span>
-            The cell holding two known-exploited findings on a wildcard port is the darkest one
-            on the grid; the cell holding sixteen thousand unreachable ones is the coolest. That
-            inversion is the whole point - a chart that sized by count would draw the two
-            findings you must fix tonight as a hairline. Empty cells are drawn deliberately: a
-            row reading zero across is a statement, and a missing row would be an ambiguity.
-            The dashed row is <b>not assessed</b> - those findings are unranked because the
-            collector on that host never reported its listening ports, so treat them as unknown
-            risk rather than as low risk.
+            Two known-exploited findings on a wildcard port make the darkest cell; sixteen
+            thousand unreachable ones make the coolest. Empty cells are drawn rather than
+            omitted, so a row reading zero across is unambiguous. The dashed row is <b>not
+            assessed</b>: unranked because the collector on that host never reported its
+            listening ports. Treat it as unknown risk, not low risk.
           </span>
         </div>
       </html>
@@ -205,22 +200,19 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>Showing $shown_hosts$ of $fleet_hosts$ hosts with findings, worst first.</b>
           <span>
-            The matrix above is the whole fleet and stays that size however many machines
-            report, because it has thirty cells whatever the input. A list of hosts does not:
-            it grows a row per machine, and past a few hundred it stops being something anyone
-            reads and becomes something they scroll. So the list is cut to the ten that matter
-            and the number it was cut from is printed above, rather than the cut being made
-            quietly. The order is known-exploited-and-reachable first, then reachable, then
-            open findings - a machine with one exploited CVE answering the internet
-            outranks one with a thousand findings nothing can get to. $fleet_reachable$
-            findings across the fleet answer a network address.
+            The matrix above is fleet-wide and holds thirty cells whatever the input. This list
+            grows a row per machine, so it is cut to ten and the number it was cut from is
+            printed above. Order is known-exploited-and-reachable, then reachable, then open
+            findings: one exploited CVE answering the internet outranks a thousand findings
+            nothing can get to. $fleet_reachable$ findings across the fleet answer a network
+            address.
+          </span>
+          <span>
             Click a row to point the chain below at that host and narrow the detail table to
-            it - and the chain follows the top row of this list on its own, so a page opened
-            cold shows a real route rather than an empty panel. This list follows the matrix
-            too: select a cell and it becomes the answer to "which machines have
-            <em>that</em>", which is the list you want before you go looking at any one
-            route. To work through the rest, sort or filter this page by host, or use
-            <b>Hosts</b>, which is built for one machine at a time.
+            it. With nothing selected the chain follows the top row, so it is not empty on
+            load. Selecting a matrix cell narrows this list to the machines that have those
+            findings. For the rest, sort or filter this page by host, or use <b>Hosts</b>, one
+            machine at a time.
           </span>
         </div>
       </html>
@@ -231,17 +223,17 @@
     <panel rejects="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a matrix cell, a chain node or a container row to
-            narrow the detail table at the bottom of this page to it.</span>
+          <span class="rk-drill-hint">Click a matrix cell, chain node or container row to
+            narrow the detail table at the bottom of this page.</span>
         </div>
       </html>
     </panel>
     <panel depends="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">This page is narrowed. The matrix and the ranked host list
-            stay whole so you can pick something else. Clear also puts away the container detail
-            panel, if one is open.</span>
+          <span class="rk-drill-hint">Page narrowed. The matrix and the ranked host list stay
+            whole so you can pick something else. Clear also closes the container detail panel
+            if one is open.</span>
           <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
              href="riskability_exposure?form.conf_tok=$conf_tok|u$">Clear</a>
@@ -296,7 +288,7 @@
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
-        <option name="riskability.riskability_chart.emptyText">No chain to draw. Three things look identical here and are not: these hosts may have nothing behind a listening port at all; the matrix cell you selected may be one of the unreachable rows, which by definition have no route - that is the answer, not a missing panel; or these hosts may simply have none of the findings in that cell, in which case the ranked list above says which hosts do. Check the assessment coverage panel below to be sure their ports were measured at all.</option>
+        <option name="riskability.riskability_chart.emptyText">No chain to draw. Three causes look identical here: these hosts may have nothing behind a listening port; the selected matrix cell may be an unreachable row, which by definition has no route, so the empty panel is the answer; or these hosts may have none of the findings in that cell, in which case the ranked list above says which hosts do. Check the assessment coverage panel below to confirm their ports were measured at all.</option>
         <option name="height">620</option>
         <drilldown>
           <set token="node_filter">rk_nodes="$row.node$"</set>
@@ -306,58 +298,44 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>A few machines at a time, and that is not a limitation of the panel.</b>
+          <b>The chain draws at most three hosts at once.</b>
           <span>
-            A chain is a route through one machine. Drawn across a fleet it merges every
-            copy of <code>sshd</code> into a single node, sums edge widths over machines that
-            have nothing to do with each other, and stops describing a route anyone could
-            follow. So it draws <b>at most three hosts at once</b> - the three most exposed of
-            whatever is selected at the top of the page - and when more than one is drawn every
-            port, process and container carries the machine it belongs to, so two hosts running
-            the same service never merge into one node that claims a route neither of them has.
-            Packages and CVEs are deliberately left shared: three machines converging on one
-            vulnerable library is the thing worth seeing.
+            A chain is a route through one machine; across a fleet it would merge every copy of
+            <code>sshd</code> into one node and sum edge widths over unrelated machines. Only
+            the three most exposed hosts of the current selection are drawn, and when more than
+            one is drawn every port, process and container carries its machine, so two hosts
+            running the same service never merge into one node claiming a route neither has.
+            Packages and CVEs stay shared: three machines converging on one vulnerable library
+            is worth seeing. Ten hosts would be about 120 CVE nodes in a column 620 pixels
+            tall, five pixels a node; the two hosts here come to 24.
           </span>
           <span>
-            <b>Three, not ten.</b> Ten would be about 120 CVE nodes in a column 620 pixels
-            tall, which is five pixels a node and unreadable; the two hosts here come to 24, so
-            three is the point where it still reads. Pick the ones you want at the top of the
-            page, or click a row in the ranked list to point the chain at one machine without
-            collapsing the list you picked it from. Selecting a cell
-            in the matrix narrows this chain to those findings as well - picking
-            <em>known-exploited, answers any address</em> draws only the routes the world can
-            walk to a CVE someone is already exploiting. Picking one of the unreachable rows
-            empties it, correctly: those findings have no route, which is the whole reason
-            they are ranked below.
+            Pick hosts at the top of the page, or click a row in the ranked list to aim the
+            chain at one machine without collapsing that list. Selecting a matrix cell narrows
+            the chain to those findings; selecting an unreachable row empties it, correctly -
+            those findings have no route.
           </span>
           <span>
-            <b>The ten busiest listening ports on that host, and the 160 busiest hops.</b>
-            Cutting by port rather than by hop count is deliberate: a port and everything
-            behind it is a whole route, so dropping one leaves the rest intact, where
-            trimming hops alone would leave nodes hanging off nothing. Measured on the fleet
-            this was built against, one host's chain comes to nine CVE nodes and the other's
-            to fifteen, comfortably inside the panel. The cap is there for the machine
-            running thirty services, not for these.
+            <b>Ten listening ports per host, 160 hops in total.</b> The busiest are kept, and
+            the cut is by port, so a dropped port takes its whole route with it. On the fleet
+            this was built against, one host's chain comes to nine CVE nodes and the other's to
+            fifteen; the cap is for a machine running thirty services, not for these.
           </span>
           <span>
-            <b>Every hop here is measured, and the picture is still not the whole route.</b>
-            The collector saw the port, the process holding it and the packages inside; it did
-            not see your firewall, your reverse proxy or your network segmentation. A wildcard
-            bind means the process would answer any address that reaches the host - not
-            that the internet can. Bubble size is the largest number of CVEs reachable through
-            any single hop touching that node, so sibling sizes do not add up - the tooltip no
-            longer repeats that sentence, because one large enough to hold it covered two
-            columns of the graph it was explaining. Only the 160
-            busiest hops are drawn. A dashed node is a hole in what the collector could see
-            - a port answering with no process attributed to it - which is a
-            different thing from a hop that is known and harmless. Ports with no package behind
-            them never reach this graph at all, because nothing can be matched against them;
-            they are counted in <b>Ports with no package</b> below. Each package shows its known-exploited CVEs and its three highest-scoring
-            others by name; the rest are collected into a single "N more in &lt;package&gt;"
-            node rather than drawn as fifty unreadable bubbles - unless the roll-up would
-            hold a single CVE, which is named instead. Every node is named where the
-            panel has the height to name it; if a column is ever dense enough to run out of
-            room, the busiest keep their labels and the rest can be read by hovering.
+            <b>Every hop is measured, and the picture is still not the whole route.</b> The
+            collector saw the port, the process holding it and the packages inside; not your
+            firewall, reverse proxy or network segmentation. A wildcard bind means the process
+            would answer any address that reaches the host, not that the internet can reach it.
+            Bubble size is the largest number of CVEs reachable through any single hop touching
+            that node, so sibling sizes do not add up. A dashed node is a hole in what the
+            collector could see - a port answering with no process attributed to it - not a hop
+            known to be harmless. Ports with no package behind them never reach this graph,
+            since nothing can be matched against them; they are counted in <b>Ports with no
+            package</b> below. Each package names its known-exploited CVEs and its three
+            highest-scoring others; the rest roll up into one "N more in &lt;package&gt;" node,
+            unless that would hold a single CVE, which is named instead. Nodes are labelled
+            where there is height for it; in a dense column the busiest keep their labels and
+            the rest can be read by hovering.
           </span>
         </div>
       </html>
@@ -398,12 +376,12 @@
           <b>A host that never reported ports is not a host with no ports.</b>
           <span>
             Older collectors report inventory but no exposure. Their findings land in the
-            <b>not assessed</b> row of the matrix rather than in the calm one, so that a fleet
-            does not look safer for being less well instrumented. "Held by the OS" and "Ports
-            with no package" are the other two honest gaps, and they are not the same one. The
-            first is a port answered by the operating system itself - Windows <code>System</code>
-            and <code>svchost</code> - which the app can see and cannot assess against a package
-            feed. The second is a port it could not identify at all.
+            <b>not assessed</b> row of the matrix rather than the calm one, so a fleet does not
+            look safer for being less well instrumented. "Held by the OS" and "Ports with no
+            package" are two further gaps, and not the same one: the first is a port answered
+            by the operating system itself - Windows <code>System</code> and
+            <code>svchost</code> - visible but not assessable against a package feed. The
+            second is a port the app could not identify at all.
           </span>
         </div>
       </html>
@@ -447,12 +425,12 @@
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">
-          <b>Why stopped containers are still listed.</b>
+          <b>Stopped containers are still listed.</b>
           <span>
-            A stopped container is one <code>docker start</code> away from being a running one,
-            and its vulnerabilities are latent rather than absent. It is ranked last, not
-            removed. A container with no published port is ranked below one that publishes:
-            the image is identical, the reach is not.
+            A stopped container is one <code>docker start</code> away from running, and its
+            vulnerabilities are latent rather than absent. It is ranked last, not removed. A
+            container with no published port ranks below one that publishes: the image is
+            identical, the reach is not.
           </span>
         </div>
       </html>
@@ -462,6 +440,17 @@
   <row depends="$ctr_tok$">
     <panel>
       <title>Inside $ctr_tok$</title>
+      <!-- Its own Clear, next to the panel it clears. The page already has one
+           in the filter bar and it is at the top, several screens above the
+           container list this panel opens from, so in practice it was not
+           there at all. -->
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-state">Showing container $ctr_tok$</span>
+          <a class="rk-drill-clear"
+             href="riskability_exposure?form.conf_tok=$conf_tok|u$">Close this panel</a>
+        </div>
+      </html>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_container_findings_for($ctr_host_tok|s$)`
@@ -485,13 +474,13 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>These findings are the image's, not the host's.</b>
           <span>
-            Opened by clicking a container above. Use <b>Clear</b> in the filter bar higher up
-            the page to put it away again.
+            Opened by clicking a container above. <b>Close this panel</b> resets the page
+            filters as well as closing it.
           </span>
           <span>
-            They were matched against the operating system declared inside the container, which
-            is often a different distribution from the host it runs on. Fixing them means
-            rebuilding or replacing the image - patching the host will not move them.
+            They were matched against the operating system declared inside the container, often
+            a different distribution from the host it runs on. Fixing them means rebuilding or
+            replacing the image - patching the host will not move them.
           </span>
         </div>
       </html>
@@ -532,9 +521,9 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>Capped at 2,000 rows, highest EPSS first.</b>
           <span>
-            This table is for reading a selection, not for exporting a fleet. Narrow it with the
-            matrix or the chain above, or use <b>Findings</b> for the full register. "Held by"
-            is the systemd unit or the executable's name; the full path is in its own column.
+            For reading a selection, not for exporting a fleet. Narrow it with the matrix or
+            the chain above, or use <b>Findings</b> for the full register. "Held by" is the
+            systemd unit or the executable's name; the full path is in its own column.
           </span>
         </div>
       </html>

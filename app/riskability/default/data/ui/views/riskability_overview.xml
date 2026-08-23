@@ -84,12 +84,11 @@
     <panel>
       <html>
         <div class="rk-status rk-bad">
-          <b>Some hosts have been matched but their results have not been folded in.</b>
+          <b>Some hosts are matched but not folded in.</b>
           <span>
-            The open counts on this page are stale-high for those hosts, and closing is being
-            withheld for them until the fold completes. Nothing here is under-reporting risk;
-            it may be over-reporting it. The hosts are listed below. This normally clears by
-            itself within the hour; if it does not, the pipeline has stopped and
+            Open counts are stale-high for the hosts below and closing is withheld until the
+            fold completes: risk is over-reported, never under-reported. Usually clears within
+            the hour; if not, the pipeline has stopped and
             <a href="riskability_admin">Admin</a> shows which job.
           </span>
         </div>
@@ -168,11 +167,9 @@
         <div class="rk-status rk-warn" style="margin:0">
           <b>Accepted risks are excluded from every other number on this page.</b>
           <span>
-            An accepted risk is one somebody has looked at and decided to handle another way,
-            recorded with what that other way is. It is still a vulnerability, and it is still
-            present. A fleet showing no open findings and four hundred accepted ones is not a
-            clean fleet, which is why the count sits here rather than being hidden. Manage them
-            on <b>Risk exceptions</b>.
+            An accepted risk was reviewed and assigned another treatment, recorded with it.
+            The vulnerability is still present: no open findings plus many accepted ones is
+            not a clean fleet. Manage them on <b>Risk exceptions</b>.
           </span>
         </div>
       </html>
@@ -197,7 +194,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No open findings. If no feed has been imported this means the app cannot assess anything yet, not that the fleet is clean - check the Feed administration page.</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings. With no feed imported the app cannot assess anything yet, which is not a clean fleet - check the Feed administration page.</option>
         <option name="height">420</option>
         <drilldown>
           <link target="_blank">/app/riskability/riskability_findings?form.package_tok=$row.package$&amp;form.confidence_tok=*&amp;form.host_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
@@ -207,9 +204,9 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>Click a tile to see the findings behind that package.</b> Area is distinct CVEs, not severity.
           <span>
-            A large tile is a package carrying many open CVEs, so it is where patching
-            effort goes furthest. That is not the same as where the single worst
-            vulnerability is - for that, sort the Findings page by EPSS.
+            A large tile carries many open CVEs, so patching it goes furthest - not
+            necessarily where the worst single vulnerability is. Sort Findings by EPSS for
+            that.
           </span>
         </div>
       </html>
@@ -230,7 +227,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>
-        <option name="riskability.riskability_chart.emptyText">Nothing matched. With no feed imported the matcher has nothing to compare against.</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing matched. Without an imported feed the matcher has nothing to compare against.</option>
         <option name="height">300</option>
         <drilldown>
           <link target="_blank">/app/riskability/riskability_findings?form.confidence_tok=$row.confidence$&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
@@ -240,10 +237,11 @@
         <div class="rk-status" style="margin:8px 0 0">
           <b>Confidence is ranked, not categorical.</b>
           <span>
-            High means the package identity and version were both read from a package
-            record. Low means the identity was inferred - every Windows finding lands
-            here. Informational means the version could not be compared properly. Only
-            the high band should drive patching decisions.
+            High: package identity and version both read from a package record. Low: the
+            identity is inferred from a generated CPE, or the version could not be compared
+            properly - every Windows finding lands here. Informational: an upstream version
+            range covers a distribution-maintained package, which the vendor may already have
+            patched by backport. Only the high band should drive patching.
           </span>
         </div>
       </html>
@@ -262,7 +260,7 @@
           <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.hostname$</link>
         </drilldown>
         <option name="drilldown">all</option>
-        <option name="riskability.riskability_grid.emptyText">No host has an open finding. If no inventory has arrived, that is silence rather than a clean fleet.</option>
+        <option name="riskability.riskability_grid.emptyText">No host has an open finding. With no inventory arriving, that is silence, not a clean fleet.</option>
       </viz>
     </panel>
   </row>
@@ -272,13 +270,12 @@
       <title>Known-exploited vulnerabilities present in the fleet (CISA KEV)</title>
       <html>
         <div class="rk-status rk-bad" style="margin:0 0 8px">
-          <b>These are being exploited in the wild right now.</b>
+          <b>These CVEs are being exploited in the wild.</b>
           <span>
-            CISA lists them as known-exploited, which is a stronger signal than any severity
-            score: it is not a prediction. Click a row to see every finding for that CVE.
-            Where several advisories describe the same CVE, the shortest description is shown:
-            a distribution's one-line summary says what the flaw is, where NVD's runs to a
-            paragraph about affected versions.</span>
+            CISA lists them as known-exploited: observed, not predicted, and stronger than any
+            severity score. Click a row for every finding for that CVE. Where several
+            advisories describe one CVE, the shortest is shown - a distribution's one-line
+            summary rather than NVD's paragraph on affected versions.</span>
         </div>
       </html>
       <!-- kev_due and epss are aggregated, not grouped by. Splunk's stats
@@ -299,7 +296,7 @@
          packages AS "Packages", kev_added AS "Added to KEV",
          kev_due AS "Remediate by", epss_pct AS "EPSS %"</query>
         </search>
-        <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel is only as good as the KEV catalogue in the imported bundle - if KEV was unreachable when the bundle was built, it is blank for that reason.</option>
+        <option name="riskability.riskability_grid.emptyText">No known-exploited CVEs matched. This panel reflects the KEV catalogue in the imported bundle: if KEV was unreachable at build time, it is blank for that reason.</option>
         <option name="drilldown">all</option>
         <drilldown>
           <link target="_blank">/app/riskability/riskability_findings?form.cve_tok=$row.cve_id$&amp;form.confidence_tok=*&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.scope_tok=scope%3D*</link>

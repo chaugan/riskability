@@ -41,16 +41,14 @@
     <panel>
       <html>
         <div class="rk-status rk-warn" style="margin:0">
-          <b>Read this as exposure, not as attack evidence.</b>
+          <b>This page shows exposure, not attack evidence.</b>
           <span>
-            The chain is CVE &#8594; CWE &#8594; CAPEC &#8594; ATT&amp;CK technique, and every hop is a
-            mapping MITRE publishes. But it is many-to-many and lossy: it says
-            <em>this weakness class is the kind of thing that enables that technique</em>, not that
-            an adversary used it, and not that this particular vulnerability is exploitable in your
-            environment. A CVE with no CWE, or a CWE MITRE has not mapped, simply does not appear
-            - so absence here is not safety. Use it to see which capabilities your open
-            findings could hand an attacker, and pair it with the KEV and EPSS columns on
-            <b>Findings</b>, which are about real-world exploitation rather than classification.
+            CVE &#8594; CWE &#8594; CAPEC &#8594; ATT&amp;CK technique is a published MITRE mapping:
+            many-to-many and lossy. It says <em>this weakness class is the kind of thing that
+            enables that technique</em>, not that anyone used it or that the CVE is exploitable
+            here. A CVE with no CWE, or an unmapped CWE, never appears - absence is not safety.
+            For real-world exploitation rather than classification, see KEV and EPSS on
+            <b>Findings</b>.
           </span>
         </div>
       </html>
@@ -72,7 +70,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">heatmap</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No tactic data. The matrix needs the ATT&amp;CK tactic mapping, which older feed bundles do not carry - rebuild the bundle with --mitre and import it. Until then this panel is blank because the mapping is missing, not because nothing is exposed.</option>
+        <option name="riskability.riskability_chart.emptyText">No tactic data. The ATT&amp;CK tactic mapping is missing from the bundle, not the exposure - rebuild with --mitre and import.</option>
         <option name="height">520</option>
         <drilldown>
           <set token="tech_name_tok">$row.technique_name$</set>
@@ -85,15 +83,13 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>An empty matrix is not a clean matrix.</b>
+          <b>An empty matrix means the tactic mapping is missing.</b>
           <span>
-            The grid needs MITRE's technique-to-tactic mapping, which only bundles built
-            with <code>--mitre</code> by a recent feed builder carry. If this panel is
-            empty, rebuild the bundle and import it - the techniques listed below are
-            still correct in the meantime, they simply cannot be placed in an attack
-            sequence without tactics. Cells show distinct CVEs; a technique appears in
-            every tactic MITRE assigns it, so reading across a row counts the same CVEs
-            more than once.
+            The grid needs MITRE's technique-to-tactic mapping, carried only by bundles a
+            recent feed builder built with <code>--mitre</code>: rebuild and import. Without
+            tactics the technique list below is still correct, just not placeable in an attack
+            sequence. Cells count distinct CVEs; a technique appears under every tactic MITRE
+            assigns it, so a row counts the same CVEs more than once.
           </span>
         </div>
       </html>
@@ -124,7 +120,7 @@
           <set token="any_filter">1</set>
         </drilldown>
         <option name="drilldown">all</option>
-        <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE, so this is usually a gap in the mapping rather than an absence of exposure.</option>
+        <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE: usually a mapping gap, not an absence of exposure.</option>
       </viz>
     </panel>
   </row>
@@ -148,7 +144,7 @@
              panel asserting it shows a subset while showing everything is the
              exact failure the note exists to prevent. -->
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class, so this is a gap in the mapping rather than an absence of risk - see the coverage panel beside it.</option>
+        <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class: a mapping gap, not an absence of risk. See the coverage panel.</option>
         <option name="height">400</option>
         <drilldown>
           <set token="cwe_tok">$row.cwe$</set>
@@ -173,7 +169,7 @@
 | rename mapped AS "Mapping status", cves AS "CVEs", share AS "Share"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">Nothing to summarise: there are no open findings to classify.</option>
+        <option name="riskability.riskability_grid.emptyText">No open findings to classify.</option>
       </viz>
     </panel>
   </row>
@@ -192,7 +188,7 @@
         <option name="riskability.riskability_chart.chartType">sankey</option>
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
-        <option name="riskability.riskability_chart.emptyText">Nothing to map. No open finding has a CWE that MITRE links to a technique.</option>
+        <option name="riskability.riskability_chart.emptyText">No open finding has a CWE that MITRE links to a technique.</option>
         <option name="height">460</option>
         <drilldown>
           <set token="cwe_filter">cwe="$row.cwe$"</set>
@@ -205,13 +201,12 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>Widths do not add up, by design.</b>
+          <b>Ribbon widths do not sum.</b>
           <span>
-            One weakness can enable several techniques, so a single CVE is drawn once per
-            technique it reaches. Each ribbon is honest on its own - that many distinct CVEs
-            connect that CWE to that technique - but summing the right-hand side counts the
-            same CVE several times. Read concentration, not totals. Only the top 25 links
-            are shown.
+            One weakness can enable several techniques, so a CVE is drawn once per technique
+            it reaches. Each ribbon is correct alone (that many distinct CVEs link that CWE to
+            that technique), but totals double-count. Read concentration, not totals. Top 25
+            links only.
           </span>
         </div>
       </html>
@@ -236,7 +231,7 @@
         <option name="riskability.riskability_chart.chartType">boxplot</option>
         <option name="riskability.riskability_chart.filterNote">$drill_note$</option>
         <option name="riskability.riskability_chart.valueLabel">EPSS</option>
-        <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to show a distribution. EPSS comes from the feed; if it was not included in the bundle there is nothing to plot.</option>
+        <option name="riskability.riskability_chart.emptyText">Not enough scored CVEs per technique to plot a distribution. EPSS comes from the feed; without it in the bundle there is nothing to plot.</option>
         <option name="height">420</option>
         <drilldown>
           <set token="tech_filter">technique_name="$row.technique_name$"</set>
@@ -247,12 +242,11 @@
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">
-          <b>Why a distribution rather than a peak.</b>
+          <b>Boxes show the EPSS spread per technique, not its peak.</b>
           <span>
-            The table above reports each technique's highest EPSS, which one noisy CVE can
-            dominate. A box shows whether a technique is backed by many likely-exploited
-            CVEs or by a single outlier - those call for different responses. Techniques
-            with fewer than three scored CVEs are omitted as too small to describe.
+            The table above reports each technique's highest EPSS, which one CVE can
+            dominate; a box separates many likely-exploited CVEs from a single outlier.
+            Techniques with fewer than three scored CVEs are omitted.
           </span>
         </div>
       </html>
@@ -266,17 +260,16 @@
     <panel rejects="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a technique, a matrix cell, a CWE tile, a Sankey
-            ribbon or a box below to narrow this page to it.</span>
+          <span class="rk-drill-hint">Click a technique, matrix cell, CWE tile, Sankey ribbon
+            or box below to narrow this page to it.</span>
         </div>
       </html>
     </panel>
     <panel depends="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">This page is narrowed. The panels below show only what
-            matches; the matrix and the technique list stay whole so you can pick something
-            else.</span>
+          <span class="rk-drill-hint">Page narrowed. The panels below show only what matches;
+            the matrix and technique list stay whole so you can pick something else.</span>
           <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
              href="riskability_mitre?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
@@ -292,9 +285,8 @@
         <div class="rk-status" style="margin:0 0 8px">
           <b>Showing only $tech_tok$ - $tech_name_tok$.</b>
           <span>
-            These are the findings that put this technique on the matrix. Every one is a real
-            vulnerability; the technique is what MITRE says this class of weakness could enable,
-            not something anyone observed.
+            These findings are real vulnerabilities. The technique is what MITRE says this
+            weakness class could enable, not something anyone observed.
             <a href="https://attack.mitre.org/techniques/$tech_tok$/" target="_blank"
                rel="noopener">Read the technique on attack.mitre.org</a> (needs internet).
           </span>
@@ -317,7 +309,7 @@
         </search>
         <option name="riskability.riskability_grid.filterNote">$drill_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No findings map to a technique at the current confidence filter.</option>
+        <option name="riskability.riskability_grid.emptyText">No findings map to a technique at this confidence filter.</option>
       </viz>
     </panel>
   </row>

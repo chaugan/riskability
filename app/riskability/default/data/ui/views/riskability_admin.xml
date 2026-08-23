@@ -12,10 +12,9 @@
         <div class="rk-help">
           <h3>How the offline feed works</h3>
           <p>
-            This app makes no outbound network requests, by design: it is built to run on a
-            search head with no route to the internet. Vulnerability data gets in exactly one
-            way - you build a bundle on a machine that does have access, carry it across,
-            and import it here.
+            This app makes no outbound network requests: it runs on a search head with no
+            route to the internet. Vulnerability data gets in one way - build a bundle on a
+            connected machine, carry it across, import it here.
           </p>
 
           <h4>1. Build a bundle (on a connected machine)</h4>
@@ -27,68 +26,64 @@ riskability-feed build --out riskability-feed.tar.gz \
     --kev --epss</pre>
           <p>
             Only the sources you name are downloaded. Pick the distributions and language
-            ecosystems your fleet actually runs; the <b>Coverage</b> dashboard shows which
-            component types are going unmatched, which is the fastest way to work out what to
-            add next.
+            ecosystems your fleet runs; the <b>Coverage</b> dashboard lists which component
+            types are going unmatched.
           </p>
 
           <h4>2. Get it onto this search head</h4>
           <p>
-            Either drop the file straight into the staging directory shown above - the
-            right choice for anything large, since nothing has to fit in memory - or use
-            the upload control, which is capped at 64&#160;MB because a REST upload is held
+            Use the staging directory shown above for large files: nothing has to fit in
+            memory. The upload control is capped at 64&#160;MB because a REST upload is held
             whole in the search head's memory.
           </p>
 
           <h4>3. Import it</h4>
           <p>
             Import replaces the active feed rather than merging into it, so withdrawn
-            advisories and corrected ranges cannot survive as ghosts. Searches keep seeing the
-            previous feed until the import finishes.
+            advisories and corrected ranges cannot survive. Searches keep seeing the previous
+            feed until the import finishes.
           </p>
 
           <h4>Windows estates need one extra source</h4>
           <p>
-            Linux packages are installed by a package manager, so each carries a PURL and can be
-            matched against its distribution's own advisories - which is what makes backport
-            handling possible. Windows software has no equivalent: there is no package manager and
-            no PURL, only a display name and a version read out of the registry.
+            Linux packages carry a PURL from the package manager and match against their
+            distribution's own advisories, which makes backport handling possible. Windows has
+            no package manager and no PURL - only a display name and a registry version.
           </p>
           <p>
-            So a Windows fleet needs <b>NVD</b> in the bundle, which carries CPE-keyed ranges:
+            Windows fleets therefore need <b>NVD</b> in the bundle, which carries CPE-keyed ranges:
           </p>
           <pre>riskability-feed build --out riskability-feed.tar.gz \
     --nvd 2015-2026 --mitre --kev --epss \
     --ecosystem Ubuntu --ecosystem npm        # keep your Linux sources too</pre>
           <p>
-            Two things to expect. <b>Every Windows finding is reported at low confidence</b>, because
-            the component is tied to an advisory through a CPE generated from a display name
-            (&#8220;7-Zip 24.08 (x64)&#8221; &#8594; <code>cpe:2.3:a:igor_pavlov:7-zip:24.08</code>) rather
-            than read from a package record. The version comparison may be exact while the product
-            identity is still a guess, so these are leads to verify, not facts to report. And
-            <b>installed hotfixes are collected but not yet matched</b>: assessing Windows OS
-            patches properly means asking &#8220;is the KB that fixes this CVE installed&#8221;
-            against Microsoft&#8217;s MSRC data, which is a different mechanism from version
-            ranges and is not implemented yet.
+            <b>Every Windows finding is reported at low confidence</b>: the component is tied to
+            an advisory through a CPE generated from a display name (&#8220;7-Zip 24.08
+            (x64)&#8221; &#8594; <code>cpe:2.3:a:igor_pavlov:7-zip:24.08</code>) rather than read
+            a package record. The comparison may be exact while the product identity is a guess:
+            leads to verify, not facts.
+            <b>Installed hotfixes are collected but not yet matched</b>: that needs
+            Microsoft&#8217;s MSRC data to ask whether the KB fixing a CVE is installed, a
+            different mechanism from version ranges and not yet implemented.
           </p>
 
           <h4>If this search head does have internet access</h4>
           <p>
-            Use the <b>Fetch directly</b> panel above. It checks which upstream hosts are actually
-            reachable first, so an air-gapped instance tells you immediately rather than starting a
-            download that fails minutes later. The app makes no outbound request unless you press
-            that button - nothing is scheduled and nothing runs at install time.
+            Use the <b>Fetch directly</b> panel above. It tests upstream reachability first, so
+            an air-gapped instance fails immediately rather than minutes into a download. No
+            outbound request happens unless you press it: nothing is scheduled, nothing runs at
+            install time.
           </p>
 
           <h4>A note on redistribution</h4>
           <p>
-            The feeds carry different licences: OSV aggregates sources that are individually
+            Feed licences differ: OSV aggregates sources that are individually
             CC&#8209;BY&#8209;4.0 (GitHub, Red&#160;Hat), CC&#8209;BY&#8209;SA&#8209;4.0
             (Ubuntu), MIT (AlmaLinux) and BSD (Rocky); CISA KEV is US&#8209;government public
-            domain; EPSS is published by FIRST and expects attribution. Each record keeps the
-            source it came from, so attribution survives into Splunk. Building a bundle for
-            your own organisation is uncontroversial; redistributing one is a decision for you
-            rather than for this app, which is exactly why nothing is shipped pre-loaded.
+            domain; EPSS is published by FIRST and expects attribution. Each record keeps its
+            source, so attribution survives into Splunk. Building a bundle for your own
+            organisation is uncontroversial; redistributing one is your decision, which is why
+            nothing ships pre-loaded.
           </p>
         </div>
       </html>

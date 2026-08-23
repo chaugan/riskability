@@ -109,11 +109,11 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>Age is time since Riskability first saw it.</b>
+          <b>Age is time since Riskability first saw the finding.</b>
           <span>
-            Not time since the CVE was published, and not time since the host became
-            vulnerable. On a recent install every box is short; the number means
-            something only once the app has collected for longer than your patch cycle.
+            Not since the CVE was published, and not since the host became vulnerable. On a
+            recent install every box is short; the number means something only once collection
+            has run longer than your patch cycle.
           </span>
         </div>
       </html>
@@ -124,8 +124,7 @@
     <panel rejects="$rem_any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a box above to narrow the two tables below to that
-            severity.</span>
+          <span class="rk-drill-hint">Click a box above to narrow the two tables below.</span>
         </div>
       </html>
     </panel>
@@ -159,7 +158,7 @@
         </search>
         <option name="riskability.riskability_grid.filterNote">$rem_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">Nothing has been observed being fixed yet. Mitigation is only visible once a host reports the same path at a newer version.</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing observed being fixed yet. Mitigation is visible only once a host reports the same path at a newer version.</option>
       </viz>
     </panel>
   </row>
@@ -169,10 +168,10 @@
       <title>Closed without evidence of a fix</title>
       <html>
         <p class="rk-dim" style="margin:0 0 10px">
-          These findings stopped being reported, but the package is no longer at that path at all,
-          or the host stopped reporting entirely. Neither is proof of remediation: a failed scan,
-          a decommissioned host, or a feed imported without the relevant ecosystem all look exactly
-          like this. They are listed separately from mitigated findings for that reason.
+          These stopped being reported, but either the package is no longer at that path or the
+          host stopped reporting entirely. Neither is proof of remediation: a failed scan, a
+          decommissioned host, and a feed imported without the relevant ecosystem all look like
+          this. Hence the separate table.
         </p>
       </html>
       <viz type="riskability.riskability_grid">
@@ -191,7 +190,7 @@
         </search>
         <option name="riskability.riskability_grid.filterNote">$rem_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">Nothing here, which is the good case: every finding that stopped appearing did so with evidence of an upgrade.</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing here, the good case: every finding that stopped appearing did so with evidence of an upgrade.</option>
       </viz>
     </panel>
   </row>
@@ -210,7 +209,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">stackedcolumn</option>
         <option name="riskability.riskability_chart.valueLabel">findings</option>
-        <option name="riskability.riskability_chart.emptyText">No findings have been recorded yet. This chart fills in as scans accumulate.</option>
+        <option name="riskability.riskability_chart.emptyText">No findings recorded yet. This chart fills in as scans accumulate.</option>
         <!-- Illustrative rather than navigational: a click here has nowhere
              useful to go, and Splunk's default for a drilldown with no target
              is to abandon the dashboard for a raw search. -->
@@ -221,10 +220,9 @@
         <div class="rk-status rk-warn" style="margin:8px 0 0">
           <b>This is when Riskability first saw a finding, not when it appeared.</b>
           <span>
-            Bars cluster around scan and feed-import times rather than around real
-            events, so the shape reflects the collection schedule as much as the fleet.
-            Read it for whether the open band is shrinking over time; do not read a
-            quiet day as a good day.
+            Bars cluster around scan and feed-import times rather than real events, so the
+            shape reflects the collection schedule as much as the fleet. Read whether the open
+            band is shrinking; a quiet day is not a good day.
           </span>
         </div>
       </html>
