@@ -301,7 +301,15 @@ function buildHeatmap(rows, t, config) {
         },
         grid: { left: 140, right: 20, top: 60, bottom: 90, containLabel: false },
         xAxis: {
-            type: 'category', data: xs, splitArea: { show: true },
+            type: 'category', data: xs,
+            // No split area on this axis. ECharts draws split areas as
+            // alternating translucent bands, and with both axes drawing them
+            // the two overlays multiply into a chequerboard of four
+            // intensities -- with the top-left cell, where both bands are at
+            // their most transparent, showing bare background. On a sparse
+            // matrix, where most cells carry no data and nothing is painted
+            // over the bands, that corner reads as a hole in the grid.
+            splitArea: { show: false },
             axisLabel: {
                 color: t.muted, rotate: 40, fontSize: 10, interval: 0,
                 formatter: function (v) { return shorten(v, 24); },
@@ -309,7 +317,15 @@ function buildHeatmap(rows, t, config) {
             axisLine: { lineStyle: { color: t.axis } },
         },
         yAxis: {
-            type: 'category', data: ys, splitArea: { show: true },
+            type: 'category', data: ys,
+            // Row striping only, and in this theme's own colours. The default
+            // band colours are light greys meant for a light background, which
+            // on this theme lift the whole plot area away from the panel it
+            // sits in.
+            splitArea: {
+                show: true,
+                areaStyle: { color: [t.tooltipBg, 'rgba(0,0,0,0)'] },
+            },
             axisLabel: {
                 color: t.muted, fontSize: 10, width: 130, overflow: 'truncate',
                 formatter: function (v) { return shorten(v, 26); },
@@ -706,7 +722,7 @@ function buildPriorityMatrix(rows, t, config) {
         grid: { left: 178, right: 22, top: 64, bottom: 20, containLabel: false },
         xAxis: {
             type: 'category', position: 'top', data: xs,
-            splitArea: { show: true },
+            splitArea: { show: false },
             axisTick: { show: false },
             axisLine: { lineStyle: { color: t.axis } },
             axisLabel: { color: t.muted, fontSize: 11, interval: 0 },
@@ -716,7 +732,8 @@ function buildPriorityMatrix(rows, t, config) {
         },
         yAxis: {
             type: 'category', data: ys,
-            splitArea: { show: true },
+            splitArea: { show: true,
+                         areaStyle: { color: [t.tooltipBg, 'rgba(0,0,0,0)'] } },
             axisTick: { show: false },
             axisLine: { lineStyle: { color: t.axis } },
             axisLabel: { color: t.muted, fontSize: 11, interval: 0,

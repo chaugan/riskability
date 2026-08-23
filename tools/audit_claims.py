@@ -35,7 +35,7 @@ from riskability import vercmp             # noqa: E402
 # components carry a CPE" long after the collector had started emitting them:
 # it was still reading the scan from before that changed.
 LINUX = ROOT / "testdata" / "ndjson" / "linux-host-01.ndjson"
-WINDOWS = ROOT / "testdata" / "ndjson" / "windows-host-01-v2.ndjson"
+WINDOWS = ROOT / "testdata" / "ndjson" / "windows-host-01.ndjson"
 BUNDLE = ROOT / "testdata" / "feeds" / "riskability-feed-full.tar.gz"
 
 results = []

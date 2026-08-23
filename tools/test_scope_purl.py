@@ -150,7 +150,7 @@ def main() -> int:
         ("pkg:rpm/opensuse/zlib@1.2?distro=opensuse-leap-15.5",
          ("opensuse-leap", "15.5")),
         # A Go module has no distribution and must not be given one.
-        ("pkg:golang/github.com/chaugan/relay@v0.9.0", ("", "")),
+        ("pkg:golang/github.com/example-org/relay@v0.9.0", ("", "")),
         ("Bonjour@3.1.0.1", ("", "")),
     ]:
         check(f"purl distro {value[:52]:<52}", scope.purl_distro(value) == want,
