@@ -14,7 +14,9 @@
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SRC="$ROOT/docs/screenshots"
-OUT="$ROOT/docs/splunkbase"
+# Gitignored: these are listing assets for the Splunkbase admin flow, not
+# repository content. They are transferred out of band.
+OUT="${RK_LISTING_OUT:-$ROOT/docs/splunkbase}"
 mkdir -p "$OUT"
 
 command -v magick >/dev/null || { echo "ImageMagick (magick) is required" >&2; exit 1; }

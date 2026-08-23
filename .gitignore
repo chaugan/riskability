@@ -41,3 +41,7 @@ SCALE-TODO.md
 # start empty, and both used to get there by deleting tracked fixtures. The
 # canonical scans live in testdata/scans/ instead.
 /docker/uf/swinv-data/
+
+# Splunkbase listing assets and copy are admin work, not part of the app.
+# They are produced into this directory and transferred out of band.
+/docs/splunkbase/
