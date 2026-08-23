@@ -53,18 +53,36 @@ for app in "${APPS[@]}"; do
   rm -rf "$STAGE/$app/vectors"
 
 
+  # Ship the licence inside every package. Splunkbase vets intellectual
+  # property, and an installed app that points at a licence living only in a
+  # git repository is asking a reviewer - and later an auditor - to take the
+  # terms on trust. Copied at package time rather than committed three times,
+  # so there is one licence file in the tree and it cannot drift.
+  cp "$ROOT/LICENSE" "$STAGE/$app/LICENSE"
+
   # Build artefacts. AppInspect fails a package containing bytecode.
   find "$STAGE/$app" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
   find "$STAGE/$app" \( -name '*.pyc' -o -name '.DS_Store' -o -name '*.swp' \) -delete 2>/dev/null || true
 
   # A modular input script that is not executable is never introspected, and
   # Splunk says nothing about why the input does not appear.
-  if [ -f "$STAGE/$app/bin/riskability_feedworker.py" ]; then
-    chmod +x "$STAGE/$app/bin/riskability_feedworker.py"
-  fi
+  # Splunkbase: "files that indicate they are executable must actually be
+  # executable". Every entry point here carries a shebang, so the exec bit has
+  # to match or the submission is rejected on a technicality. Enforced at
+  # package time rather than trusted to the checkout, because a tree cloned
+  # with a umask that drops the bit would ship a package that fails review.
+  for f in "$STAGE/$app"/bin/*.py; do
+    [ -f "$f" ] || continue
+    head -1 "$f" | grep -q '^#!' && chmod +x "$f"
+  done
 
   tar -C "$STAGE" -czf "$DIST/${app}-${VERSION}.spl" "$app"
-  printf '  %-26s %s\n' "$app" "$(du -h "$DIST/${app}-${VERSION}.spl" | cut -f1)"
+  # Splunkbase accepts .spl, .tar.gz and .tgz - they are the same gzipped tar -
+  # but its upload page asks for a .tar.gz, and Splunk Web's "install app from
+  # file" expects .spl. Ship both names for the one archive rather than making
+  # somebody rename a file and wonder whether it is still the tested artefact.
+  cp "$DIST/${app}-${VERSION}.spl" "$DIST/${app}-${VERSION}.tar.gz"
+  printf '  %-26s %s  (.spl and .tar.gz)\n' "$app" "$(du -h "$DIST/${app}-${VERSION}.spl" | cut -f1)"
 done
 
 echo

@@ -105,8 +105,10 @@ labels: *answers any address* (a wildcard bind), *answers one address* (bound to
 a specific non-loopback address - treated as reachable, because it is),
 *loopback only*, *no listening port*, or *not assessed* when the host never
 reported its ports at all. On the two-host test fleet, of 10,206 open findings,
-11 answered a network address, 272 answered only loopback, and 9,923 had nothing
-listening. Those figures are a live-instance snapshot rather than something
+11 answered a network address, 279 answered only loopback, and 9,916 had nothing
+listening. Seven of the loopback figure are inside a running container that
+publishes a port; findings in a stopped container are counted as unreachable,
+because a stopped container answers nothing. Those figures are a live-instance snapshot rather than something
 `audit_claims.py` can recompute. It is a re-ordering, never a filter: an unreachable vulnerability is still a
 vulnerability, and a host running a collector too old to report ports is shown as
 *not assessed* rather than counted as safe.
