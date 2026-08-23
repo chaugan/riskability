@@ -213,6 +213,26 @@ def audit(path):
             if not offenders:
                 note(OK, pkg, f"indexes.conf: {len(icp.sections())} stanzas, Cloud-safe properties only")
 
+        # Splunkbase's own package validation - which is neither slim nor
+        # AppInspect, and which no local tool reproduces - requires an icon for
+        # every visualization stanza. That icon is preview.png in the
+        # visualization's directory, the same file Splunk's own bundled
+        # visualizations ship; visualizations.conf itself has no icon setting.
+        vpath = f"{root}/default/visualizations.conf"
+        if vpath in names:
+            vcp = configparser.ConfigParser(strict=False)
+            vcp.read_string(tf.extractfile(vpath).read().decode())
+            for stanza in vcp.sections():
+                png = f"{root}/appserver/static/visualizations/{stanza}/preview.png"
+                if png not in names:
+                    note(FAIL, pkg, f"visualization [{stanza}] has no appserver/static/visualizations/{stanza}/preview.png")
+                    continue
+                dims = png_size(tf.extractfile(png).read())
+                if dims is None:
+                    note(FAIL, pkg, f"visualization [{stanza}]: preview.png is not a PNG")
+                else:
+                    note(OK, pkg, f"visualization [{stanza}] preview.png is {dims[0]}x{dims[1]}")
+
         for doc in ("README.md", "README.txt", "README"):
             if f"{root}/{doc}" in names:
                 note(OK, pkg, f"ships {doc}")

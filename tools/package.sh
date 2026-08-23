@@ -213,6 +213,8 @@ need riskability "riskability/appserver/static/visualizations/riskability_chart/
      "sizes the chart element; ECharts draws nothing at 0x0"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/formatter.html" \
      "panel options"
+need riskability "riskability/appserver/static/visualizations/riskability_chart/preview.png" \
+     "the picker icon; Splunkbase rejects a visualization stanza without one"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/ECHARTS-LICENSE.txt" \
      "Splunkbase vetting requires vendored licences"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/THIRD-PARTY.md" \
@@ -223,6 +225,8 @@ need riskability "riskability/appserver/static/visualizations/riskability_grid/v
      "Tabulator's theme plus our palette; without it the grid is unstyled"
 need riskability "riskability/appserver/static/visualizations/riskability_grid/formatter.html" \
      "panel options"
+need riskability "riskability/appserver/static/visualizations/riskability_grid/preview.png" \
+     "the picker icon; Splunkbase rejects a visualization stanza without one"
 need riskability "riskability/appserver/static/visualizations/riskability_grid/TABULATOR-LICENSE.txt" \
      "Splunkbase vetting requires vendored licences"
 need riskability "riskability/appserver/static/visualizations/riskability_grid/THIRD-PARTY.md" \
