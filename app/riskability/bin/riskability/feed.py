@@ -412,6 +412,120 @@ def iter_cvelist_archive(path: str) -> Iterable[dict]:
                     continue
 
 
+NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+NVD_FIRST_YEAR = 2002
+NVD_LATEST_YEAR = 2026
+
+# This module deliberately does not import build.py: build.py imports this one,
+# and a cycle between them would be a worse problem than a four line opener.
+_UA = "riskability-feed/1.0 (+https://github.com/chaugan/riskability)"
+
+
+def _http_get(url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 300):
+    import urllib.request
+    req = urllib.request.Request(url, headers={"User-Agent": _UA, **(headers or {})})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+# NIST retired the bulk JSON feeds at nvd.nist.gov/feeds/json/cve/2.0/. They
+# return 404 now, which is what the admin page's connectivity check reports as
+# "the feed URL has moved". The 2.0 API replaces them and serves the same record
+# shape, so normalize_nvd() is unchanged; only the transport differs.
+#
+# The API is paged and rate limited: 5 requests per rolling 30 seconds without a
+# key, 50 with one. At 2000 records a page and roughly 382,000 CVEs that is 191
+# requests, so an unkeyed run is bounded by the rate limit rather than by
+# bandwidth. Set NVD_API_KEY to make it quick; the key is free from NIST.
+NVD_PAGE = 2000
+NVD_SLEEP_UNKEYED = 6.5
+NVD_SLEEP_KEYED = 0.7
+
+
+def _nvd_windows(years):
+    """120 day (pubStartDate, pubEndDate) pairs covering the requested years.
+
+    The API caps a published-date range at 120 days per request, so a year
+    becomes three or four windows.
+    """
+    import datetime as _dt
+    out = []
+    for year in sorted(years):
+        cur = _dt.datetime(year, 1, 1)
+        stop = _dt.datetime(year + 1, 1, 1)
+        while cur < stop:
+            nxt = min(cur + _dt.timedelta(days=119), stop)
+            out.append((cur.strftime("%Y-%m-%dT%H:%M:%S.000"),
+                        nxt.strftime("%Y-%m-%dT%H:%M:%S.000")))
+            cur = nxt
+    return out
+
+
+def _nvd_page(url: str, headers, delay: float):
+    """One API request, retrying the rate-limit and overload responses.
+
+    403 and 429 both mean "too fast" here and NIST returns 503 under load, so
+    all three are worth backing off on rather than failing the build.
+    """
+    import time as _time
+    for attempt in range(5):
+        try:
+            with _http_get(url, headers=headers) as r:
+                return json.loads(r.read().decode("utf-8"))
+        except Exception as exc:
+            if attempt == 4:
+                raise FeedError(f"NVD API request failed: {exc}")
+            _time.sleep(delay * (attempt + 2))
+
+
+def iter_nvd_api(years=None, api_key: str = "", log=None,
+                 url: str = NVD_API_URL):
+    """Page the NVD 2.0 API, yielding the items the old feed files held.
+
+    Two strategies, because the cost differs by an order of magnitude. Asking
+    for everything is 191 requests whatever you then discard, so a narrow year
+    selection is fetched as published-date windows instead and only pays for
+    the years it wants. A full-span request pages straight through, since
+    windowing that would just add a request per window for no saving.
+    """
+    import time as _time
+    say = log or (lambda m: None)
+    delay = NVD_SLEEP_KEYED if api_key else NVD_SLEEP_UNKEYED
+    headers = {"apiKey": api_key} if api_key else {}
+
+    wanted = sorted(years or [])
+    full_span = not wanted or (min(wanted) <= NVD_FIRST_YEAR
+                               and len(wanted) >= (max(wanted) - min(wanted) + 1))
+    windows = [None] if full_span else _nvd_windows(wanted)
+    if not full_span:
+        say(f"  {len(wanted)} year(s) as {len(windows)} date windows")
+
+    total_seen = 0
+    for win in windows:
+        base = f"{url}?resultsPerPage={NVD_PAGE}"
+        if win:
+            base += f"&pubStartDate={win[0]}&pubEndDate={win[1]}"
+        start = total = 0
+        while True:
+            doc = _nvd_page(f"{base}&startIndex={start}", headers, delay)
+            if not total:
+                total = int(doc.get("totalResults") or 0)
+                if win is None:
+                    say(f"  {total} CVEs to page through, {NVD_PAGE} at a time")
+            items = doc.get("vulnerabilities") or []
+            if not items:
+                break
+            for item in items:
+                yield item
+            start += len(items)
+            total_seen += len(items)
+            if start >= total:
+                break
+            _time.sleep(delay)
+        if win is None and total:
+            say(f"  {min(total_seen, total)} of {total}")
+    if not full_span:
+        say(f"  {total_seen} CVEs across the requested years")
+
+
 def normalize_cvelist(record: dict) -> Optional[dict]:
     """One CVE Program record (JSON 5.0) -> the fields worth carrying offline.
 

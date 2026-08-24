@@ -412,7 +412,12 @@
         var row = el("div", "rk-scripts");
         var box = el("div", "rk-script");
         var a = el("a", "rk-btn rk-btn-primary", "Download riskability-feedbuilder.zip");
-        a.href = staticUrl("scripts/riskability-feedbuilder.zip");
+        // Splunk serves /static/app/... with long-lived cache headers, so a
+        // browser that fetched this path once will keep returning the same
+        // bytes after the app is upgraded. Downloading a builder that predates
+        // your app is silently wrong, so defeat the cache on every click.
+        a.href = staticUrl("scripts/riskability-feedbuilder.zip")
+                 + "?v=" + Date.now();
         a.setAttribute("download", "riskability-feedbuilder.zip");
         box.appendChild(a);
         box.appendChild(el("div", "rk-dim",

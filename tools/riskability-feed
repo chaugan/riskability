@@ -58,7 +58,7 @@ EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 # NVD is the only source that covers software no package manager installed --
 # most of a Windows estate -- and the only one carrying the CWE classification
 # the MITRE ATT&CK mapping is derived from.
-NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz"
+# NIST retired the bulk JSON feeds; feedlib.iter_nvd_api pages the 2.0 API.
 NVD_FIRST_YEAR = 2002
 
 # MITRE's own catalogues. Small, and each hop is a published mapping.
@@ -262,19 +262,15 @@ def cmd_build(args) -> int:
     cwe_by_cve: Dict[str, List[str]] = {}
     if args.nvd:
         years = _nvd_years(args.nvd)
-        print(f"fetching NVD          {len(years)} year file(s): "
-              f"{years[0]}-{years[-1]}", file=sys.stderr)
+        api_key = os.environ.get("NVD_API_KEY", "").strip()
+        print(f"fetching NVD          2.0 API, {years[0]}-{years[-1]}"
+              + ("" if api_key else ", no NVD_API_KEY set, so rate limited"),
+              file=sys.stderr)
         n_cve = n_ranges = 0
-        for year in years:
-            url = NVD_YEAR_URL.format(year=year)
-            try:
-                with _open(url) as r:
-                    raw = r.read()
-                doc = json.loads(gzip.decompress(raw).decode("utf-8"))
-            except Exception as exc:
-                print(f"  ERROR {exc} - skipping {year}", file=sys.stderr)
-                continue
-            for item in doc.get("vulnerabilities") or []:
+        try:
+            for item in feedlib.iter_nvd_api(
+                    years=years, api_key=api_key,
+                    log=lambda m: print(m, file=sys.stderr)):
                 try:
                     advisory, ranges, _ = feedlib.normalize_nvd(item, feed_source="nvd")
                 except feedlib.FeedError:
@@ -293,8 +289,10 @@ def cmd_build(args) -> int:
                     writer.add_range(row)
                     n_ranges += 1
                 n_cve += 1
-            print(f"  {year}: {n_cve} CVEs, {n_ranges} CPE ranges so far", file=sys.stderr)
-        sources.append({"name": "nvd", "url": NVD_YEAR_URL.format(year="YYYY"),
+        except Exception as exc:
+            print(f"  ERROR {exc}", file=sys.stderr)
+        print(f"  NVD: {n_cve} CVEs, {n_ranges} CPE ranges", file=sys.stderr)
+        sources.append({"name": "nvd", "url": feedlib.NVD_API_URL,
                         "fetched_at": int(time.time()), "records": n_cve,
                         "licence": "NIST/NVD; US Government work. Not endorsed by NVD."})
 

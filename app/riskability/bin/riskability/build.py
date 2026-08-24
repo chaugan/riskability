@@ -40,9 +40,11 @@ ATTACK_STIX_URL = ("https://raw.githubusercontent.com/mitre-attack/attack-stix-d
                    "/master/enterprise-attack/enterprise-attack.json")
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
-NVD_YEAR_URL = "https://nvd.nist.gov/feeds/json/cve/2.0/nvdcve-2.0-{year}.json.gz"
-NVD_FIRST_YEAR = 2002
-NVD_LATEST_YEAR = 2026
+# The bulk JSON feeds that used to live under nvd.nist.gov/feeds are retired
+# and return 404. feedlib.iter_nvd_api pages the 2.0 API in their place.
+# Defined in feed.py so the year window helper there can use them too.
+NVD_FIRST_YEAR = feedlib.NVD_FIRST_YEAR
+NVD_LATEST_YEAR = feedlib.NVD_LATEST_YEAR
 # The CVE Program's own records, which are the only source in the feed that
 # names a product the way a person says it. Published as a dated release asset
 # rather than a stable path, so the tag is resolved at fetch time. Large: about
@@ -149,7 +151,7 @@ def online() -> Dict[str, bool]:
     """
     checks = {
         "osv": osv_url("Go"),
-        "nvd": NVD_YEAR_URL.format(year=NVD_LATEST_YEAR),
+        "nvd": feedlib.NVD_API_URL + "?resultsPerPage=1",
         "mitre": CWE_URL,
         "kev": KEV_URL,
         "epss": EPSS_URL,
@@ -276,16 +278,14 @@ def build_bundle(
 
     if nvd:
         years = nvd_years(nvd)
-        say(f"fetching NVD {len(years)} year file(s)")
+        api_key = os.environ.get("NVD_API_KEY", "").strip()
+        say("fetching NVD through the 2.0 API"
+            + (" with an API key" if api_key else
+               ", no API key set, so this is rate limited to five requests per "
+               "thirty seconds and will take a while. NVD_API_KEY makes it quick"))
         n_cve = 0
-        for year in years:
-            try:
-                with _open(NVD_YEAR_URL.format(year=year)) as r:
-                    doc = json.loads(gzip.decompress(r.read()).decode("utf-8"))
-            except Exception as exc:
-                failed(f"NVD {year}", exc)
-                continue
-            for item in doc.get("vulnerabilities") or []:
+        try:
+            for item in feedlib.iter_nvd_api(years=years, api_key=api_key, log=say):
                 try:
                     advisory, ranges, _ = feedlib.normalize_nvd(item, feed_source="nvd")
                 except feedlib.FeedError:
@@ -296,8 +296,10 @@ def build_bundle(
                 for row in ranges:
                     writer.add_range(row)
                 n_cve += 1
-            say(f"  NVD {year} done ({n_cve} CVEs so far)")
-        sources.append({"name": "nvd", "url": NVD_YEAR_URL.format(year="YYYY"),
+        except Exception as exc:
+            failed("NVD", exc)
+        say(f"  NVD done ({n_cve} CVEs)")
+        sources.append({"name": "nvd", "url": feedlib.NVD_API_URL,
                         "fetched_at": int(time.time()), "records": n_cve,
                         "licence": "NIST/NVD; US Government work. Not endorsed by NVD."})
 
