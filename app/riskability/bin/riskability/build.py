@@ -58,7 +58,10 @@ CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
 # these and nothing else.
 NETWORK_HOSTS = [
     "storage.googleapis.com",   # OSV ecosystem archives
-    "nvd.nist.gov",             # NVD CVE 2.0 feeds
+    "services.nvd.nist.gov",    # NVD 2.0 API
+    "github.com",               # regenerated NVD bulk feeds, CVE Program releases
+    "objects.githubusercontent.com",  # where those release assets are served from
+    "api.github.com",           # resolving the latest CVE Program release
     "cwe.mitre.org",            # MITRE CWE catalogue
     "capec.mitre.org",          # MITRE CAPEC catalogue
     "raw.githubusercontent.com", # MITRE ATT&CK STIX bundle
@@ -441,14 +444,24 @@ def build_bundle(
                     shutil.copyfileobj(r, fh, 1024 * 1024)
 
             kept = 0
+            skipped = 0
             for record in feedlib.iter_cvelist_archive(blob_path):
-                row = feedlib.normalize_cvelist(record)
+                # 380,000 records from an upstream that occasionally ships a
+                # malformed one. Losing the whole catalogue over a single bad
+                # row is a far worse outcome than losing the row.
+                try:
+                    row = feedlib.normalize_cvelist(record)
+                except Exception:
+                    skipped += 1
+                    continue
                 if row is None:
                     continue
                 writer.write(feedlib.CVEDETAIL_MEMBER, row)
                 kept += 1
                 if kept % 25000 == 0:
                     say(f"  {kept} CVEs")
+            if skipped:
+                say(f"  {skipped} record(s) skipped as malformed")
             say(f"  {kept} CVEs with a description or a named product")
             sources.append({"name": "cve-program", "url": origin,
                             "fetched_at": int(time.time()), "records": kept,

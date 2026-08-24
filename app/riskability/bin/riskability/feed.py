@@ -391,11 +391,19 @@ def iter_cvelist_archive(path: str) -> Iterable[dict]:
                         for i2 in z2.infolist():
                             if i2.is_dir() or not i2.filename.endswith(".json"):
                                 continue
+                            # Same guard as the outer branch below. Without it
+                            # cves/deltaLog.json comes through, and it is a
+                            # top-level array rather than a CVE record.
+                            if not os.path.basename(
+                                    i2.filename).upper().startswith("CVE-"):
+                                continue
                             with z2.open(i2) as f2:
                                 try:
-                                    yield json.loads(f2.read().decode("utf-8"))
+                                    doc = json.loads(f2.read().decode("utf-8"))
                                 except (json.JSONDecodeError, UnicodeDecodeError):
                                     continue
+                            if isinstance(doc, dict):
+                                yield doc
                 continue
             if not name.endswith(".json"):
                 continue
@@ -407,9 +415,13 @@ def iter_cvelist_archive(path: str) -> Iterable[dict]:
                 continue
             with z.open(info) as fh:
                 try:
-                    yield json.loads(fh.read().decode("utf-8"))
+                    doc = json.loads(fh.read().decode("utf-8"))
                 except (json.JSONDecodeError, UnicodeDecodeError):
                     continue
+            # A CVE record is an object. Anything else in here is a catalogue
+            # file that happens to be named like one.
+            if isinstance(doc, dict):
+                yield doc
 
 
 NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
