@@ -49,37 +49,53 @@
       <title>CVSS base score</title>
       <single>
         <search>
-          <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(isnull(cvss_score), "not scored", tostring(round(cvss_score,1))) | fields v</query>
+          <query>| `riskability_cve_facts($cve_tok$)`
+| stats max(cvss_score) AS rk_max, count AS rk_n
+| eval v = if(isnull(rk_max), "not scored", tostring(round(rk_max,1)))
+| where rk_n > 0
+| fields v</query>
         </search>
         <option name="drilldown">none</option>
         <option name="colorBy">value</option>
         <option name="rangeColors">["0x53a051","0xf8be34","0xf1813f","0xdc4e41"]</option>
         <option name="rangeValues">[4,7,9]</option>
         <option name="useColors">1</option>
-        <option name="underLabel">as published, not measured here</option>
+        <option name="numberPrecision">0.0</option>
+        <option name="underLabel">worst CVSS of what matched</option>
       </single>
     </panel>
     <panel>
       <title>Modelled chance of exploitation</title>
       <single>
         <search>
-          <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(isnull(epss), "unscored", tostring(round(epss*100,1)) . "%") | fields v</query>
+          <query>| `riskability_cve_facts($cve_tok$)`
+| stats max(epss) AS rk_max, count AS rk_n
+| eval v = if(isnull(rk_max), "unscored", tostring(round(rk_max*100,1)) . "%")
+| where rk_n > 0
+| fields v</query>
         </search>
         <option name="drilldown">none</option>
-        <option name="underLabel">EPSS, next 30 days</option>
+        <option name="underLabel">highest EPSS of what matched</option>
       </single>
     </panel>
     <panel>
       <title>Listed in CISA KEV</title>
       <single>
         <search>
-          <query>| `riskability_cve_facts($cve_tok$)` | eval v = if(kev_added != "", "YES", "not listed") | fields v</query>
+          <query>| `riskability_cve_facts($cve_tok$)`
+| stats count AS rk_n, count(eval(kev_added != "")) AS rk_kev
+| eval v = case(rk_n == 1 AND rk_kev == 1, "YES",
+                rk_n == 1, "not listed",
+                rk_kev == 0, "none of " . rk_n,
+                1=1, rk_kev . " of " . rk_n)
+| where rk_n > 0
+| fields v</query>
         </search>
         <option name="drilldown">none</option>
         <option name="colorBy">value</option>
         <option name="useColors">1</option>
         <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
-        <option name="underLabel">CISA KEV catalogue</option>
+        <option name="underLabel">known exploited, per CISA</option>
       </single>
     </panel>
     <panel>
@@ -105,10 +121,11 @@
       <html>
         <div class="rk-status" style="margin:0 0 4px">
           <span>
-            The four figures above, and everything below, describe one vulnerability. They stay
-            empty until you name one: type an id in <b>CVE id</b>, pick a row from the search
-            results further down, or click any CVE id anywhere else in this app. Empty here means
-            no CVE has been chosen, not that a CVE was found to be harmless.
+            The four figures above summarise whatever the inputs matched, and everything below
+            lists it. Name one CVE and they describe that one; use a wildcard such as
+            <code>CVE-2023-486*</code> and they describe the set, which is why they read "worst"
+            and "highest" rather than giving a single vulnerability's score. Empty means nothing
+            was matched, not that anything was found to be harmless.
           </span>
         </div>
       </html>
@@ -117,7 +134,7 @@
 
   <row>
     <panel>
-      <title>What the feed says this CVE is</title>
+      <title>What the feed says these are</title>
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
@@ -125,36 +142,33 @@
 | eval Product = case(coalesce(rk_products,"") != "", replace(rk_products, "
 ", ", "),
                       kev_name != "", kev_name,
-                      1=1, "The feed does not name a product. Distribution advisories describe packaging, not products; a product name needs the CVE Program source in the bundle, or a CISA KEV listing.")
+                      1=1, "not named by the feed")
 | eval Description = case(coalesce(rk_desc,"") != "", rk_desc,
                           kev_description != "", kev_description,
                           best_title != "", best_title,
                           1=1, "No advisory in this bundle carries a description for this CVE.")
-| eval "Also known as" = if(coalesce(kev_title,"") != "", kev_title, "")
-| eval "What CISA requires" = if(coalesce(kev_action,"") != "", kev_action, "")
-| eval "Ransomware campaigns" = if(coalesce(kev_ransomware,"") != "", kev_ransomware, "")
+| eval Severity = coalesce(severity, ""), CVSS = coalesce(cvss_score, "")
+| eval "EPSS %" = if(isnotnull(epss), round(epss*100, 1), null())
+| eval KEV = if(kev_added != "", "yes", "")
 | eval Published = trim(coalesce(rk_assigner,"") . " " . coalesce(rk_pub, published))
-| eval CVE = cve_id
-| eval "Exploitation percentile" = if(isnotnull(epss_percentile),
-        "more likely to be exploited than " . round(epss_percentile*100, 0) . "% of all scored CVEs", "")
-| table CVE, Product, Description, "Also known as", "Ransomware campaigns", "Exploitation percentile", Published
-| transpose 7 column_name="rk_label"
-| rename rk_label AS "About", "row 1" AS "What the feed wrote"
-| where 'What the feed wrote' != ""</query>
+| table cve_id, Product, Description, Severity, CVSS, "EPSS %", KEV, Published
+| rename cve_id AS CVE
+| sort 200 - CVSS</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
-        <option name="riskability.riskability_grid.emptyText">Pick a vulnerability from the list above, or click any CVE id anywhere in this app. If you have named one and this is still empty, the bundle was built without the CVE Program source and carries no description for it.</option>
+        <option name="riskability.riskability_grid.emptyText">Name a CVE above, pick a row from the search results further down, or click any CVE id anywhere else in this app. Wildcards work: "CVE-2023-486*" lists every one that matches, one row each.</option>
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">
           <span>
-            Each line falls back in turn. The description prefers the CVE Program's own record,
-            then CISA's wording if it is a known exploited vulnerability, then the longest advisory
-            text in the bundle. That last fallback matters: distribution advisories often carry no
-            prose at all, and taking the longest of the several advisories describing one CVE
-            recovers a description for 640,830 of the 641,374 the feed knows about. The product
-            name has no such fallback, because only the CVE Program and CISA ever state one.
+            One row per vulnerability, never merged. The description falls back in turn: the CVE
+            Program's own record, then CISA's wording if it is known exploited, then the longest
+            advisory text in the bundle. That last fallback matters, because distribution
+            advisories often carry no prose at all, and taking the longest of the several
+            describing one CVE recovers a description for 640,830 of the 641,374 the feed knows
+            about. The product name has no such fallback: only the CVE Program and CISA ever
+            state one.
           </span>
         </div>
       </html>
@@ -168,15 +182,14 @@
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
 | where kev_added != ""
-| eval "Added to the catalogue" = kev_added
+| eval "Added" = kev_added
 | eval "Remediate by" = if(kev_due != "", kev_due, "no date given")
-| eval "Used in ransomware" = if(kev_ransomware != "", kev_ransomware, "not stated")
+| eval "Ransomware" = if(kev_ransomware != "", kev_ransomware, "not stated")
 | eval "CISA calls it" = if(kev_title != "", kev_title, "")
-| eval "What CISA requires" = if(kev_action != "", kev_action, "The catalogue entry in this bundle carries no required action. Bundles built before this app kept those fields hold only the dates.")
-| table "Added to the catalogue", "Remediate by", "Used in ransomware", "CISA calls it", "What CISA requires"
-| transpose 5 column_name="rk_label"
-| rename rk_label AS "About", "row 1" AS "What CISA wrote"
-| where 'What CISA wrote' != ""</query>
+| eval "What CISA requires" = if(kev_action != "", kev_action, "The entry in this bundle carries no required action. Bundles built before this app kept those fields hold only the dates.")
+| table cve_id, "CISA calls it", Added, "Remediate by", Ransomware, "What CISA requires"
+| rename cve_id AS CVE
+| sort 200 "Remediate by"</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
@@ -202,7 +215,9 @@
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
 | `riskability_cvss_english`
-| table Vector, Reach, Complexity, Privileges, "User interaction", Confidentiality, Integrity, Availability</query>
+| table cve_id, Vector, Reach, Complexity, Privileges, "User interaction", Confidentiality, Integrity, Availability
+| rename cve_id AS CVE
+| sort 200 CVE</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No CVSS vector for this CVE in the feed.</option>
@@ -225,16 +240,16 @@
       <viz type="riskability.riskability_grid">
         <search>
           <query>| `riskability_cve_facts($cve_tok$)`
-| fields cwes
+| fields cve_id, cwes
 | mvexpand cwes
 | rename cwes AS cwe
 | where cwe != ""
 | lookup riskability_attack_lookup cwe OUTPUT technique, technique_name, tactics, via_capec
 | eval Technique = if(isnull(technique), "no ATT&amp;CK mapping in this bundle", technique . " " . technique_name)
 | eval Tactics = mvjoin(tactics, ", ")
-| eval Route = if(via_capec="1", "via CAPEC", "direct")
-| stats values(Technique) AS Technique, values(Tactics) AS Tactics, values(Route) AS Route BY cwe
-| rename cwe AS CWE</query>
+| stats values(Technique) AS Technique, values(Tactics) AS Tactics BY cve_id, cwe
+| rename cve_id AS CVE, cwe AS CWE
+| sort 300 CVE, CWE</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No weakness class recorded for this CVE. About a third of advisories carry no CWE, and the technique mapping needs the MITRE source in the bundle.</option>
@@ -288,11 +303,10 @@
 | lookup riskability_reach_lookup hostname, rk_key OUTPUT reach_class
 | eval Reach = coalesce(reach_class, "not assessed")
 | eval Accepted = if(accepted="1", "yes", "")
-| table hostname, package, last_version, fixed_version, scope, scope_id, confidence, Reach, status, Accepted, first_seen
-| rename hostname AS Host, package AS Package, last_version AS Installed, fixed_version AS "Fixed in",
-         scope AS Scope, scope_id AS Root, confidence AS Confidence, status AS Status,
-         first_seen AS "First seen"
-| sort 0 Host, Package</query>
+| table cve_id, hostname, package, last_version, fixed_version, scope, confidence, Reach, status, Accepted
+| rename cve_id AS CVE, hostname AS Host, package AS Package, last_version AS Installed,
+         fixed_version AS "Fixed in", scope AS Scope, confidence AS Confidence, status AS Status
+| sort 500 CVE, Host, Package</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">Nothing in this fleet matches this CVE. That means no host reports an affected package at an affected version. It does not mean immunity: Coverage lists what the feed cannot assess at all.</option>
@@ -302,26 +316,25 @@
 
   <row>
     <panel>
-      <title>Every version that fixes this, across distributions</title>
+      <title>Which versions fix what, across distributions</title>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| inputlookup riskability_ranges_lookup where cve_id="$cve_tok$"
 | where fixed != ""
-| eval rk_eco = replace(ecosystem, "[|]", "_")
 | eval rk_pkg = replace(ecosystem . " " . package, "[|]", "_")
 | eval rk_fix = replace(package . " " . fixed . if(distro="", "", " (" . distro . ")"), "[|]", "_")
-| eval rk_hops = mvappend(rk_eco . "|eco|" . rk_pkg . "|pkg",
+| eval rk_hops = mvappend(cve_id . "|cve|" . rk_pkg . "|pkg",
                           rk_pkg . "|pkg|" . rk_fix . "|fix")
 | mvexpand rk_hops
 | eval rk_p = split(rk_hops, "|")
 | eval source = mvindex(rk_p, 0), source_kind = mvindex(rk_p, 1),
        target = mvindex(rk_p, 2), target_kind = mvindex(rk_p, 3)
 | stats count AS cves BY source, source_kind, target, target_kind
-| sort 200 - cves
+| sort 240 - cves
 | fields source, source_kind, target, target_kind, cves</query>
         </search>
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
-        <option name="riskability.riskability_chart.chainKinds">eco:ecosystem,pkg:package,fix:version that fixes it</option>
+        <option name="riskability.riskability_chart.chainKinds">cve:CVE,pkg:package,fix:version that fixes it</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No fixed version for this CVE in the bundle. That is common and is not an error: an advisory that names no fix has none published, so there is no upgrade to point at. Check the affected ranges below for whether a later version is merely "last affected".</option>
         <option name="height">560</option>
@@ -329,10 +342,10 @@
       <html>
         <div class="rk-status" style="margin:8px 0 0">
           <span>
-            One vulnerability, every packaging of it. Read left to right: the ecosystem, the
-            package each one calls it, and the version that fixes it there. A component vendored
-            into many products fans out widely here, which is the point: it is why a single CVE can
-            need a dozen separate upgrades.
+            Read left to right: the vulnerability, the package each ecosystem calls it, and the
+            version that fixes it there. One CVE fans out across every packaging of it, which is
+            why a single vulnerability can need a dozen separate upgrades; name several and the
+            columns consolidate rather than becoming unreadable.
             <b>These are the feed's fix versions, not a patch plan for this fleet.</b> Nothing here
             knows which of these you run or at what version. <b>Matching hosts in this fleet</b>
             above is the panel that does. Version nodes carry their package and distribution,
@@ -354,9 +367,9 @@
 | eval Introduced = if(introduced="", "any earlier version", introduced)
 | eval Fixed = case(fixed != "", fixed, last_affected != "", "no fix; last affected " . last_affected, 1=1, "no fix published")
 | eval Distribution = trim(distro . " " . distro_release)
-| stats values(Fixed) AS Fixed, values(Introduced) AS Introduced BY ecosystem, package, Distribution
-| rename ecosystem AS Ecosystem, package AS Package
-| sort 0 Ecosystem, Package, Distribution</query>
+| stats values(Fixed) AS Fixed, values(Introduced) AS Introduced BY cve_id, ecosystem, package, Distribution
+| rename cve_id AS CVE, ecosystem AS Ecosystem, package AS Package
+| sort 500 CVE, Ecosystem, Package, Distribution</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No affected ranges for this CVE in the bundle.</option>
