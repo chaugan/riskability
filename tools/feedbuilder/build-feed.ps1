@@ -16,11 +16,19 @@
     Windows    adds NVD CPE data (default)
     Everything every distribution, every ecosystem, all NVD years
 
+.PARAMETER NvdSource
+    Where NVD data comes from.
+    Auto    (default) a daily regeneration of the bulk feeds NIST retired,
+            topped up from the NIST API with whatever changed since that
+            regeneration ran. About a minute, and no API key needed.
+    Mirror  the regenerated feeds only, skipping the top-up.
+    Api     NIST directly and nothing else. Authoritative, but the API serves
+            2000 CVEs a request and takes about 20 seconds over each one, so
+            expect an hour or more.
+
 .PARAMETER NvdApiKey
-    A free NVD API key. Anything that pulls NVD data reads it from the NVD 2.0
-    API, which NIST rate limits to 5 requests per 30 seconds for anonymous
-    callers, so a full run takes roughly 20 minutes. A key raises the limit to
-    50 and cuts that to a few minutes. Request one at
+    A free NVD API key, which softens the rate limiting on -NvdSource Api. The
+    default source does not need one. Request it at
     https://nvd.nist.gov/developers/request-an-api-key
     The NVD_API_KEY environment variable is used when this is not given.
 
@@ -40,7 +48,9 @@ param(
     [switch]$WithCveList,
     [string]$OutDir = '.',
     [string]$FeedTool = '',
-    [string]$NvdApiKey = ''
+    [string]$NvdApiKey = '',
+    [ValidateSet('Auto', 'Mirror', 'Api')]
+    [string]$NvdSource = 'Auto'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -115,16 +125,18 @@ switch ($FeedProfile) {
 # Any profile plus the encyclopaedia's source, so a Linux or Windows build can
 # have it without taking every ecosystem as well.
 if ($WithCveList) { $buildArgs += @('--cve-list') }
+$buildArgs += @('--nvd-source', $NvdSource.ToLower())
 
 # The builder reads NVD_API_KEY from the environment. Accepting it as a
 # parameter as well is friendlier on Windows, where setting an environment
 # variable for one command is awkward.
 if ($NvdApiKey) { $env:NVD_API_KEY = $NvdApiKey }
-if (-not $env:NVD_API_KEY -and ($buildArgs -contains '--nvd')) {
-    Write-Warning ("NVD_API_KEY is not set, so NVD downloads are rate limited " +
-        "to 5 requests per 30 seconds and this will take around 20 minutes. " +
-        "A free key from https://nvd.nist.gov/developers/request-an-api-key " +
-        "cuts that to a few minutes.")
+# The default source needs no key, so only warn where the rate limit bites.
+if (-not $env:NVD_API_KEY -and $NvdSource -eq 'Api') {
+    Write-Warning ("-NvdSource Api with no NVD_API_KEY is rate limited to 5 " +
+        "requests per 30 seconds. This will take well over an hour. A free " +
+        "key from https://nvd.nist.gov/developers/request-an-api-key helps, " +
+        "though the API is slow regardless.")
 }
 
 Write-Host "Building $out ..." -ForegroundColor Cyan

@@ -13,14 +13,16 @@
 # Requires: Python 3.8+. Everything else ships in the same archive as this
 # script -- keep the files together after unzipping.
 #
-# Anything that pulls NVD data (--windows, --everything) reads it from the NVD
-# 2.0 API, which NIST rate limits to 5 requests per 30 seconds for anonymous
-# callers. That makes a full run take roughly 20 minutes. A free API key raises
-# the limit to 50 and cuts it to a few minutes:
+# NVD data (--windows, --everything) comes from a daily regeneration of the bulk
+# feeds NIST retired, topped up from the NIST API with whatever changed since
+# that regeneration ran. A full fetch takes about a minute and needs no API key.
 #
-#   NVD_API_KEY=your-key ./build-feed.sh --everything
-#
-# Request one at https://nvd.nist.gov/developers/request-an-api-key
+#   --nvd-source api      use NIST directly and nothing else. Authoritative,
+#                         but the API serves 2000 CVEs a request and takes
+#                         about 20 seconds over each one, so expect an hour or
+#                         more. Set NVD_API_KEY to soften the rate limiting:
+#                         https://nvd.nist.gov/developers/request-an-api-key
+#   --nvd-source mirror   the regenerated feeds only, skipping the top-up
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -63,46 +65,58 @@ ARGS=(
   --mitre
 )
 
-case "${1:-}" in
-  --windows)
-    # Windows software is not installed by a package manager, so it has no
-    # PURL. NVD's CPE data is the only thing that can assess it.
-    ARGS+=(--nvd 2015-2026)
-    ;;
-  --everything)
-    ARGS+=(
-      --ecosystem "Red Hat" --ecosystem "Rocky Linux" --ecosystem AlmaLinux
-      --ecosystem SUSE --ecosystem openSUSE --ecosystem NuGet
-      --ecosystem RubyGems --ecosystem "crates.io" --ecosystem Packagist
-      --nvd all
-      # The CVE Program catalogue, which is what gives the CVE encyclopaedia a
-      # description and a product name. Only in this profile: it is about
-      # 600 MB to fetch and roughly 120 MB in the bundle, which is a real
-      # decision on an air gap rather than a default to inherit.
-      --cve-list
-    )
-    ;;
-  --with-cve-list)
-    # Any profile plus the encyclopaedia's source. Kept as its own flag so a
-    # Linux or Windows build can have it without taking every ecosystem too.
-    ARGS+=(--cve-list)
-    ;;
-  --help|-h)
-    awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
-    exit 0
-    ;;
-esac
+# A loop rather than a single case, so the profile and the modifiers can be
+# combined: --windows --with-cve-list is a reasonable thing to ask for.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --windows)
+      # Windows software is not installed by a package manager, so it has no
+      # PURL. NVD's CPE data is the only thing that can assess it.
+      ARGS+=(--nvd 2015-2026)
+      ;;
+    --everything)
+      ARGS+=(
+        --ecosystem "Red Hat" --ecosystem "Rocky Linux" --ecosystem AlmaLinux
+        --ecosystem SUSE --ecosystem openSUSE --ecosystem NuGet
+        --ecosystem RubyGems --ecosystem "crates.io" --ecosystem Packagist
+        --nvd all
+        # The CVE Program catalogue, which is what gives the CVE encyclopaedia a
+        # description and a product name. Only in this profile: it is about
+        # 600 MB to fetch and roughly 120 MB in the bundle, which is a real
+        # decision on an air gap rather than a default to inherit.
+        --cve-list
+      )
+      ;;
+    --with-cve-list)
+      # Any profile plus the encyclopaedia's source. Kept as its own flag so a
+      # Linux or Windows build can have it without taking every ecosystem too.
+      ARGS+=(--cve-list)
+      ;;
+    --nvd-source)
+      shift
+      ARGS+=(--nvd-source "${1:?--nvd-source needs auto, mirror or api}")
+      ;;
+    --help|-h)
+      awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
+      exit 0
+      ;;
+    *)
+      echo "error: unknown option $1. Try --help." >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
 
-# NVD_API_KEY is read from the environment by the builder itself. Say something
-# when it is missing, because the difference is 20 minutes against 2 and a
-# silent wait looks like a hang.
+# The default path does not need a key, so only say something when the operator
+# has asked for the API-only source, where the rate limit genuinely bites.
 if [ -z "${NVD_API_KEY:-}" ]; then
   for a in "${ARGS[@]}"; do
-    if [ "$a" = "--nvd" ]; then
-      echo "note: NVD_API_KEY is not set, so NVD downloads are rate limited to" >&2
-      echo "      5 requests per 30 seconds and this will take around 20 minutes." >&2
+    if [ "$a" = "api" ]; then
+      echo "note: --nvd-source api with no NVD_API_KEY is rate limited to 5" >&2
+      echo "      requests per 30 seconds. This will take well over an hour." >&2
       echo "      A free key from https://nvd.nist.gov/developers/request-an-api-key" >&2
-      echo "      cuts that to a few minutes." >&2
+      echo "      helps, though the API is slow regardless." >&2
       break
     fi
   done

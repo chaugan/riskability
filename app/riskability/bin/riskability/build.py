@@ -151,7 +151,9 @@ def online() -> Dict[str, bool]:
     """
     checks = {
         "osv": osv_url("Go"),
-        "nvd": feedlib.NVD_API_URL + "?resultsPerPage=1",
+        "nvd bulk feeds": feedlib.NVD_MIRROR_URL.format(
+            year=feedlib.NVD_LATEST_YEAR),
+        "nvd api": feedlib.NVD_API_URL + "?resultsPerPage=1",
         "mitre": CWE_URL,
         "kev": KEV_URL,
         "epss": EPSS_URL,
@@ -218,6 +220,7 @@ def build_bundle(
     out_path: str,
     ecosystems: Optional[List[str]] = None,
     nvd: str = "",
+    nvd_source: str = "auto",
     mitre: bool = False,
     cve_list: bool = False,
     cve_list_file: str = "",
@@ -279,13 +282,18 @@ def build_bundle(
     if nvd:
         years = nvd_years(nvd)
         api_key = os.environ.get("NVD_API_KEY", "").strip()
-        say("fetching NVD through the 2.0 API"
-            + (" with an API key" if api_key else
-               ", no API key set, so this is rate limited to five requests per "
-               "thirty seconds and will take a while. NVD_API_KEY makes it quick"))
+        if nvd_source == "api":
+            say("fetching NVD from the NIST API"
+                + (" with an API key" if api_key else ", with no API key")
+                + ". Expect this to take an hour or more: the API serves 2000 "
+                  "CVEs a request and takes about 20 seconds over each one")
+        else:
+            say("fetching NVD from the regenerated bulk feeds, then topping up "
+                "from the NIST API with whatever changed since they were built")
         n_cve = 0
         try:
-            for item in feedlib.iter_nvd_api(years=years, api_key=api_key, log=say):
+            for item in feedlib.iter_nvd(years=years, api_key=api_key,
+                                         log=say, source=nvd_source):
                 try:
                     advisory, ranges, _ = feedlib.normalize_nvd(item, feed_source="nvd")
                 except feedlib.FeedError:

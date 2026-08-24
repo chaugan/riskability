@@ -86,7 +86,8 @@ def cmd_build(args):
         manifest = buildlib.build_bundle(
             args.out,
             ecosystems=args.ecosystem or [],
-            nvd=args.nvd, mitre=args.mitre, kev=args.kev, epss=args.epss,
+            nvd=args.nvd, nvd_source=args.nvd_source,
+            mitre=args.mitre, kev=args.kev, epss=args.epss,
             kev_file=args.kev_file, epss_file=args.epss_file,
             cve_list=args.cve_list, cve_list_file=args.cve_list_file,
             version=args.version,
@@ -121,6 +122,13 @@ def main(argv=None):
     b.add_argument("--out", required=True)
     b.add_argument("--ecosystem", action="append", help="repeatable")
     b.add_argument("--nvd", metavar="YEARS", default="")
+    b.add_argument("--nvd-source", dest="nvd_source", default="auto",
+                   choices=["auto", "mirror", "api"],
+                   help="where NVD data comes from. auto (default) takes the "
+                        "bulk of it from the regenerated bulk feeds and tops "
+                        "up from the NIST API with anything changed since; "
+                        "mirror skips the top-up; api uses NIST only, which "
+                        "is authoritative but takes an hour or more")
     b.add_argument("--mitre", action="store_true")
     b.add_argument("--kev", action="store_true")
     b.add_argument("--epss", action="store_true")
@@ -211,20 +219,35 @@ Windows estates additionally need --nvd (e.g. --nvd 2015-2026): Windows
 software is not installed by a package manager, so it carries no PURL and
 only NVD's CPE data can assess it.
 
-NVD API KEY
------------
-NVD data comes from the NVD 2.0 API, which NIST rate limits to 5 requests
-per 30 seconds for anonymous callers. That puts a full run at roughly 20
-minutes. A free key raises the limit to 50 and cuts it to a few minutes:
+WHERE NVD DATA COMES FROM
+-------------------------
+NIST retired the bulk JSON feeds that this tool used to read. Fraunhofer
+FKIE regenerates them daily from the same NVD API, one file per CVE ID
+year, and that is the default source: a full fetch is about a minute.
 
-  NVD_API_KEY=your-key ./build-feed.sh --everything
-  .\build-feed.ps1 -FeedProfile Everything -NvdApiKey 'your-key'
+Because a daily rebuild can be up to a day behind, the default then asks
+the NIST API for anything changed since the rebuild ran and prefers those
+records. That is normally a single request, so you get the API's freshness
+at the mirror's speed.
 
-Request one at https://nvd.nist.gov/developers/request-an-api-key
-Nothing else needs it, so a Linux-only bundle is unaffected.
+  --nvd-source auto     the above. The default.
+  --nvd-source mirror   regenerated feeds only, no top-up. Fully offline
+                        from NIST, at most a day behind.
+  --nvd-source api      NIST directly and nothing else. Authoritative, but
+                        the API serves 2000 CVEs per request and spends
+                        about 20 seconds on each, so a full fetch takes an
+                        hour or more.
+
+  ./build-feed.sh --windows --nvd-source api
+  .\build-feed.ps1 -NvdSource Api
+
+Only the api source is rate limited enough to care about a key. If you use
+it, request one at https://nvd.nist.gov/developers/request-an-api-key and
+pass it as NVD_API_KEY, or -NvdApiKey on PowerShell.
 
 Outbound HTTPS is needed to:
   storage.googleapis.com  services.nvd.nist.gov  cwe.mitre.org
+  github.com  objects.githubusercontent.com   (the regenerated feeds)
   capec.mitre.org         www.cisa.gov  epss.empiricalsecurity.com
 TXTEOF
 

@@ -263,13 +263,12 @@ def cmd_build(args) -> int:
     if args.nvd:
         years = _nvd_years(args.nvd)
         api_key = os.environ.get("NVD_API_KEY", "").strip()
-        print(f"fetching NVD          2.0 API, {years[0]}-{years[-1]}"
-              + ("" if api_key else ", no NVD_API_KEY set, so rate limited"),
+        print(f"fetching NVD          {args.nvd_source}, {years[0]}-{years[-1]}",
               file=sys.stderr)
         n_cve = n_ranges = 0
         try:
-            for item in feedlib.iter_nvd_api(
-                    years=years, api_key=api_key,
+            for item in feedlib.iter_nvd(
+                    years=years, api_key=api_key, source=args.nvd_source,
                     log=lambda m: print(m, file=sys.stderr)):
                 try:
                     advisory, ranges, _ = feedlib.normalize_nvd(item, feed_source="nvd")
@@ -479,6 +478,11 @@ def main(argv=None) -> int:
     b.add_argument("--out", required=True)
     b.add_argument("--ecosystem", action="append",
                    help="OSV ecosystem, repeatable (e.g. --ecosystem Ubuntu)")
+    b.add_argument("--nvd-source", dest="nvd_source", default="auto",
+                   choices=["auto", "mirror", "api"],
+                   help="auto (default) reads the regenerated bulk feeds and "
+                        "tops up from the NIST API; mirror skips the top-up; "
+                        "api uses NIST only and takes an hour or more")
     b.add_argument("--nvd", metavar="YEARS", default="",
                    help="include NVD CPE ranges and CWE. YEARS is 'all', a year, "
                         "a range like 2020-2026, or a comma-separated list. "

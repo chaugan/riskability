@@ -435,9 +435,20 @@ def _http_get(url: str, headers: Optional[Dict[str, str]] = None, timeout: int =
 # key, 50 with one. At 2000 records a page and roughly 382,000 CVEs that is 191
 # requests, so an unkeyed run is bounded by the rate limit rather than by
 # bandwidth. Set NVD_API_KEY to make it quick; the key is free from NIST.
+# 2000 is NIST's hard maximum for resultsPerPage; asking for more is refused
+# with a 404. What actually costs time is the server's think time per request,
+# measured at roughly 20 seconds for a full page and unaffected by payload size
+# (gzip cuts 8.2 MB to 0.9 MB and saves nothing on the clock). Bandwidth is not
+# the constraint, so the only lever is asking for several pages at once.
+#
+# The rate limits leave ample room for that. At 20 seconds a request, 10 in
+# flight is 0.5 requests a second against an allowance of 1.67 with a key, and
+# 3 in flight is 0.15 against 0.167 without one.
 NVD_PAGE = 2000
-NVD_SLEEP_UNKEYED = 6.5
-NVD_SLEEP_KEYED = 0.7
+NVD_RATE_UNKEYED = (5, 30.0)
+NVD_RATE_KEYED = (50, 30.0)
+NVD_WORKERS_UNKEYED = 3
+NVD_WORKERS_KEYED = 10
 
 
 def _nvd_windows(years):
@@ -459,21 +470,122 @@ def _nvd_windows(years):
     return out
 
 
-def _nvd_page(url: str, headers, delay: float):
+# The retired bulk feeds are regenerated daily by Fraunhofer FKIE from the same
+# NVD API, one file per CVE ID year, xz compressed. A year is about 2 MB and
+# arrives in under a second, against roughly 20 seconds a page from the API, so
+# a full fetch is a minute or two rather than an hour.
+#
+# It also restores the original meaning of --nvd. The bulk feeds grouped by CVE
+# ID year; the API can only filter on published date, and a CVE numbered 2015
+# may be published in 2016. Those files are what --nvd year ranges always meant.
+NVD_MIRROR_URL = ("https://github.com/fkie-cad/nvd-json-data-feeds/releases/"
+                  "latest/download/CVE-{year}.json.xz")
+
+
+def iter_nvd_mirror(years=None, log=None, url: str = NVD_MIRROR_URL):
+    """Yield NVD records from the regenerated bulk feeds, API record shape.
+
+    The mirror stores each CVE unwrapped, where the API nests it under "cve".
+    Re-wrapping here means normalize_nvd never has to know which source it is
+    looking at.
+    """
+    import lzma as _lzma
+    say = log or (lambda m: None)
+    wanted = sorted(years or range(NVD_FIRST_YEAR, NVD_LATEST_YEAR + 1))
+    say(f"  {len(wanted)} year file(s) from the regenerated bulk feeds")
+    total = 0
+    for year in wanted:
+        try:
+            with _http_get(url.format(year=year)) as r:
+                doc = json.loads(_lzma.decompress(r.read()).decode("utf-8"))
+        except Exception as exc:
+            # A missing year should not lose the other twenty-four.
+            say(f"  {year}: skipped, {str(exc)[:70]}")
+            continue
+        items = doc.get("cve_items") or []
+        total += len(items)
+        say(f"  {year}: {len(items)} CVEs")
+        for item in items:
+            yield {"cve": item}
+    say(f"  {total} CVEs fetched")
+
+
+class _RateLimiter:
+    """At most `count` acquisitions in any rolling `per` seconds, across threads."""
+
+    def __init__(self, count: int, per: float):
+        import collections, threading
+        self.count, self.per = count, per
+        self._times = collections.deque()
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        import time as _time
+        while True:
+            with self._lock:
+                now = _time.monotonic()
+                while self._times and now - self._times[0] > self.per:
+                    self._times.popleft()
+                if len(self._times) < self.count:
+                    self._times.append(now)
+                    return
+                wait = self.per - (now - self._times[0])
+            _time.sleep(max(wait, 0.05))
+
+
+def _nvd_page(url: str, headers, limiter) -> dict:
     """One API request, retrying the rate-limit and overload responses.
 
     403 and 429 both mean "too fast" here and NIST returns 503 under load, so
-    all three are worth backing off on rather than failing the build.
+    all three are worth backing off on rather than failing the build. gzip is
+    requested because it cuts 8 MB to under 1; it does not make the request
+    quicker, but it is a great deal kinder to a metered or slow link.
     """
-    import time as _time
+    import gzip as _gzip, time as _time
+    hdrs = dict(headers or {})
+    hdrs["Accept-Encoding"] = "gzip"
     for attempt in range(5):
+        limiter.acquire()
         try:
-            with _http_get(url, headers=headers) as r:
-                return json.loads(r.read().decode("utf-8"))
+            with _http_get(url, headers=hdrs) as r:
+                raw = r.read()
+                if (r.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    raw = _gzip.decompress(raw)
+            return json.loads(raw.decode("utf-8"))
         except Exception as exc:
             if attempt == 4:
                 raise FeedError(f"NVD API request failed: {exc}")
-            _time.sleep(delay * (attempt + 2))
+            _time.sleep(2.0 * (attempt + 1))
+
+
+def _nvd_pages(base: str, headers, limiter, workers: int, say):
+    """Yield every page of one query, in order, `workers` requests in flight.
+
+    Pages are fetched ahead but handed back in order and never more than
+    `workers` are held at once, so peak memory stays bounded no matter how many
+    pages the query turns out to have.
+    """
+    import collections, itertools
+    from concurrent.futures import ThreadPoolExecutor
+
+    first = _nvd_page(f"{base}&startIndex=0", headers, limiter)
+    total = int(first.get("totalResults") or 0)
+    yield first, total
+    starts = range(NVD_PAGE, total, NVD_PAGE)
+    if not starts:
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        remaining = iter(starts)
+        inflight = collections.deque(
+            pool.submit(_nvd_page, f"{base}&startIndex={s}", headers, limiter)
+            for s in itertools.islice(remaining, workers))
+        while inflight:
+            doc = inflight.popleft().result()
+            nxt = next(remaining, None)
+            if nxt is not None:
+                inflight.append(pool.submit(
+                    _nvd_page, f"{base}&startIndex={nxt}", headers, limiter))
+            yield doc, total
 
 
 def iter_nvd_api(years=None, api_key: str = "", log=None,
@@ -486,9 +598,10 @@ def iter_nvd_api(years=None, api_key: str = "", log=None,
     the years it wants. A full-span request pages straight through, since
     windowing that would just add a request per window for no saving.
     """
-    import time as _time
     say = log or (lambda m: None)
-    delay = NVD_SLEEP_KEYED if api_key else NVD_SLEEP_UNKEYED
+    count, per = NVD_RATE_KEYED if api_key else NVD_RATE_UNKEYED
+    workers = NVD_WORKERS_KEYED if api_key else NVD_WORKERS_UNKEYED
+    limiter = _RateLimiter(count, per)
     headers = {"apiKey": api_key} if api_key else {}
 
     wanted = sorted(years or [])
@@ -498,32 +611,129 @@ def iter_nvd_api(years=None, api_key: str = "", log=None,
     if not full_span:
         say(f"  {len(wanted)} year(s) as {len(windows)} date windows")
 
-    total_seen = 0
+    seen = 0
     for win in windows:
         base = f"{url}?resultsPerPage={NVD_PAGE}"
         if win:
             base += f"&pubStartDate={win[0]}&pubEndDate={win[1]}"
-        start = total = 0
-        while True:
-            doc = _nvd_page(f"{base}&startIndex={start}", headers, delay)
-            if not total:
-                total = int(doc.get("totalResults") or 0)
+        announced = False
+        for doc, total in _nvd_pages(base, headers, limiter, workers, say):
+            if not announced:
+                announced = True
                 if win is None:
-                    say(f"  {total} CVEs to page through, {NVD_PAGE} at a time")
-            items = doc.get("vulnerabilities") or []
-            if not items:
-                break
-            for item in items:
+                    pages = (total + NVD_PAGE - 1) // NVD_PAGE
+                    say(f"  {total} CVEs, {pages} pages, {workers} requests at a time")
+            for item in doc.get("vulnerabilities") or []:
                 yield item
-            start += len(items)
-            total_seen += len(items)
-            if start >= total:
-                break
-            _time.sleep(delay)
-        if win is None and total:
-            say(f"  {min(total_seen, total)} of {total}")
-    if not full_span:
-        say(f"  {total_seen} CVEs across the requested years")
+            seen += len(doc.get("vulnerabilities") or [])
+            if win is None and seen % (NVD_PAGE * 10) < NVD_PAGE:
+                say(f"  {seen} of {total}")
+    say(f"  {seen} CVEs fetched")
+
+
+def nvd_mirror_timestamp(url: str = NVD_MIRROR_URL) -> str:
+    """When the mirror was last regenerated, from any one of its year files."""
+    import lzma as _lzma
+    with _http_get(url.format(year=NVD_LATEST_YEAR)) as r:
+        doc = json.loads(_lzma.decompress(r.read()).decode("utf-8"))
+    return doc.get("timestamp") or ""
+
+
+def _iso_windows(start, end, days: int = 119):
+    """(from, to) pairs no longer than the API's 120 day maximum."""
+    import datetime as _dt
+    fmt = "%Y-%m-%dT%H:%M:%S.000"
+    out = []
+    cur = start
+    while cur < end:
+        nxt = min(cur + _dt.timedelta(days=days), end)
+        out.append((cur.strftime(fmt), nxt.strftime(fmt)))
+        cur = nxt
+    return out
+
+
+def iter_nvd_modified(since: str, api_key: str = "", log=None,
+                      url: str = NVD_API_URL):
+    """Every CVE the API has touched since `since`, an ISO 8601 timestamp."""
+    import datetime as _dt
+    say = log or (lambda m: None)
+    count, per = NVD_RATE_KEYED if api_key else NVD_RATE_UNKEYED
+    workers = NVD_WORKERS_KEYED if api_key else NVD_WORKERS_UNKEYED
+    limiter = _RateLimiter(count, per)
+    headers = {"apiKey": api_key} if api_key else {}
+
+    start = _dt.datetime.fromisoformat(since).astimezone(
+        _dt.timezone.utc).replace(tzinfo=None)
+    now = _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+    for a, b in _iso_windows(start, now):
+        base = (f"{url}?resultsPerPage={NVD_PAGE}"
+                f"&lastModStartDate={a}&lastModEndDate={b}")
+        for doc, _total in _nvd_pages(base, headers, limiter, workers, say):
+            for item in doc.get("vulnerabilities") or []:
+                yield item
+
+
+def _cve_year(item: dict):
+    """The year in a CVE id, which is how the bulk feeds were always grouped."""
+    cid = ((item.get("cve") or {}).get("id") or "")
+    parts = cid.split("-")
+    if len(parts) >= 2 and parts[1].isdigit():
+        return int(parts[1])
+    return None
+
+
+def iter_nvd(years=None, api_key: str = "", log=None, source: str = "auto"):
+    """NVD records for the requested years, freshest available copy of each.
+
+    The mirror is a day's regeneration of the whole corpus and arrives in about
+    a minute; the API is authoritative but takes roughly an hour to page. Taking
+    the bulk from the mirror and then asking the API only what changed since the
+    mirror was built gives the API's freshness at the mirror's speed, because a
+    day of changes is a single page.
+
+    Updated records are yielded before the mirror's copies and the mirror's are
+    then suppressed, so a caller that keeps the first record it sees for a given
+    CVE keeps the newer one.
+    """
+    say = log or (lambda m: None)
+    wanted = sorted(years or range(NVD_FIRST_YEAR, NVD_LATEST_YEAR + 1))
+
+    if source == "api":
+        yield from iter_nvd_api(years=wanted, api_key=api_key, log=say)
+        return
+
+    try:
+        stamp = nvd_mirror_timestamp()
+    except Exception as exc:
+        if source == "mirror":
+            raise FeedError(f"NVD mirror unreachable: {exc}")
+        say(f"  mirror unreachable ({str(exc)[:60]}), using the API instead")
+        yield from iter_nvd_api(years=wanted, api_key=api_key, log=say)
+        return
+
+    fresh = {}
+    if source != "mirror" and stamp:
+        say(f"  mirror was built {stamp}, asking the API what changed since")
+        try:
+            for item in iter_nvd_modified(stamp, api_key=api_key, log=say):
+                year = _cve_year(item)
+                if year is not None and year not in wanted:
+                    continue
+                cid = (item.get("cve") or {}).get("id")
+                if cid:
+                    fresh[cid] = item
+        except Exception as exc:
+            # The mirror alone is at most a day behind, which is far better
+            # than failing the whole build over the top-up.
+            say(f"  could not fetch updates ({str(exc)[:60]}), "
+                f"using the mirror as built")
+        say(f"  {len(fresh)} CVEs changed since then")
+
+    for item in fresh.values():
+        yield item
+    for item in iter_nvd_mirror(years=wanted, log=say):
+        if ((item.get("cve") or {}).get("id")) not in fresh:
+            yield item
 
 
 def normalize_cvelist(record: dict) -> Optional[dict]:

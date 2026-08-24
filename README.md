@@ -378,6 +378,38 @@ administration** page, and click Import. An import replaces the previous feed
 rather than merging with it, and the old one stays queryable until the new one
 has finished.
 
+### Where NVD data comes from
+
+Windows software is not installed by a package manager, so it carries no PURL
+and only NVD's CPE data can assess it. That data used to arrive as bulk JSON
+files under `nvd.nist.gov/feeds`, one per CVE ID year. NIST retired them, and
+they now return 404.
+
+The replacement 2.0 API is authoritative but slow in a way no key fixes: it
+serves at most 2000 CVEs a request and spends about 20 seconds on each one, so
+paging the whole corpus is 191 requests and over an hour. An API key raises the
+request allowance, not the per-request cost, and gzip cuts 8 MB to under 1 MB
+without changing the clock. The time is NIST's server, not your link.
+
+So `--nvd` reads a daily regeneration of exactly those retired files, published
+by Fraunhofer FKIE from the same NVD API, and then asks the API for whatever has
+changed since that regeneration ran. The top-up is normally a single request, so
+the result is the API's freshness at the bulk feeds' speed: 2015-2026 takes about
+a minute rather than an hour. It also restores what `--nvd 2015-2026` always
+meant, since those files group by CVE ID year and the API can only filter on
+published date.
+
+| `--nvd-source` | Where from | Full 2015-2026 |
+| --- | --- | --- |
+| `auto` (default) | Regenerated bulk feeds, topped up from the NIST API | about 1 minute |
+| `mirror` | Regenerated bulk feeds only, no top-up | about 1 minute, at most a day behind |
+| `api` | NIST directly, nothing else | an hour or more |
+
+Use `--nvd-source api` if first-party provenance matters more than the wait;
+the records are identical in shape and the rest of the pipeline cannot tell the
+difference. **Feed administration** reports both hosts separately so you can see
+which one a firewall is blocking.
+
 ### Why a normalised bundle rather than the raw feeds
 
 - Upstream formats disagree wildly (OSV JSON, OVAL XML, CSAF, `updateinfo.xml`,
