@@ -86,7 +86,9 @@
       <title>Hosts here with it open</title>
       <single>
         <search>
-          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$" AND status="open" | stats dc(hostname) AS v</query>
+          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$" AND status="open"
+| stats dc(hostname) AS v
+| where "$cve_tok$" != ""</query>
         </search>
         <option name="drilldown">none</option>
         <option name="colorBy">value</option>
@@ -95,6 +97,21 @@
         <option name="rangeValues">[0]</option>
         <option name="underLabel">hosts reporting it open; zero is not "unaffected"</option>
       </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status" style="margin:0 0 4px">
+          <span>
+            The four figures above, and everything below, describe one vulnerability. They stay
+            empty until you name one: type an id in <b>CVE id</b>, pick a row from the search
+            results further down, or click any CVE id anywhere else in this app. Empty here means
+            no CVE has been chosen, not that a CVE was found to be harmless.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 
