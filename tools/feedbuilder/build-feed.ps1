@@ -16,9 +16,18 @@
     Windows    adds NVD CPE data (default)
     Everything every distribution, every ecosystem, all NVD years
 
+.PARAMETER NvdApiKey
+    A free NVD API key. Anything that pulls NVD data reads it from the NVD 2.0
+    API, which NIST rate limits to 5 requests per 30 seconds for anonymous
+    callers, so a full run takes roughly 20 minutes. A key raises the limit to
+    50 and cuts that to a few minutes. Request one at
+    https://nvd.nist.gov/developers/request-an-api-key
+    The NVD_API_KEY environment variable is used when this is not given.
+
 .EXAMPLE
     .\build-feed.ps1
     .\build-feed.ps1 -FeedProfile Everything -OutDir D:\feeds
+    .\build-feed.ps1 -FeedProfile Everything -NvdApiKey 'your-key'
 
 .NOTES
     Requires Python 3.8+. Everything else ships in the same archive as this
@@ -30,7 +39,8 @@ param(
     [string]$FeedProfile = 'Windows',
     [switch]$WithCveList,
     [string]$OutDir = '.',
-    [string]$FeedTool = ''
+    [string]$FeedTool = '',
+    [string]$NvdApiKey = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,6 +115,17 @@ switch ($FeedProfile) {
 # Any profile plus the encyclopaedia's source, so a Linux or Windows build can
 # have it without taking every ecosystem as well.
 if ($WithCveList) { $buildArgs += @('--cve-list') }
+
+# The builder reads NVD_API_KEY from the environment. Accepting it as a
+# parameter as well is friendlier on Windows, where setting an environment
+# variable for one command is awkward.
+if ($NvdApiKey) { $env:NVD_API_KEY = $NvdApiKey }
+if (-not $env:NVD_API_KEY -and ($buildArgs -contains '--nvd')) {
+    Write-Warning ("NVD_API_KEY is not set, so NVD downloads are rate limited " +
+        "to 5 requests per 30 seconds and this will take around 20 minutes. " +
+        "A free key from https://nvd.nist.gov/developers/request-an-api-key " +
+        "cuts that to a few minutes.")
+}
 
 Write-Host "Building $out ..." -ForegroundColor Cyan
 & $python.Exe @($python.Pre) $tool @buildArgs

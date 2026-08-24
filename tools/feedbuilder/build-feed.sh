@@ -12,6 +12,15 @@
 #
 # Requires: Python 3.8+. Everything else ships in the same archive as this
 # script -- keep the files together after unzipping.
+#
+# Anything that pulls NVD data (--windows, --everything) reads it from the NVD
+# 2.0 API, which NIST rate limits to 5 requests per 30 seconds for anonymous
+# callers. That makes a full run take roughly 20 minutes. A free API key raises
+# the limit to 50 and cuts it to a few minutes:
+#
+#   NVD_API_KEY=your-key ./build-feed.sh --everything
+#
+# Request one at https://nvd.nist.gov/developers/request-an-api-key
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -83,6 +92,21 @@ case "${1:-}" in
     exit 0
     ;;
 esac
+
+# NVD_API_KEY is read from the environment by the builder itself. Say something
+# when it is missing, because the difference is 20 minutes against 2 and a
+# silent wait looks like a hang.
+if [ -z "${NVD_API_KEY:-}" ]; then
+  for a in "${ARGS[@]}"; do
+    if [ "$a" = "--nvd" ]; then
+      echo "note: NVD_API_KEY is not set, so NVD downloads are rate limited to" >&2
+      echo "      5 requests per 30 seconds and this will take around 20 minutes." >&2
+      echo "      A free key from https://nvd.nist.gov/developers/request-an-api-key" >&2
+      echo "      cuts that to a few minutes." >&2
+      break
+    fi
+  done
+fi
 
 echo "Building $OUT ..."
 "$PY" "$PYZ" build --out "$OUT" --version "$STAMP" "${ARGS[@]}"

@@ -211,8 +211,20 @@ Windows estates additionally need --nvd (e.g. --nvd 2015-2026): Windows
 software is not installed by a package manager, so it carries no PURL and
 only NVD's CPE data can assess it.
 
+NVD API KEY
+-----------
+NVD data comes from the NVD 2.0 API, which NIST rate limits to 5 requests
+per 30 seconds for anonymous callers. That puts a full run at roughly 20
+minutes. A free key raises the limit to 50 and cuts it to a few minutes:
+
+  NVD_API_KEY=your-key ./build-feed.sh --everything
+  .\build-feed.ps1 -FeedProfile Everything -NvdApiKey 'your-key'
+
+Request one at https://nvd.nist.gov/developers/request-an-api-key
+Nothing else needs it, so a Linux-only bundle is unaffected.
+
 Outbound HTTPS is needed to:
-  storage.googleapis.com  nvd.nist.gov  cwe.mitre.org
+  storage.googleapis.com  services.nvd.nist.gov  cwe.mitre.org
   capec.mitre.org         www.cisa.gov  epss.empiricalsecurity.com
 TXTEOF
 
