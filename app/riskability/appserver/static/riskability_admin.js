@@ -363,7 +363,7 @@
         file.type = "file";
         file.accept = ".gz,.tar.gz";
         up.appendChild(file);
-        var btn = el("button", "rk-btn rk-btn-primary", "Upload");
+        var btn = el("button", "rk-btn rk-btn-primary", "Upload and import");
         var msg = el("div", "rk-dim");
         // Sent in slices rather than whole. The endpoint holds each request
         // body in memory, so this bounds the request instead of the bundle:
@@ -388,10 +388,17 @@
             return readSlice(f.slice(offset, end)).then(function (b64) {
                 return request("POST", {
                     action: "upload", filename: f.name, data: b64,
-                    offset: offset, final: last
+                    offset: offset, final: last,
+                    // Importing from the request that completes the upload is
+                    // the only way to be sure the import runs on the member
+                    // that holds the file. A separate click goes back through
+                    // the load balancer and may land elsewhere.
+                    import_now: last
                 });
-            }).then(function () {
-                if (last) return null;
+            }).then(function (res) {
+                // The last chunk's reply carries the import outcome, so it has
+                // to travel back up rather than be discarded.
+                if (last) return res;
                 msg.textContent = "Uploading " + humanBytes(end) + " of " +
                     humanBytes(f.size) + " …";
                 return sendFrom(f, end);
@@ -404,7 +411,12 @@
             btn.disabled = true;
             msg.textContent = "Uploading " + humanBytes(f.size) + " …";
             sendFrom(f, 0)
-                .then(function () { msg.textContent = ""; btn.disabled = false; load(); })
+                .then(function (r) {
+                    msg.textContent = (r && r.message) ? r.message
+                        : "Uploaded. Import queued.";
+                    btn.disabled = false;
+                    load();
+                })
                 .catch(function (e) {
                     msg.textContent = "Upload failed: " + e.message;
                     btn.disabled = false;

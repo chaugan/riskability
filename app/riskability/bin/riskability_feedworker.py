@@ -181,6 +181,28 @@ class FeedWorker(Script):
         action = request.get("action")
         user = request.get("requested_by") or ""
 
+        # The queue is a KV Store row and replicates; the staged file it names
+        # does not. On a search head cluster every member's worker sees this
+        # job, so a member that is neither the owner nor holding the file must
+        # leave it alone rather than claim it and fail.
+        #
+        # Holding the file wins over the stamp: a bundle copied to this member
+        # by hand, or a row written by an older version with no owner, must
+        # still import. The worst case is the behaviour before this check.
+        owner = (request.get("owner") or "").strip()
+        if owner and owner != importer.member_id(service):
+            have_file = False
+            if action == "import":
+                try:
+                    have_file = os.path.isfile(
+                        self._staged_path(request.get("filename", "")))
+                except Exception:
+                    have_file = False
+            if not have_file:
+                ew.log("DEBUG", f"riskability: leaving {action} queued for "
+                                f"member {owner}")
+                return
+
         # Claim it before starting, so a second worker tick cannot pick up the
         # same job while this one is running.
         request["state"] = "running"

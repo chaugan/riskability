@@ -495,3 +495,28 @@ def verify(kvstore) -> dict:
                 f"import was interrupted by an older build. Re-import the bundle."
             )
     return out
+
+
+def member_id(service) -> str:
+    """Which search head this is, stable across restarts.
+
+    Staged bundles live in var/run/riskability/incoming/, and var/ replicates
+    nowhere. On a search head cluster the browser reaches whichever member the
+    load balancer picked, so an upload can land on one member and the import
+    request arrive at another. The queue itself is a KV Store row and does
+    replicate, so without this every member's worker sees a job for a file only
+    one of them has.
+
+    Computed here rather than at each call site so the endpoint that stamps a
+    request and the worker that decides whether to claim it can never disagree
+    about what this member is called.
+    """
+    try:
+        info = service.info or {}
+    except Exception:
+        return ""
+    for key in ("guid", "serverName", "host"):
+        value = (info.get(key) or "").strip()
+        if value:
+            return value
+    return ""

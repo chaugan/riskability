@@ -95,6 +95,19 @@ MAX_CHUNK_BYTES = 24 * 1024 * 1024
 SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
+def _is_clustered(service) -> bool:
+    """Whether this search head is a member of a search head cluster.
+
+    Only used to word an error message, so an unreachable endpoint or an older
+    Splunk must not raise: not knowing is the same as not clustered here.
+    """
+    try:
+        conf = service.confs["server"]["shclustering"]
+        return (conf.content.get("disabled") or "1").strip() not in ("1", "true")
+    except Exception:
+        return False
+
+
 def _safe_incoming_path(filename: str) -> str:
     """Resolve a client-supplied name inside the incoming directory, or fail.
 
@@ -392,6 +405,12 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             raise ValueError("offset must not be negative")
         final = bool(body.get("final", True))
 
+        if offset == 0 and body.get("import_now"):
+            # Checked before the bytes rather than after. Discovering at the end
+            # of a 150 MB upload that an import was already running wastes the
+            # whole transfer.
+            self._refuse_if_busy(self._service(request))
+
         tmp = path + ".partial"
         if offset == 0:
             with open(tmp, "wb") as f:
@@ -422,6 +441,41 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             os.unlink(tmp)
             raise
         os.replace(tmp, path)
+
+        # Import from here, in the request that finished the upload, because
+        # this is the only moment we know which member holds the file. A second
+        # request from the browser goes back through the load balancer and may
+        # well arrive somewhere else, which is exactly how "no staged bundle
+        # named ..." happens on a search head cluster.
+        if body.get("import_now"):
+            service = self._service(request)
+            try:
+                self._refuse_if_busy(service)
+            except Exception as exc:
+                # The bundle is staged and valid; only the import could not
+                # start. Reporting this as a failed upload would be a lie, and
+                # would send the operator to re-send bytes that already landed.
+                return _reply(200, {
+                    "ok": True, "filename": os.path.basename(path),
+                    "size_bytes": written, "final": True, "queued": False,
+                    "message": f"uploaded, but the import did not start: {exc}",
+                })
+            feedlib.read_manifest(path)
+            user = request.get("session", {}).get("user") or ""
+            self._queue(service, {
+                "action": "import",
+                "filename": os.path.basename(path),
+                "requested_by": user,
+                "requested_at": int(time.time()),
+                "state": "pending",
+            })
+            importer._write_status(service.kvstore, state="queued",
+                                   message="waiting for the feed worker",
+                                   bundle_version=os.path.basename(path))
+            return _reply(202, {"ok": True, "filename": os.path.basename(path),
+                                "size_bytes": written, "final": True,
+                                "queued": True})
+
         return _reply(200, {"ok": True, "filename": os.path.basename(path),
                             "size_bytes": written, "final": True})
 
@@ -436,9 +490,22 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         keeps that alive.
         """
         path = _safe_incoming_path(body.get("filename", ""))
-        if not os.path.isfile(path):
-            raise ValueError(f"no staged bundle named {os.path.basename(path)!r}")
         service = self._service(request)
+        if not os.path.isfile(path):
+            # On a search head cluster this is almost never a missing file. The
+            # upload landed on whichever member the load balancer chose, and
+            # this request reached a different one. Saying so is the difference
+            # between a five minute fix and an afternoon.
+            hint = ""
+            if _is_clustered(service):
+                hint = (" This member is "
+                        f"{importer.member_id(service) or 'unidentified'} and it "
+                        "is part of a search head cluster, where staged files "
+                        "are local to the member that received them. Upload the "
+                        "bundle again from this page: an upload now starts its "
+                        "own import on the member that holds it.")
+            raise ValueError(
+                f"no staged bundle named {os.path.basename(path)!r}." + hint)
         user = request.get("session", {}).get("user") or ""
 
         self._refuse_if_busy(service)
@@ -503,7 +570,13 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             "finish before starting another")
 
     def _queue(self, service, row):
-        """Record a request for the feed worker to pick up on its next tick."""
+        """Record a request for the feed worker to pick up on its next tick.
+
+        Stamped with this member, because the row replicates across a search
+        head cluster but the staged file it names does not. A worker elsewhere
+        must leave the job alone rather than claim it and fail to find the file.
+        """
+        row.setdefault("owner", importer.member_id(service))
         data = service.kvstore["riskability_feedstate"].data
         try:
             data.delete(json.dumps({"_key": "import_request"}))

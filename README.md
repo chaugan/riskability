@@ -376,9 +376,20 @@ Carry the bundle across, then either drop it in
 `$SPLUNK_HOME/var/run/riskability/incoming/` or upload it on the **Feed
 administration** page, and click Import. The upload is sent in 8 MB slices, so
 bundle size does not matter and no Splunk limit needs raising; on a search head
-cluster, where nobody has a shell on the member, it is the only way in. Import
-writes to the KV Store, which replicates across the cluster, so uploading to
-whichever member you happen to be on is enough. An import replaces the previous feed
+cluster, where nobody has a shell on the member, it is the only way in.
+
+On a search head cluster the upload starts its own import, in the request that
+finished it. That is not a convenience. Staged bundles live under `var/`, which
+replicates nowhere, while the queue that schedules the import is a KV Store row,
+which does. A separate Import click goes back through the load balancer and can
+land on a member that never received the file, which fails with `no staged
+bundle named ...` while the upload sat safely on another member. Importing from
+the upload request is the only point at which the member holding the file is
+known for certain. Each queued job records that member, and a worker elsewhere
+leaves it alone rather than claiming a job whose file it cannot see.
+
+The import itself writes to the KV Store, which replicates, so the feed is live
+on every member regardless of which one received the bundle. An import replaces the previous feed
 rather than merging with it, and the old one stays queryable until the new one
 has finished.
 
