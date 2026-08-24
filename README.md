@@ -374,7 +374,11 @@ measurements from a run, not from a file in this repository.)
 
 Carry the bundle across, then either drop it in
 `$SPLUNK_HOME/var/run/riskability/incoming/` or upload it on the **Feed
-administration** page, and click Import. An import replaces the previous feed
+administration** page, and click Import. The upload is sent in 8 MB slices, so
+bundle size does not matter and no Splunk limit needs raising; on a search head
+cluster, where nobody has a shell on the member, it is the only way in. Import
+writes to the KV Store, which replicates across the cluster, so uploading to
+whichever member you happen to be on is enough. An import replaces the previous feed
 rather than merging with it, and the old one stays queryable until the new one
 has finished.
 

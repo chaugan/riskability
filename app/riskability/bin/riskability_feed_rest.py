@@ -77,9 +77,20 @@ def _index_names(service) -> list:
                     "description": blurb})
     return out
 
-# A direct upload arrives base64-encoded in a JSON body and is held in memory
-# whole. Anything larger belongs in the staged-file flow.
-MAX_DIRECT_UPLOAD_BYTES = 64 * 1024 * 1024
+# An upload arrives base64-encoded in a JSON body, and a persistent REST
+# handler holds that body in memory whole. That is why uploads are chunked:
+# this bounds one request, not the bundle, so a 200 MB bundle costs the same
+# memory as a 20 MB one.
+#
+# The old design capped the whole bundle instead and told the operator to stage
+# large ones on disk. That advice is unusable on a search head cluster, where
+# nobody has a shell on the member, which is precisely where a big bundle is
+# most likely to be needed.
+MAX_CHUNK_BYTES = 24 * 1024 * 1024
+
+# Splunk Web's max_upload_size (500 MB by default) and splunkd's
+# max_content_length (2 GB) both apply per request, so a chunk well under either
+# never meets them. Nothing here needs those raised.
 
 SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -350,23 +361,59 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         return _reply(202, {"ok": True, "queued": True})
 
     def _upload(self, request, body):
+        """Append one chunk of a bundle to its staging file.
+
+        The client sends ``offset``, and the file is only published under its
+        real name once ``final`` is set and the manifest parses. An offset of 0
+        truncates, so a retried or abandoned upload restarts cleanly instead of
+        appending to a corpse.
+
+        A single-shot upload is just the case where offset is 0 and final is
+        true, which is what an older client sends, so both still work.
+        """
         path = _safe_incoming_path(body.get("filename", ""))
         data_b64 = body.get("data") or ""
-        # Base64 inflates by 4/3; check before decoding so an oversized upload
-        # is refused rather than materialised.
-        if len(data_b64) * 3 // 4 > MAX_DIRECT_UPLOAD_BYTES:
+        # Base64 inflates by 4/3; check before decoding so an oversized chunk is
+        # refused rather than materialised.
+        if len(data_b64) * 3 // 4 > MAX_CHUNK_BYTES:
             raise ValueError(
-                f"upload exceeds {MAX_DIRECT_UPLOAD_BYTES // (1024*1024)} MB; "
-                f"copy the bundle to {INCOMING_DIR} and use the import action instead"
-            )
+                f"chunk exceeds {MAX_CHUNK_BYTES // (1024*1024)} MB. This is a "
+                f"per-request limit, not a bundle limit; send smaller chunks.")
         try:
             raw = base64.b64decode(data_b64, validate=True)
         except Exception:
             raise ValueError("data was not valid base64")
 
+        try:
+            offset = int(body.get("offset") or 0)
+        except (TypeError, ValueError):
+            raise ValueError("offset must be an integer")
+        if offset < 0:
+            raise ValueError("offset must not be negative")
+        final = bool(body.get("final", True))
+
         tmp = path + ".partial"
-        with open(tmp, "wb") as f:
-            f.write(raw)
+        if offset == 0:
+            with open(tmp, "wb") as f:
+                f.write(raw)
+        else:
+            # Refuse to write at an offset that does not continue the file we
+            # have. Out-of-order or duplicated chunks would otherwise produce a
+            # plausible-looking bundle that is quietly wrong.
+            have = os.path.getsize(tmp) if os.path.exists(tmp) else 0
+            if have != offset:
+                raise ValueError(
+                    f"chunk offset {offset} does not continue the staged file, "
+                    f"which holds {have} bytes. Restart the upload.")
+            with open(tmp, "ab") as f:
+                f.write(raw)
+
+        written = os.path.getsize(tmp)
+        if not final:
+            return _reply(200, {"ok": True, "received_bytes": written,
+                                "filename": os.path.basename(path),
+                                "final": False})
+
         # Validate before publishing the name, so a rejected bundle never
         # appears in the staged list as if it were importable.
         try:
@@ -376,7 +423,7 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             raise
         os.replace(tmp, path)
         return _reply(200, {"ok": True, "filename": os.path.basename(path),
-                            "size_bytes": len(raw)})
+                            "size_bytes": written, "final": True})
 
     def _import(self, request, body):
         """Queue an import for the feed worker and return immediately.

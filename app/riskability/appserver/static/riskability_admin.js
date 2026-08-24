@@ -365,25 +365,50 @@
         up.appendChild(file);
         var btn = el("button", "rk-btn rk-btn-primary", "Upload");
         var msg = el("div", "rk-dim");
+        // Sent in slices rather than whole. The endpoint holds each request
+        // body in memory, so this bounds the request instead of the bundle:
+        // a 200 MB feed costs no more memory than a 20 MB one, and there is no
+        // size at which the operator is told to go and find a shell instead.
+        var CHUNK = 8 * 1024 * 1024;
+
+        function readSlice(blob) {
+            return new Promise(function (resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function () {
+                    resolve(String(reader.result).split(",")[1] || "");
+                };
+                reader.onerror = function () { reject(new Error("could not read that file")); };
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        function sendFrom(f, offset) {
+            var end = Math.min(offset + CHUNK, f.size);
+            var last = end >= f.size;
+            return readSlice(f.slice(offset, end)).then(function (b64) {
+                return request("POST", {
+                    action: "upload", filename: f.name, data: b64,
+                    offset: offset, final: last
+                });
+            }).then(function () {
+                if (last) return null;
+                msg.textContent = "Uploading " + humanBytes(end) + " of " +
+                    humanBytes(f.size) + " …";
+                return sendFrom(f, end);
+            });
+        }
+
         btn.addEventListener("click", function () {
             var f = file.files && file.files[0];
             if (!f) { msg.textContent = "Choose a file first."; return; }
-            if (f.size > 64 * 1024 * 1024) {
-                msg.textContent = "That file is " + humanBytes(f.size) +
-                    ". Uploads are capped at 64 MB because the whole body is held in memory; " +
-                    "copy it to the staging directory instead.";
-                return;
-            }
-            msg.textContent = "Uploading …";
-            var reader = new FileReader();
-            reader.onload = function () {
-                var b64 = String(reader.result).split(",")[1] || "";
-                request("POST", { action: "upload", filename: f.name, data: b64 })
-                    .then(function () { msg.textContent = ""; load(); })
-                    .catch(function (e) { msg.textContent = "Upload failed: " + e.message; });
-            };
-            reader.onerror = function () { msg.textContent = "Could not read that file."; };
-            reader.readAsDataURL(f);
+            btn.disabled = true;
+            msg.textContent = "Uploading " + humanBytes(f.size) + " …";
+            sendFrom(f, 0)
+                .then(function () { msg.textContent = ""; btn.disabled = false; load(); })
+                .catch(function (e) {
+                    msg.textContent = "Upload failed: " + e.message;
+                    btn.disabled = false;
+                });
         });
         up.appendChild(btn);
         staged.appendChild(up);
