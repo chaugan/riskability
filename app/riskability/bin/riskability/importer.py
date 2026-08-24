@@ -42,6 +42,14 @@ MAX_BATCH_BYTES = 40 * 1024 * 1024   # 50 MB limit, with headroom for framing
 # How often to publish progress, in rows.
 PROGRESS_EVERY = 25000
 
+# And in seconds, whatever the row count is doing. A row threshold alone
+# measures the wrong thing: the watchdog that decides whether a worker is still
+# alive reads a timestamp, so a run whose throughput drops can go quiet for
+# minutes between two perfectly ordinary progress writes and be declared dead
+# while it is still working. KV Store insert rates are not constant, and they
+# fall off exactly where it hurts, near the end of the largest collection.
+PROGRESS_EVERY_SECONDS = 30
+
 COLLECTIONS = {
     "ranges": "riskability_ranges",
     "advisories": "riskability_advisories",
@@ -211,6 +219,27 @@ def import_bundle(
 ) -> dict:
     """Validate and import a bundle. Returns the feed-state row that was written.
 
+    The keepalive is started and stopped here rather than inside the work, so
+    that no failure path can leave the thread running. A leaked keepalive would
+    be worse than the problem it solves: it would touch the status row forever
+    and a genuinely stuck import would never be recognised as stuck.
+    """
+    keepalive = _KeepAlive(kvstore).start()
+    try:
+        return _import_bundle(path, kvstore, imported_by=imported_by,
+                              progress=progress)
+    finally:
+        keepalive.stop()
+
+
+def _import_bundle(
+    path: str,
+    kvstore,
+    imported_by: str = "",
+    progress: Optional[Callable[[str, int], None]] = None,
+) -> dict:
+    """Validate and import a bundle. Returns the feed-state row that was written.
+
     ``kvstore`` is ``splunklib``'s ``service.kvstore``; passing it in keeps this
     module importable and testable without a running Splunk.
     """
@@ -262,6 +291,7 @@ def import_bundle(
             data = kvstore[collection].data
             n = 0
             next_report = PROGRESS_EVERY
+            last_report = time.time()
             # Note: no delete first. The previous generation stays readable for
             # the whole of this loop, which is what makes an interruption
             # harmless rather than destructive.
@@ -290,10 +320,12 @@ def import_bundle(
                 # sails straight past exact multiples. That is why an earlier
                 # run appeared frozen at 800,000 rows for twenty minutes while
                 # it was in fact still importing.
-                if n >= next_report:
+                now = time.time()
+                if n >= next_report or (now - last_report) >= PROGRESS_EVERY_SECONDS:
                     _write_status(kvstore, state="importing", generation=new_gen,
                                   **{f"loaded_{kind}": n})
                     next_report = n + PROGRESS_EVERY
+                    last_report = now
             counts[kind] = n
     except Exception as exc:
         _write_status(kvstore, state="failed", generation=new_gen, error=str(exc))
@@ -353,17 +385,30 @@ def import_bundle(
         pass
     feedstate.insert(json.dumps(state))
 
-    sweep_ungenerationed(kvstore)
+    # Reclaiming space is the longest silent stretch of an import, and it comes
+    # after the feed is already live, which is why it used to look like a hang
+    # at 99% and then get reported as an interrupted worker. Status is written
+    # before it starts and again per collection, so the row keeps moving.
+    done_counts = {
+        "loaded_ranges": counts.get("ranges", 0),
+        "loaded_advisories": counts.get("advisories", 0),
+    }
+    _write_status(kvstore, state="cleaning", generation=new_gen,
+                  message="the new feed is live; reclaiming space from the "
+                          "previous one", **done_counts)
+
+    def beat(collection: str) -> None:
+        _write_status(kvstore, state="cleaning", generation=new_gen,
+                      message=f"reclaiming space from the previous feed "
+                              f"({collection})", **done_counts)
+
+    sweep_ungenerationed(kvstore, heartbeat=beat)
 
     # Only now is the old generation unreachable, so removing it is safe. If
     # this is interrupted the leftovers are invisible to readers and will be
     # cleaned up by the next import.
-    _write_status(kvstore, state="cleaning", generation=new_gen, **{
-        "loaded_ranges": counts.get("ranges", 0),
-        "loaded_advisories": counts.get("advisories", 0),
-    })
     for gen in range(0, new_gen):
-        _delete_generation(kvstore, gen)
+        _delete_generation(kvstore, gen, heartbeat=beat)
 
     _write_status(kvstore, state="done", generation=new_gen,
                   bundle_version=state["bundle_version"],
@@ -402,16 +447,68 @@ def _write_eco_summary(kvstore, generation: int, eco_packages: Dict[str, set],
         pass
 
 
-def _delete_generation(kvstore, generation: int) -> None:
-    """Remove every row of one generation. Safe to interrupt and re-run."""
+class _KeepAlive:
+    """Touch the status row on a clock while a blocking call runs.
+
+    Progress writes happen between units of work, which is fine until one unit
+    is itself long. Deleting a generation from a single collection is one
+    KV Store call that can take minutes, and nothing can report from inside it.
+    The watchdog reads a timestamp, so a healthy import that is simply busy
+    looks identical to a dead worker and gets reaped, which is reported to the
+    operator as an interruption that never happened.
+
+    Only updated_at moves. State, message and counts are left to the code doing
+    the actual work, so this cannot invent progress that is not happening.
+    """
+
+    def __init__(self, kvstore, every: int = 30):
+        self.kvstore, self.every = kvstore, every
+        self._stop = None
+        self._thread = None
+
+    def start(self):
+        import threading
+        self._stop = threading.Event()
+
+        def beat():
+            while not self._stop.wait(self.every):
+                _write_status(self.kvstore)
+
+        self._thread = threading.Thread(target=beat, daemon=True)
+        self._thread.start()
+        return self
+
+    def stop(self):
+        if self._stop:
+            self._stop.set()
+        if self._thread:
+            self._thread.join(timeout=5)
+
+    def __enter__(self):
+        return self.start()
+
+    def __exit__(self, *exc):
+        self.stop()
+        return False
+
+
+def _delete_generation(kvstore, generation: int, heartbeat=None) -> None:
+    """Remove every row of one generation. Safe to interrupt and re-run.
+
+    heartbeat is called per collection. Deleting a generation of a large feed
+    takes minutes, and without a sign of life the watchdog that looks for dead
+    workers cannot tell this from a crash.
+    """
     for collection in list(COLLECTIONS.values()) + [ECO_COLLECTION]:
+        if heartbeat:
+            heartbeat(collection)
         try:
             kvstore[collection].data.delete(json.dumps({"gen": generation}))
         except Exception:
             pass
 
 
-def sweep_ungenerationed(kvstore) -> None:
+def sweep_ungenerationed(kvstore, heartbeat=None) -> None:
     """Remove rows that carry no generation at all.
 
     These predate generations, or were left by a version that could not delete
@@ -431,6 +528,8 @@ def sweep_ungenerationed(kvstore) -> None:
     being true after the first successful import and never becomes true again.
     """
     for collection in list(COLLECTIONS.values()) + [ECO_COLLECTION]:
+        if heartbeat:
+            heartbeat(collection)
         try:
             kvstore[collection].data.delete(json.dumps({"gen": None}))
         except Exception:

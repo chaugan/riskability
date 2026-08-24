@@ -42,7 +42,17 @@ REQUEST_KEY = "import_request"
 
 # How long an in-flight operation may go without a progress write before it is
 # assumed dead. Comfortably above the importer's progress interval.
-ORPHAN_AFTER_SECONDS = 300
+# Matches STALE_AFTER_SECONDS in the REST handler, so the endpoint and the
+# worker cannot disagree about whether an operation is still alive. Generous
+# above the worst observed gap between progress writes on a 3.3M row import.
+ORPHAN_AFTER_SECONDS = 900
+
+# A member that genuinely dies mid import must not wedge the feed forever, so
+# another member may step in eventually. Far above the window a member uses for
+# its own work, because the cost of being wrong differs sharply by direction:
+# reaping late wastes time, reaping a healthy import throws away an hour of
+# work and tells the operator something untrue.
+ORPHAN_FOREIGN_AFTER_SECONDS = 4 * ORPHAN_AFTER_SECONDS
 STATE_COLLECTION = "riskability_feedstate"
 FINDINGS_STATE_COLLECTION = "riskability_findings_state"
 
@@ -132,7 +142,33 @@ class FeedWorker(Script):
         abandoned = (in_flight and request
                      and request.get("state") == "running"
                      and quiet_for > ORPHAN_AFTER_SECONDS)
-        if (in_flight and not request) or abandoned:
+
+        # Only the member running an operation may declare it dead. The status
+        # row replicates across a search head cluster, so without this a member
+        # that is doing nothing sees another member's quiet import and reaps a
+        # job that is still running. That is reported to the operator as "the
+        # worker running this operation was interrupted", which is then simply
+        # untrue and loses a completed import.
+        #
+        # An unowned request predates this or was queued by an older version;
+        # reaping it is the previous behaviour and stays available.
+        reaper_owner = (request or {}).get("owner") or ""
+        mine = (not reaper_owner) or reaper_owner == importer.member_id(service)
+        # Not mine, but silent for long enough that the owner is gone rather
+        # than busy.
+        if not mine and quiet_for > ORPHAN_FOREIGN_AFTER_SECONDS:
+            ew.log("WARN", f"riskability: member {reaper_owner} has been silent "
+                           f"for {quiet_for}s; clearing its operation")
+            mine = True
+
+        # A request row that has gone missing entirely used to be reaped on
+        # sight. It now has to have gone quiet as well, because _queue deletes
+        # before it inserts and a tick landing in that window would otherwise
+        # kill a healthy operation.
+        orphaned_status = (in_flight and not request
+                           and quiet_for > ORPHAN_AFTER_SECONDS)
+
+        if mine and (orphaned_status or abandoned):
             # An interruption after the atomic flip is not a failure: the feed
             # landed and only the old generation's cleanup was cut short. Saying
             # "the last import failed" above a feed showing 487,041 advisories
