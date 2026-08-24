@@ -178,6 +178,11 @@ else
   printf '  ok    %-52s\n' "every conf parses under strict rules"
 fi
 
+# The wrappers and the tool they invoke must agree on flags. They are separate
+# argument parsers in separate files, and a flag added to one and not the other
+# fails only on a user's machine, with "unrecognized arguments".
+if ! python3 "$ROOT/tools/check_feedbuilder_flags.py"; then fail=1; fi
+
 # The search-head app: everything the dashboards and matcher need at runtime.
 structure "$ROOT/app/riskability"
 

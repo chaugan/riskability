@@ -79,7 +79,7 @@ def cmd_sources(args):
 
 def cmd_build(args):
     if not (args.ecosystem or args.nvd or args.mitre or args.kev or args.epss
-            or args.kev_file or args.epss_file):
+            or args.kev_file or args.epss_file or args.cve_list or args.cve_list_file):
         print("error: choose at least one source (see 'sources')", file=sys.stderr)
         return 2
     try:
@@ -88,6 +88,7 @@ def cmd_build(args):
             ecosystems=args.ecosystem or [],
             nvd=args.nvd, mitre=args.mitre, kev=args.kev, epss=args.epss,
             kev_file=args.kev_file, epss_file=args.epss_file,
+            cve_list=args.cve_list, cve_list_file=args.cve_list_file,
             version=args.version,
             log=lambda m: print(m, file=sys.stderr),
         )
@@ -131,6 +132,13 @@ def main(argv=None):
                         "instead of fetching it")
     b.add_argument("--epss-file", dest="epss_file", default="", metavar="PATH",
                    help="use a downloaded EPSS csv or csv.gz instead of fetching it")
+    b.add_argument("--cve-list", dest="cve_list", action="store_true",
+                   help="include the CVE Program catalogue: descriptions and product "
+                        "names for the CVE encyclopaedia. About 600 MB to download and "
+                        "roughly 120 MB in the bundle, so it is opt in")
+    b.add_argument("--cve-list-file", dest="cve_list_file", default="", metavar="PATH",
+                   help="use an already downloaded cvelistV5 release zip instead of "
+                        "fetching it")
     b.add_argument("--version", default="")
     b.set_defaults(func=cmd_build)
 
