@@ -591,6 +591,14 @@ References are deliberately not carried. Measured across the catalogue they
 cost 52 MB to store URLs that cannot be followed from a machine with no
 internet. Product names cost 10 MB, and are the entire point.
 
+**It answers for one vulnerability or for many.** The CVE box takes a wildcard,
+so `CVE-2023-486*` lists all 103 that match, one row each, and the four figures
+at the top become honest aggregates of the set: the worst CVSS, the highest
+EPSS, and how many of them CISA has catalogued as exploited. Nothing is ever
+merged across vulnerabilities. That is not a nicety: before the panels grouped
+by CVE, a wildcard produced one confident row carrying one vulnerability's id,
+another's severity and a third's description.
+
 **Any CVE id in any table in the app is a link to this page.** It is a cell
 formatter in the table visualization rather than a per panel drilldown, so it
 works everywhere a CVE appears, shows the reader that the cell is live, and
