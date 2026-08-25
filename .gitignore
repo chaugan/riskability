@@ -36,6 +36,7 @@ app/riskability/appserver/static/visualizations/*/node_modules/
 # running scale plan. Useful to keep beside the code, not part of what is
 # published with it.
 SCALE-TODO.md
+STANDALONE-HANDOFF.md
 
 # The forwarder watch directory is runtime staging: both harnesses need it to
 # start empty, and both used to get there by deleting tracked fixtures. The
