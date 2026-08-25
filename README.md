@@ -425,6 +425,43 @@ the records are identical in shape and the rest of the pipeline cannot tell the
 difference. **Feed administration** reports both hosts separately so you can see
 which one a firewall is blocking.
 
+### What each binary actually loads
+
+A CVE in a shared library flags every host that has the library on disk, which
+on a fleet is every host. swinv 1.11 reads each ELF binary's `DT_NEEDED` table
+without executing anything, so the app can say which of those hosts run a
+process that actually maps it, and name the process.
+
+Turn it on at the collector with `--ndjson-include links`. `--elf-scope`
+chooses the population: `listening` is the default and covers the executables
+behind open ports, which is the set worth ranking first. `all` covers every ELF
+under the standard binary directories and is a different ingest profile
+entirely, thousands of records per host per scan rather than dozens.
+
+The evidence appears on **Exposure**, as a ranked panel of open findings on a
+library a listening process loads, and as a "Library load" column on the
+findings detail table. It raises priority; it never hides a finding.
+
+Read it as a reason to look first, not as a verdict. The collector states three
+limits and the app repeats them rather than smoothing them over:
+
+- `DT_NEEDED` is link-time truth. A library arriving through `dlopen`, which is
+  how nginx modules, Python extensions, PAM and NSS load, is invisible here, so
+  an absent row is not evidence the library is unused.
+- Imported symbols name the API entry points a binary calls, not the code that
+  runs. Most CVEs live in internal functions that appear in no import table, so
+  "loads the library" is the reliable signal and nothing in the app keys a
+  decision on symbols.
+- A library with a path and no owning package is one nothing installed
+  provides. No feed can ever match it, which makes it more interesting rather
+  than less, so it is counted on the coverage panel instead of being dropped.
+
+A finding says **not assessed** when no link data reached that host, which is
+the case for every Windows host and every collector older than 1.11, and **not
+a linked library** for npm, PyPI and Go findings that no ELF link could
+describe. Neither reads the same as "nothing loads it", because a host must
+never look calmer for having been measured less.
+
 ### Why a normalised bundle rather than the raw feeds
 
 - Upstream formats disagree wildly (OSV JSON, OVAL XML, CSAF, `updateinfo.xml`,

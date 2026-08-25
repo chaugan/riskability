@@ -390,6 +390,90 @@
 
   <row>
     <panel>
+      <title>Open findings on a library a listening process loads</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_open_findings`
+  | search (hostname=$host_tok$)
+  | `riskability_load_evidence`
+  | where loaded_listening = 1
+  | eval sev = coalesce(severity, "not stated")
+  | eval kev = if(isnotnull(kev_added) AND kev_added != "", "yes", "")
+  | eval epss_pc = if(isnotnull(epss), round(epss * 100, 1), null())
+  | sort 500 - kev, - epss, - cvss_score
+  | table hostname, package, installed_version, cve_id, sev, cvss_score, epss_pc, kev,
+          loaders, loader_count
+  | rename hostname AS "Host", package AS "Package", installed_version AS "Installed",
+           cve_id AS "CVE", sev AS "Severity", cvss_score AS "CVSS",
+           epss_pc AS "EPSS %", kev AS "Known exploited",
+           loaders AS "Loaded by", loader_count AS "Loaders"</query>
+        </search>
+        <option name="riskability.riskability_grid.emptyText">No open finding here is on a library that a listening process loads. That is not the same as nothing being exposed: see whether these hosts were assessed at all, below.</option>
+        <option name="height">320</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>Loading a library is not proof the vulnerable code runs.</b>
+          <span>
+            swinv reads each binary's <code>DT_NEEDED</code> table without executing
+            anything, so this says the process maps the library, not that it reaches the
+            affected function. Most CVEs live in internal code that appears in no import
+            table. Read it as a reason to look first, not as a verdict. The reverse is
+            weaker still: a library arriving through <code>dlopen</code>, which is how
+            nginx modules, Python extensions, PAM and NSS load, is invisible here, so an
+            absent row is not evidence the library is unused.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Was anything measured about what these hosts load?</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_hosts_seen`
+  | search (hostname=$host_tok$)
+  | lookup riskability_links_hoststate_lookup hostname
+      OUTPUT link_rows, linked_packages, listening_loaders, unowned_libraries, assessed_at
+  | eval status = if(isnull(assessed_at), "no link data from this host", "assessed")
+  | eval assessed = if(isnull(assessed_at), "never", strftime(assessed_at, "%Y-%m-%d %H:%M"))
+  | eval link_rows = coalesce(link_rows, 0), linked_packages = coalesce(linked_packages, 0),
+         listening_loaders = coalesce(listening_loaders, 0),
+         unowned_libraries = coalesce(unowned_libraries, 0)
+  | table hostname, status, assessed, link_rows, linked_packages, listening_loaders,
+          unowned_libraries
+  | sort 5000 status, - unowned_libraries
+  | rename hostname AS "Host", status AS "Library loads", assessed AS "Measured at",
+           link_rows AS "Links seen", linked_packages AS "Packages loaded",
+           listening_loaders AS "Listening binaries",
+           unowned_libraries AS "Libraries no package owns"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
+        <option name="height">240</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>A host with no link data is not a host that loads nothing.</b>
+          <span>
+            Link records are read from ELF binaries, so a Windows host has none and neither
+            does a collector older than swinv 1.11 or one run without
+            <code>--ndjson-include links</code>. Those findings say <b>not assessed</b>
+            rather than <b>not seen in the load list</b>, so a host does not look calmer for
+            having been measured less. "Libraries no package owns" counts files that were
+            loaded and that nothing installed provides: vendored or hand-copied
+            libraries, which no package feed can ever match and which no version
+            comparison will ever flag.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Containers - a stopped container is not a safe container</title>
       <viz type="riskability.riskability_grid">
         <search>
@@ -501,9 +585,10 @@
 | eval kev = if(isnotnull(kev_added) AND kev_added!="", "yes", "")
 | eval epss = round(epss, 4)
 | eval root = if(scope_id!="", scope_id, "host")
-| table tier, reach_class, exploit_class, confidence, cve_id, package, last_version,
+| `riskability_load_evidence`
+| table tier, reach_class, exploit_class, load_class, confidence, cve_id, package, last_version,
         fixed_version, hostname, root, ports_text, listener_text, listener_path_text,
-        container_text, kev, epss
+        container_text, loaders, kev, epss
 | sort 50000 - epss
 | head 2000
 | rename tier AS "Priority", reach_class AS "Reach", exploit_class AS "Exploit likelihood",
@@ -511,6 +596,7 @@
          fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
          ports_text AS "Listening on", listener_text AS "Held by",
          listener_path_text AS "Executable", container_text AS "Container",
+           load_class AS "Library load", loaders AS "Loaded by",
          kev AS "Known-exploited", epss AS "EPSS"</query>
         </search>
         <option name="riskability.riskability_grid.filterNote">$drill_note$</option>
@@ -524,6 +610,11 @@
             For reading a selection, not for exporting a fleet. Narrow it with the matrix or
             the chain above, or use <b>Findings</b> for the full register. "Held by" is the
             systemd unit or the executable's name; the full path is in its own column.
+              "Library load" says whether a process on this host maps the package's library,
+              read from the binary rather than from the port. <b>Not assessed</b> means no
+              link data arrived, which is not the same as nothing loading it, and
+              <b>not a linked library</b> marks the npm, PyPI and Go findings that no ELF
+              link could ever describe.
           </span>
         </div>
       </html>
