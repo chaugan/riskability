@@ -16,6 +16,7 @@ This compares the two halves directly, against the built artefact rather than
 the sources, because the artefact is what ships.
 """
 import re
+import os
 import subprocess
 import sys
 import tempfile
@@ -37,9 +38,17 @@ def main():
             print("  BAD   the archive carries no riskability-feed.pyz", file=sys.stderr)
             return 1
         try:
+            # Python 3.14 colours argparse help by default. The escape codes sit
+            # directly against the flag names, so "\x1b[36m--cve-list" fails a
+            # (?<![\w-]) lookbehind on the "m" and every flag reads as missing.
+            # Ask for no colour, and strip it anyway in case the request is
+            # ignored: a checker that fails for a reason unrelated to what it
+            # checks is worse than no checker.
+            env = dict(os.environ, NO_COLOR="1", PYTHON_COLORS="0", TERM="dumb")
             helptext = subprocess.run(
                 [sys.executable, str(pyz), "build", "--help"],
-                capture_output=True, text=True, timeout=120).stdout
+                capture_output=True, text=True, timeout=120, env=env).stdout
+            helptext = re.sub(r"\x1b\[[0-9;]*m", "", helptext)
         except Exception as exc:
             print(f"  BAD   could not run the shipped tool: {exc}", file=sys.stderr)
             return 1

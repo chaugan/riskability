@@ -201,7 +201,7 @@ below.
 | Role | What it needs |
 |---|---|
 | Search head | The app. Nothing else |
-| Indexer | The app's `default/indexes.conf` and its `[riskability:swinv]` parsing, copied into an app of your own. A universal forwarder does not parse, so this must be on the indexers |
+| Indexer | The app's `default/indexes.conf` **and** its `[riskability:swinv]` parsing. Both, not either: the indexes let data land, the parsing is what makes it readable. A universal forwarder does not parse, so this must be on the indexers. `TA-riskability-indexes` carries both from 0.1.15; earlier versions of it carried only the indexes |
 | Universal forwarder | Six lines of `inputs.conf`. Nothing else |
 
 The repository also carries `TA-riskability` and `TA-riskability-indexes`,
@@ -847,8 +847,8 @@ introspected and splunkd logs an error on every restart. A forwarder needs six
 lines of `inputs.conf` and nothing more.
 
 For convenience the repository also builds `TA-riskability` (that input, for
-forwarders) and `TA-riskability-indexes` (the index definitions alone, for
-indexers that should not carry the whole app). Neither is on Splunkbase,
+forwarders) and `TA-riskability-indexes` (the index definitions and the swinv
+parsing, for indexers that should not carry the whole app). Neither is on Splunkbase,
 because a listing takes exactly one archive.
 
 An earlier version of this app really could not put `indexes.conf` on a

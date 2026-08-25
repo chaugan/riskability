@@ -3,12 +3,27 @@ Riskability Indexes (TA-riskability-indexes)
 
 What it does
 ------------
-Defines the four indexes the Riskability app reads and writes. It contains
-nothing else: no inputs, no scripts, no searches, no network access.
+Defines the four indexes the Riskability app reads and writes, and the
+index-time parsing for the swinv sourcetype. It contains nothing else: no
+inputs, no scripts, no searches, no network access.
+
+Both halves have to be on the indexers. The indexes let data land; the parsing
+is what makes it readable. Before 0.1.15 this add-on carried only the indexes,
+which made the obvious deployment quietly wrong.
 
 Deploy this to INDEXERS ONLY (or to a single instance). Do not deploy it to
 universal forwarders. A forwarder that carries index definitions it cannot
 serve produces confusing errors and no benefit.
+
+Parsing
+-------
+  [riskability:swinv]   one NDJSON component per line, timestamped from the
+                        scanned_at field, no line merging, no truncation
+
+Without it Splunk merges the lines into blobs of a few hundred, each blob stops
+being valid JSON, and the default 10,000 byte truncation discards most of what
+is left. The symptom is not an error: a host reporting 3,993 components appears
+in the app as 15, and every layer stays silent.
 
 Indexes created
 ---------------
