@@ -462,6 +462,28 @@ a linked library** for npm, PyPI and Go findings that no ELF link could
 describe. Neither reads the same as "nothing loads it", because a host must
 never look calmer for having been measured less.
 
+### Checking that what was collected is what arrived
+
+swinv states in every scan how many components it found, how many link and
+exposure records it produced, and what each enumeration source did. Coverage
+compares that against what reached the index.
+
+This is the only check in the pipeline that can catch data lost on the way in.
+Everything else reports success whether or not the data arrives: the forwarder
+ships the file, the indexer accepts it, the matcher runs, the dashboard shows a
+host reporting. A host that collected 3,993 components and delivered 15 then
+produces no findings, correctly, and reads as clean.
+
+A shortfall is almost always index-time parsing. The swinv sourcetype's line
+breaking has to be on the indexers, not only on the search heads, or Splunk
+merges the NDJSON into blobs of a few hundred lines, each blob stops being valid
+JSON, and the default truncation discards most of it.
+
+The other direction is the collector's own report: `a source failed on the host`
+means it could not read a package database, which is not the same as the host
+having no packages, and only the collector can tell you which. Older collectors
+that report no manifest say so rather than being assumed complete.
+
 ### Why a normalised bundle rather than the raw feeds
 
 - Upstream formats disagree wildly (OSV JSON, OVAL XML, CSAF, `updateinfo.xml`,

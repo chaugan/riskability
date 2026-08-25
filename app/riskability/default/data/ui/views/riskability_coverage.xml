@@ -161,4 +161,60 @@
       </viz>
     </panel>
   </row>
+
+  <row>
+    <panel>
+      <title>Did everything the collector found actually arrive?</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>sourcetype=riskability:swinv index=`riskability_index_inventory` NOT record_type=*
+  | eventstats max(_time) AS rk_newest BY hostname
+  | where _time >= rk_newest
+  | stats count AS arrived BY hostname
+  | append
+      [| inputlookup riskability_links_hoststate_lookup | table hostname, link_rows]
+  | stats sum(arrived) AS arrived, sum(link_rows) AS links_arrived BY hostname
+  | lookup riskability_scanstate_lookup hostname
+      OUTPUT said_components, said_link, sources_failed, failed_text, swinv_version, scanned_at
+  | eval arrived = coalesce(arrived, 0), links_arrived = coalesce(links_arrived, 0)
+  | eval shortfall = if(isnull(said_components), null(), said_components - arrived)
+  | eval pct = if(isnull(said_components) OR said_components = 0, null(),
+                  round(arrived * 100 / said_components, 1))
+  | eval verdict = case(
+      isnull(said_components), "collector does not report a manifest",
+      sources_failed > 0, "a source failed on the host",
+      shortfall > 0, "components went missing on the way in",
+      1=1, "everything arrived")
+  | eval reported = strftime(scanned_at, "%Y-%m-%d %H:%M")
+  | sort 5000 - shortfall
+  | table hostname, verdict, swinv_version, said_components, arrived, pct, said_link,
+          links_arrived, failed_text, reported
+  | rename hostname AS "Host", verdict AS "Verdict", swinv_version AS "Collector",
+           said_components AS "Collector found", arrived AS "Reached the index",
+           pct AS "Arrived %", said_link AS "Links found",
+           links_arrived AS "Links stored", failed_text AS "Sources that failed",
+           reported AS "Scanned at"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
+        <option name="height">260</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>This is the only panel that can catch data lost on the way in.</b>
+          <span>
+            swinv states in every scan how many components it found. Everything downstream
+            reports success whether or not those components arrive, so without comparing the
+            two, a host that collected 3,993 components and delivered 15 looks exactly like a
+            small host with nothing wrong. It then produces no findings, correctly, and the
+            fleet reads as clean. A shortfall here almost always means index-time parsing:
+            check that the swinv sourcetype's line breaking is present on the indexers, not
+            only on the search heads. "A source failed on the host" is the other direction:
+            the collector could not read a package database, which is not the same as the
+            host having no packages, and only the collector can tell you which.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
 </form>
