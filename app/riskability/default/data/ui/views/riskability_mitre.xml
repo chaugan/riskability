@@ -64,7 +64,8 @@
 | stats dc(cve_id) AS cves BY tactic_name, tactic_order, technique_name
 | eventstats max(cves) AS peak BY technique_name
 | sort 50000 - peak
-| head 120
+  | streamstats dc(technique_name) AS rk_rank
+  | where rk_rank &lt;= 120
 | sort 50000 tactic_order
 | fields tactic_name, technique_name, cves</query>
         </search>
@@ -81,6 +82,42 @@
           <unset token="tech_tok"></unset>
         </drilldown>
       </viz>
+        <!-- How many techniques the matrix is not showing. The grid is capped for
+             legibility, and a cap that says nothing is the failure this app exists to
+             avoid: a reader counts what is on screen and concludes that is what is in
+             play. Measured on a three host fleet, 119 techniques already had findings
+             against a cap of 120, so on a real fleet this banner is the normal case
+             rather than the exception. rk-bad, so it survives the panel notes toggle:
+             someone hiding the explanations is not asking to stop being told the
+             picture is partial. -->
+        <search>
+          <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
+  | stats dc(technique_name) AS rk_total
+  | eval rk_hidden = if(rk_total &gt; 120, rk_total - 120, 0)
+  | table rk_total, rk_hidden</query>
+          <done>
+            <condition match="$result.rk_hidden$ &gt; 0">
+              <set token="matrix_truncated">1</set>
+              <set token="matrix_hidden">$result.rk_hidden$</set>
+              <set token="matrix_total">$result.rk_total$</set>
+            </condition>
+            <condition>
+              <unset token="matrix_truncated"></unset>
+            </condition>
+          </done>
+        </search>
+        <html depends="$matrix_truncated$">
+          <div class="rk-status rk-bad" style="margin:8px 0 0">
+            <b>This matrix is not showing everything. $matrix_hidden$ of $matrix_total$ techniques are hidden.</b>
+            <span>
+              The grid draws the 120 techniques carrying the most distinct CVEs, because more
+              than that cannot be read at this size. The rest are not absent and not safe, they
+              are off the picture. The table below is not capped this way, so filter to a host or
+              pick a tactic to reach them, and read this grid as the shape of the fleet rather
+              than an inventory of it.
+            </span>
+          </div>
+        </html>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
           <b>An empty matrix means the tactic mapping is missing.</b>
