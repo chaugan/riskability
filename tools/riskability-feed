@@ -70,6 +70,14 @@ CAPEC_URL = "https://capec.mitre.org/data/csv/1000.csv"
 # and the ATT&CK matrix needs both.
 ATTACK_STIX_URL = ("https://raw.githubusercontent.com/mitre-attack/attack-stix-data"
                    "/master/enterprise-attack/enterprise-attack.json")
+# MITRE CTID's KEV to ATT&CK mapping. Apache 2.0, refreshed by CTID roughly
+# quarterly. The path pins an ATT&CK spec version and a KEV snapshot date, so it
+# is bumped deliberately when CTID publishes rather than tracking a moving latest
+# that could change the mapping under a reproducible build. A fetch failure is
+# not fatal: the KEV bridge is optional and the rest of the feed still builds.
+KEV_ATTACK_URL = ("https://raw.githubusercontent.com/center-for-threat-informed-defense"
+                  "/mappings-explorer/main/mappings/kev/attack-16.1/kev-07.28.2025"
+                  "/enterprise/kev-07.28.2025_attack-16.1-enterprise.json")
 
 # Ecosystems worth offering, with the swinv package types they answer for.
 KNOWN_ECOSYSTEMS = {
@@ -339,6 +347,22 @@ def cmd_build(args) -> int:
             sources.append({"name": "mitre-attack", "url": CAPEC_URL,
                             "fetched_at": int(time.time()), "records": len(rows),
                             "licence": "MITRE CWE/CAPEC; see MITRE terms of use"})
+
+            # The KEV to ATT&CK bridge. Independent of the CAPEC chain above and
+            # not fatal if it fails: a failed fetch leaves the bridge panel with
+            # no data, which it states, while every other panel still works.
+            print(f"fetching KEV -> ATT&CK   {KEV_ATTACK_URL}", file=sys.stderr)
+            try:
+                with _open(KEV_ATTACK_URL) as r:
+                    kev_rows = feedlib.parse_kev_attack(r.read().decode("utf-8"))
+                for row in kev_rows:
+                    writer.add_kevmap(row)
+                print(f"  {len(kev_rows)} KEV CVE -> technique mappings", file=sys.stderr)
+                sources.append({"name": "mitre-ctid-kev-attack", "url": KEV_ATTACK_URL,
+                                "fetched_at": int(time.time()), "records": len(kev_rows),
+                                "licence": "Apache 2.0; MITRE Center for Threat-Informed Defense"})
+            except Exception as exc:
+                print(f"  ERROR {exc} - continuing without the KEV bridge", file=sys.stderr)
         except Exception as exc:
             print(f"  ERROR {exc} - continuing without MITRE mapping", file=sys.stderr)
 

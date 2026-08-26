@@ -46,3 +46,4 @@ STANDALONE-HANDOFF.md
 # Splunkbase listing assets and copy are admin work, not part of the app.
 # They are produced into this directory and transferred out of band.
 /docs/splunkbase/
+ENRICHMENT-PLAN.md

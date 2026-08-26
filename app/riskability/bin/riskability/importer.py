@@ -63,6 +63,7 @@ COLLECTIONS = {
     # collection by bytes and the smallest by rows read, since a page renders
     # exactly one of them.
     "cvedetail": "riskability_cvedetail",
+    "kevmap": "riskability_kevmap",
 }
 
 MEMBER_FOR = {
@@ -72,6 +73,7 @@ MEMBER_FOR = {
     "attack": feedlib.ATTACK_MEMBER,
     "tactics": feedlib.TACTICS_MEMBER,
     "cvedetail": feedlib.CVEDETAIL_MEMBER,
+    "kevmap": feedlib.KEVMAP_MEMBER,
 }
 
 # Per-ecosystem package counts, derived while streaming ranges rather than

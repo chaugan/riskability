@@ -35,7 +35,31 @@
          titles stay grammatical. A note that a panel is filtered has to say
          nothing when it is not, or every panel claims to show a subset. -->
     <set token="drill_note"></set>
-  </init>
+      <!-- Platform filter defaults to keeping everything until the token search
+           below resolves the selected host's OS. A missing token would break the
+           matrix filter regex, so it must exist from the first render, and
+           keep-all is the safe default: never hide a technique before we know. -->
+      <set token="host_plat_re">Windows|Linux|macOS</set>
+      <set token="host_plat_label">all platforms</set>
+    </init>
+
+    <!-- The ATT&CK platform families present in the selected host scope, resolved
+         once and shared by every panel through a token. A pure Linux fleet
+         resolves to "Linux", so Windows only techniques are dropped fleet wide,
+         which is correct. An unrecognised OS resolves to keep-all, so a host
+         running something unusual is never hidden from its own matrix. -->
+    <search>
+      <query>| `riskability_host_platforms($host_tok|s$)`
+| eval host_plat_re = if(isnull(rk_fams) OR mvcount(mvfilter(rk_fams=="__unknown__"))&gt;0, "Windows|Linux|macOS", mvjoin(rk_fams, "|"))
+| eval host_plat_label = if(host_plat_re=="Windows|Linux|macOS", "all platforms", mvjoin(rk_fams, ", "))
+| table host_plat_re, host_plat_label</query>
+      <done>
+        <condition>
+          <set token="host_plat_re">$result.host_plat_re$</set>
+          <set token="host_plat_label">$result.host_plat_label$</set>
+        </condition>
+      </done>
+    </search>
 
   <row>
     <panel>
@@ -63,17 +87,74 @@
     </panel>
   </row>
 
+    <!-- The KEV bridge, placed first because it is the strongest claim on the
+         page. A base search runs the bridge macro once; the chart reads it, the
+         coverage caption reads it, and the drilldown table reads it. -->
+    <row>
+      <panel>
+        <title>Known-exploited and reachable here</title>
+        <search id="rk_kev">
+          <query>| `riskability_kev_bridge_for($host_tok|s$, $conf_tok|s$)`</query>
+        </search>
+        <search base="rk_kev">
+          <query>stats dc(cve_id) AS value, values(comment) AS comment BY tech_label, reach_class
+| rename tech_label AS technique, reach_class AS reach
+| eval comment = mvindex(comment, 0)
+| table technique, reach, value, technique, comment</query>
+          <done>
+            <condition match="$job.resultCount$ == 0">
+              <set token="kev_empty">1</set>
+            </condition>
+            <condition>
+              <unset token="kev_empty"></unset>
+            </condition>
+          </done>
+        </search>
+        <viz type="riskability.riskability_chart">
+          <search base="rk_kev">
+            <query>stats dc(cve_id) AS value, values(comment) AS comment BY tech_label, reach_class
+| eval tier = case(reach_class="answers any address","act-now", reach_class="answers one address","act-soon", reach_class="loopback only","plan", reach_class="no listening port","watch", 1=1,"unknown-risk")
+| eval comment = mvindex(comment, 0)
+| table tech_label, reach_class, value, tier, comment</query>
+          </search>
+          <option name="riskability.riskability_chart.chartType">kevbridge</option>
+          <option name="height">360</option>
+          <option name="riskability.riskability_chart.emptyText">No known-exploited CVE in this scope maps to a technique in MITRE's KEV mapping. That is not a clean bill of health: it means none of your KEV findings are among the ones CTID has mapped so far.</option>
+        </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>This panel is a floor, not a full picture.</b>
+            <span>
+              It shows only known-exploited CVEs that MITRE's Center for Threat-Informed Defense has
+              mapped to a technique. That mapping covers a subset of the KEV catalogue, so a
+              known-exploited CVE with no row here is unmapped, not safe. The colour is the reach of
+              the finding, not how many there are: one known-exploited package answering the network
+              is drawn as loud as a thousand that answer nothing, because reachable is the thing this
+              page adds to what EPSS and KEV already tell you. Unlike the matrix below, this is not a
+              weakness-class inference: CISA recorded these CVEs being exploited, and MITRE mapped
+              each to the technique that does it.
+            </span>
+          </div>
+        </html>
+      </panel>
+    </row>
+
   <row>
     <panel>
       <title>ATT&amp;CK matrix - where open findings sit in an attack</title>
+      <search id="rk_matrix">
+        <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
+| stats dc(cve_id) AS cves, values(platforms) AS rk_pf BY tactic_name, tactic_order, technique_name, technique
+| eval rk_has_hostos = if(match(rk_pf, "(?i)Windows|Linux|macOS"), 1, 0)
+| eval rk_in_scope = if(match(rk_pf, "(?i)($host_plat_re$)"), 1, 0)
+| where rk_has_hostos = 0 OR rk_in_scope = 1</query>
+      </search>
       <viz type="riskability.riskability_chart">
-        <search>
-          <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
-| stats dc(cve_id) AS cves BY tactic_name, tactic_order, technique_name
-| eventstats max(cves) AS peak BY technique_name
+        <search base="rk_matrix">
+          <query>eventstats max(cves) AS peak BY technique_name
 | sort 50000 - peak
-  | streamstats dc(technique_name) AS rk_rank
-  | where rk_rank &lt;= 120
+| streamstats dc(technique_name) AS rk_rank
+| where rk_rank &lt;= 120
 | sort 50000 tactic_order
 | fields tactic_name, technique_name, cves</query>
         </search>
@@ -98,11 +179,10 @@
              rather than the exception. rk-bad, so it survives the panel notes toggle:
              someone hiding the explanations is not asking to stop being told the
              picture is partial. -->
-        <search>
-          <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
-  | stats dc(technique_name) AS rk_total
-  | eval rk_hidden = if(rk_total &gt; 120, rk_total - 120, 0)
-  | table rk_total, rk_hidden</query>
+        <search base="rk_matrix">
+          <query>stats dc(technique_name) AS rk_total
+| eval rk_hidden = if(rk_total &gt; 120, rk_total - 120, 0)
+| table rk_total, rk_hidden</query>
           <done>
             <condition match="$result.rk_hidden$ &gt; 0">
               <set token="matrix_truncated">1</set>
@@ -138,6 +218,20 @@
           </span>
         </div>
       </html>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Filtered to $host_plat_label$.</b>
+          <span>
+            A technique that can only run on an operating system this scope does not include is
+            dropped, because the chain says it "could enable" a technique that cannot execute
+            here, which is a void claim rather than a faint one. Techniques that name no host
+            operating system, such as reconnaissance and cloud techniques, are always kept: an
+            absent row there would be a gap in the mapping, not a clean host. Platform is matched
+            on the host, never on the CVE. On a fleet wide view every platform present is in
+            scope, so nothing is dropped for platform alone.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 
@@ -148,13 +242,18 @@
         <search>
           <query>| `riskability_attack_surface_for($host_tok|s$, $conf_tok|s$)`
 | stats dc(cve_id) AS cves, dc(hostname) AS hosts, dc(package) AS packages,
-        values(cwe) AS weaknesses, max(epss) AS peak_epss
+        values(cwe) AS weaknesses, max(epss) AS peak_epss, values(platforms) AS rk_pf
         BY technique, technique_name
+| eval rk_has_hostos = if(match(rk_pf, "(?i)Windows|Linux|macOS"), 1, 0)
+| eval rk_in_scope = if(match(rk_pf, "(?i)($host_plat_re$)"), 1, 0)
+| where rk_has_hostos = 0 OR rk_in_scope = 1
+| eval platforms = if(rk_pf="", "any (no host OS named)", mvjoin(rk_pf, ", "))
 | eval peak_epss = round(peak_epss, 4)
 | sort 50000 - cves
+| table technique, technique_name, cves, hosts, packages, weaknesses, peak_epss, platforms
 | rename technique AS "Technique", technique_name AS "Name", cves AS "CVEs",
          hosts AS "Hosts", packages AS "Packages", weaknesses AS "Via CWE",
-         peak_epss AS "Peak EPSS"</query>
+         peak_epss AS "Peak EPSS", platforms AS "Runs on"</query>
         </search>
         <drilldown>
           <set token="tech_tok">$row.Technique$</set>

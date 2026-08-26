@@ -61,9 +61,17 @@ TACTICS_MEMBER = "tactics.jsonl"
 # still match. Its absence means the encyclopaedia shows what the advisories
 # already say, which is a poorer page rather than a broken one.
 CVEDETAIL_MEMBER = "cvedetail.jsonl"
+
+# The KEV to ATT&CK bridge: MITRE's Center for Threat-Informed Defense maps each
+# CISA known-exploited CVE to the technique that exploits it. Optional for the
+# same reason as the others, and it is the one member that adds ATT&CK coverage
+# the CVE to CWE to CAPEC chain cannot reach, because it is a direct per-CVE
+# mapping rather than a weakness-class inference. Absent, the KEV bridge panel
+# says it has no data rather than drawing an empty grid.
+KEVMAP_MEMBER = "kevmap.jsonl"
 MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
-           ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER)
-OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER)
+           ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER)
+OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -875,7 +883,7 @@ class BundleWriter:
         os.makedirs(self._staging, exist_ok=True)
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -897,6 +905,9 @@ class BundleWriter:
     def add_tactic(self, rec: dict) -> None:
         self.write(TACTICS_MEMBER, rec)
 
+    def add_kevmap(self, rec: dict) -> None:
+        self.write(KEVMAP_MEMBER, rec)
+
     def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
@@ -904,7 +915,7 @@ class BundleWriter:
         digests = {}
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -1432,11 +1443,62 @@ def parse_attack_stix(raw: str):
             if name and name not in tactics:
                 tactics.append(name)
         tactics.sort(key=lambda t: order_by_shortname.get(t, 999))
+        platforms = []
+        for pf in obj.get("x_mitre_platforms") or []:
+            pf = (pf or "").strip()
+            if pf and pf not in platforms:
+                platforms.append(pf)
+        # x_mitre_platforms is the operating systems a technique can run on.
+        # It is what lets the matrix stop colouring a Windows only technique
+        # on a Linux host. Kept verbatim rather than collapsed to the three
+        # host families, because PRE and the cloud and network platforms are
+        # exactly the ones that must NOT be filtered out: a technique that
+        # names no host OS is not host specific, and dropping it would hide
+        # reconnaissance and cloud techniques as if the fleet were clear.
         technique_meta[tid] = {
             "name": (obj.get("name") or "").strip(),
             "tactics": tactics,
+            "platforms": platforms,
         }
     return technique_meta, tactic_rows
+
+
+def parse_kev_attack(raw: str) -> List[dict]:
+    """MITRE CTID's KEV to ATT&CK mapping -> one row per (CVE, technique).
+
+    This is the second bridge to ATT&CK, and the honest one. The CVE to CWE to
+    CAPEC to technique chain infers "this weakness class could enable that
+    technique". This is different in kind: CISA recorded the CVE being exploited
+    in the wild, and MITRE mapped it to the technique that does the exploiting,
+    with a per-CVE comment. So it is not a weakness inference, it is a recorded
+    fact about a specific CVE, and it reaches techniques CAPEC never maps.
+
+    The file is the Center for Threat-Informed Defense "mappings-explorer" KEV
+    dataset. Each mapping object carries the CVE, the technique, a mapping_type
+    (exploitation_technique, primary_impact, secondary_impact) and a comment. The
+    exploitation_technique rows are the ones that say HOW the CVE is exploited;
+    the impact rows say what it achieves after. Both are kept, typed, so a panel
+    can lead with exploitation and still show impact.
+    """
+    doc = json.loads(raw)
+    objs = doc.get("mapping_objects") or doc.get("mappings") or []
+    rows = []
+    for m in objs:
+        cve = (m.get("capability_id") or "").strip().upper()
+        tid = (m.get("attack_object_id") or "").strip()
+        if not cve.startswith("CVE-") or not tid:
+            continue
+        rows.append({
+            "cve_id": cve,
+            "technique": tid,
+            "technique_name": (m.get("attack_object_name") or "").strip(),
+            "mapping_type": (m.get("mapping_type") or "").strip(),
+            # The comment is MITRE's own sentence on how this CVE reaches the
+            # technique. It is the provenance that keeps the panel honest: every
+            # row can show why the mapping exists rather than asserting a path.
+            "comment": (m.get("comments") or m.get("comment") or "").strip(),
+        })
+    return rows
 
 
 def build_attack_rows(cwe_capec: Dict[str, List[str]],
@@ -1468,6 +1530,10 @@ def build_attack_rows(cwe_capec: Dict[str, List[str]],
                     # already flattens multivalue fields, and the macro that
                     # reads this splits on comma exactly as it does for cwes.
                     "tactics": ",".join(info.get("tactics") or []),
+                    # The technique's platforms, comma joined for the same
+                    # reason. Empty string means "names no host OS", which the
+                    # matrix reads as "never filter this one out".
+                    "platforms": ",".join(info.get("platforms") or []),
                     "via_capec": [],
                 })
                 if capec not in entry["via_capec"]:

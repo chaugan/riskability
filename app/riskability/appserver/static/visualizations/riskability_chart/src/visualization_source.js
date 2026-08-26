@@ -129,6 +129,7 @@ var CLICK_FIELDS = {
     line: ['x'],
     prioritymatrix: ['x', 'y'],
     chaingraph: ['node', 'node_kind'],
+    kevbridge: ['technique'],
 };
 
 var CONTRACTS = {
@@ -145,6 +146,11 @@ var CONTRACTS = {
     // the network, value = findings, tier = what to do about it.
     prioritymatrix: ['x', 'y', 'value', 'tier'],
     chaingraph: ['source', 'source_kind', 'target', 'target_kind', 'value'],
+    // technique on the long Y axis, reach class on the fixed X axis, value =
+    // known-exploited CVEs in that cell. tier colours the cell by reach so one
+    // internet-facing finding is drawn exactly as loud as a thousand loopback
+    // ones. comment is optional and read only into the tooltip.
+    kevbridge: ['technique', 'reach', 'value', 'tier', 'comment'],
 };
 
 /* Fixed colours for the values that carry meaning rather than magnitude.
@@ -757,6 +763,139 @@ function buildPriorityMatrix(rows, t, config) {
     };
 }
 
+/* The KEV to ATT&CK bridge: techniques known to be used against the fleet's
+ * known-exploited CVEs, laid against whether this copy answers the network.
+ *
+ * The Y axis is one row per technique that a KEV finding maps to. The X axis is
+ * the five reach classes, worst on the left, drawn even when a column is empty
+ * so an empty "answers any address" column is a statement rather than a gap.
+ * The cell is coloured by reach, not by count: a single known-exploited finding
+ * answering the internet is the loudest thing on the page, and a thousand on a
+ * closed port stay quiet, which is the whole point of the reach axis. This is
+ * the prioritymatrix inversion applied to a different pair of axes, and it
+ * reuses the same TIER palette so the two pages read the same way.
+ *
+ * A count ramp would be exactly wrong here. It would paint the technique with
+ * the most CVEs brightest whether or not any copy is reachable, which is the
+ * "the world is scared" signal the app already has twice over in EPSS and KEV.
+ * The only thing this page adds is "and it is reachable HERE", so reach is what
+ * colours it.
+ */
+function buildKevBridge(rows, t, config) {
+    var xs = REACH_ROWS.slice(), ys = [], cell = {}, i;
+    // Map a reach class to the priority tier that colours its column.
+    var REACH_TIER = {
+        'answers any address': 'act-now',
+        'answers one address': 'act-soon',
+        'loopback only': 'plan',
+        'no listening port': 'watch',
+        'not assessed': 'unknown-risk',
+    };
+    for (i = 0; i < rows.length; i++) {
+        var y = String(rows[i][0] === null ? '' : rows[i][0]);
+        var x = String(rows[i][1] === null ? '' : rows[i][1]);
+        var v = num(rows[i][2]);
+        if (!y || !x || v === null) { continue; }
+        if (ys.indexOf(y) === -1) { ys.push(y); }
+        if (xs.indexOf(x) === -1) { xs.push(x); }
+        var tier = String(rows[i].length > 3 && rows[i][3] ? rows[i][3]
+                          : (REACH_TIER[x] || 'unknown-risk'));
+        var note = rows[i].length > 4 && rows[i][4] ? String(rows[i][4]) : '';
+        var k = x + RK_SEP + y, prev = cell[k];
+        cell[k] = { v: (prev ? prev.v : 0) + v, tier: tier,
+                    note: note || (prev ? prev.note : '') };
+    }
+    // Sort techniques so the worst reach sits at the top of the panel, which is
+    // where the eye starts and where the action list belongs. ECharts draws a
+    // category y axis bottom-up, so the worst must be LAST in the array.
+    var reachRank = {};
+    for (i = 0; i < REACH_ROWS.length; i++) { reachRank[REACH_ROWS[i]] = REACH_ROWS.length - i; }
+    function worstReach(techName) {
+        var best = 0;
+        for (var xi = 0; xi < xs.length; xi++) {
+            if (cell[xs[xi] + RK_SEP + techName]) {
+                best = Math.max(best, reachRank[xs[xi]] || 0);
+            }
+        }
+        return best;
+    }
+    ys.sort(function (a, b) { return worstReach(a) - worstReach(b); });
+
+    var data = [];
+    for (var yi = 0; yi < ys.length; yi++) {
+        for (var xi2 = 0; xi2 < xs.length; xi2++) {
+            var c = cell[xs[xi2] + RK_SEP + ys[yi]];
+            var v2 = c ? c.v : 0, st, lc, fw;
+            if (v2 === 0) {
+                st = { color: t.tooltipBg, borderColor: t.axis, borderWidth: 1 };
+                lc = t.muted; fw = 'normal';
+            } else {
+                var tt = TIER[c.tier] || TIER['unknown-risk'];
+                st = { color: tt.fill, borderColor: t.axis, borderWidth: 1 };
+                lc = tt.text; fw = 'bold';
+            }
+            data.push({
+                value: [xi2, yi, v2],
+                itemStyle: st,
+                label: { color: lc, fontWeight: fw },
+                rkNote: c ? c.note : '',
+                rkTier: c ? c.tier : '',
+            });
+        }
+    }
+    var rowH = 26, plotH = Math.max(ys.length * rowH, rowH);
+
+    return {
+        animation: false,
+        tooltip: {
+            trigger: 'item',
+            backgroundColor: t.tooltipBg, borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                var yy = ys[p.value[1]], xx = xs[p.value[0]];
+                if (p.value[2] === 0) {
+                    return escapeHtml(yy) + '<br/>' + escapeHtml(xx) +
+                        '<br/><b>0</b> known-exploited CVEs here.';
+                }
+                return '<b>' + Number(p.value[2]).toLocaleString() +
+                    '</b> known-exploited CVEs<br/>' + escapeHtml(yy) +
+                    '<br/>' + escapeHtml(xx) +
+                    (p.data.rkNote ? '<br/><span style="color:' + t.muted + '">' +
+                        escapeHtml(p.data.rkNote) + '</span>' : '');
+            },
+        },
+        grid: { left: 280, right: 22, top: 64, bottom: 20, containLabel: false },
+        xAxis: {
+            type: 'category', position: 'top', data: xs,
+            splitArea: { show: false }, axisTick: { show: false },
+            axisLine: { lineStyle: { color: t.axis } },
+            axisLabel: { color: t.muted, fontSize: 11, interval: 0 },
+            name: 'whether this copy answers the network',
+            nameLocation: 'middle', nameGap: 36,
+            nameTextStyle: { color: t.muted, fontSize: 10 },
+        },
+        yAxis: {
+            type: 'category', data: ys,
+            splitArea: { show: true,
+                         areaStyle: { color: [t.tooltipBg, 'rgba(0,0,0,0)'] } },
+            axisTick: { show: false },
+            axisLine: { lineStyle: { color: t.axis } },
+            axisLabel: { color: t.muted, fontSize: 11, interval: 0,
+                         width: 268, overflow: 'truncate' },
+        },
+        series: [{
+            type: 'heatmap', data: data,
+            label: { show: true, fontSize: 12,
+                     formatter: function (p) {
+                         return p.value[2] === 0 ? '' : Number(p.value[2]).toLocaleString();
+                     } },
+            itemStyle: { borderColor: t.axis, borderWidth: 1 },
+            emphasis: { itemStyle: { borderColor: t.text, borderWidth: 2 } },
+        }],
+        rkMinHeight: plotH + 84,
+    };
+}
+
 /* The chain: network edge -> listening process -> container -> package -> CVE.
  *
  * This is the one picture only this collector can draw. It follows a published
@@ -1035,6 +1174,7 @@ var BUILDERS = {
     boxplot: buildBoxplot,
     bar: buildBar,
     prioritymatrix: buildPriorityMatrix,
+    kevbridge: buildKevBridge,
     chaingraph: buildChainGraph,
 };
 
