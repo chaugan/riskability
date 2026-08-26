@@ -129,7 +129,7 @@ var CLICK_FIELDS = {
     line: ['x'],
     prioritymatrix: ['x', 'y'],
     chaingraph: ['node', 'node_kind'],
-    kevbridge: ['technique'],
+    kevbridge: ['technique', 'reach'],
 };
 
 var CONTRACTS = {
@@ -1401,6 +1401,14 @@ export default SplunkVisualizationBase.extend({
                 values = [
                     (opt.xAxis[0].data || [])[params.value[0]],
                     (opt.yAxis[0].data || [])[params.value[1]],
+                ];
+            } else if (chartType === 'kevbridge' && params.value) {
+                // Same cell shape, but this contract leads with the technique,
+                // which is the Y axis here, so the pair comes back (y, x).
+                var kopt = self.chart.getOption();
+                values = [
+                    (kopt.yAxis[0].data || [])[params.value[1]],
+                    (kopt.xAxis[0].data || [])[params.value[0]],
                 ];
             } else if (chartType === 'chaingraph') {
                 // A graph node's name carries its layer, so that a container

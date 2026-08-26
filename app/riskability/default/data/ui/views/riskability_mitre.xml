@@ -146,6 +146,10 @@
           </search>
           <option name="riskability.riskability_chart.chartType">kevbridge</option>
           <option name="height">360</option>
+          <drilldown>
+            <set token="kev_tech_tok">$row.tech_label$</set>
+            <set token="kev_reach_tok">$row.reach_class$</set>
+          </drilldown>
           <option name="riskability.riskability_chart.emptyText">No known-exploited CVE in this scope maps to a technique in MITRE's KEV mapping. That is not a clean bill of health: it means none of your KEV findings are among the ones CTID has mapped so far.</option>
         </viz>
         <html>
@@ -163,6 +167,32 @@
             </span>
           </div>
         </html>
+      </panel>
+    </row>
+
+    <!-- The drilldown for the bridge above. Clicking a cell lands here rather
+         than in a raw search: the known-exploited findings behind that cell,
+         with the CVE linking on to the encyclopaedia and MITRE's own sentence
+         on how the CVE is exploited. Reads the same base search as the chart,
+         so the two can never disagree. -->
+    <row>
+      <panel depends="$kev_tech_tok$">
+        <title>Known-exploited findings behind $kev_tech_tok$, $kev_reach_tok$</title>
+        <viz type="riskability.riskability_grid">
+          <search base="rk_kev">
+            <query>search tech_label=$kev_tech_tok|s$ reach_class=$kev_reach_tok|s$
+| stats values(title) AS title, values(reach_class) AS reach, values(comment) AS how,
+        values(confidence) AS confidence BY cve_id, hostname, package
+| eval title = mvindex(title, 0), how = mvindex(how, 0)
+| table cve_id, title, hostname, package, confidence, reach, how
+| rename cve_id AS "CVE", title AS "What it is", hostname AS "Host",
+         package AS "Package", confidence AS "Confidence", reach AS "Reachable here",
+         how AS "How it is exploited (MITRE)"</query>
+          </search>
+          <option name="riskability.riskability_grid.wrap">yes</option>
+          <option name="riskability.riskability_grid.drilldown">disabled</option>
+          <option name="riskability.riskability_grid.emptyText">Nothing behind this cell at the current filters. Changing Host or Confidence after drilling can leave this pointing at a cell that no longer exists; click the chart again.</option>
+        </viz>
       </panel>
     </row>
 
