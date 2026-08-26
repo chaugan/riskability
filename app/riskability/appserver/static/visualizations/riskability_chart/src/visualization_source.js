@@ -857,6 +857,14 @@ function buildKevBridge(rows, t, config) {
             trigger: 'item',
             backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
+            // The note is MITRE's own sentence on how the CVE is exploited, and
+            // some of those sentences are paragraphs. Unwrapped, the tooltip grew
+            // to the width of the longest one and clipped both viewport edges.
+            // confine keeps it inside the chart, the css caps the width and lets
+            // the text wrap, and the note itself is cut at a sentence-ish length
+            // because a tooltip is a glance, not the place to read MITRE's essay.
+            confine: true,
+            extraCssText: 'max-width: 440px; white-space: normal;',
             formatter: function (p) {
                 var yy = ys[p.value[1]], xx = xs[p.value[0]];
                 if (p.value[2] === 0) {
@@ -867,7 +875,7 @@ function buildKevBridge(rows, t, config) {
                     '</b> known-exploited CVEs<br/>' + escapeHtml(yy) +
                     '<br/>' + escapeHtml(xx) +
                     (p.data.rkNote ? '<br/><span style="color:' + t.muted + '">' +
-                        escapeHtml(p.data.rkNote) + '</span>' : '');
+                        escapeHtml(shorten(p.data.rkNote, 240)) + '</span>' : '');
             },
         },
         grid: { left: 344, right: 22, top: 64, bottom: 20, containLabel: false },

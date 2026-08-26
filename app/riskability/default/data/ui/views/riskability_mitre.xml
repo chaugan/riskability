@@ -81,6 +81,16 @@
               weakness attached, leaving 167 this app can reach. The other 530 are not techniques
               your fleet is safe from. They are techniques this chain has nothing to say about,
               because MITRE never mapped them, and no amount of scanning will make them appear.
+              <br/><br/>
+              <b>The Confidence filter gates every panel on this page, and it defaults to High
+              only.</b> Confidence is how sure the matcher is that the package is genuinely the
+              product an advisory names. It is about identity, not severity. A Linux package
+              installed by a package manager carries an exact identity, so its matches are high
+              confidence. Windows software is identified from a display name, so every Windows
+              finding is low confidence by construction, leads to verify rather than facts. At
+              the default setting this page is therefore mostly the Linux fleet, and a
+              known-exploited finding on a Windows host sits behind the filter. Panels say so
+              when they are hiding something; set Confidence to All to see everything.
           </span>
         </div>
       </html>
@@ -96,6 +106,37 @@
         <search id="rk_kev">
           <query>| `riskability_kev_bridge_for($host_tok|s$, $conf_tok|s$)`</query>
         </search>
+        <!-- What the Confidence filter is hiding from this panel right now. A
+             known-exploited CVE whose match is low confidence disappears at the
+             default High only view, and the empty state then reads as "nothing
+             known-exploited is mapped" while something is, one click away. The
+             filter is honoured, every panel on the page obeys it, but the
+             hiding must not be silent. -->
+        <search>
+          <query>| `riskability_kev_bridge_for($host_tok|s$, "*")`
+| stats dc(cve_id) AS rk_all, dc(eval(if($conf_tok|s$="*" OR confidence=$conf_tok|s$, cve_id, null()))) AS rk_shown
+| eval rk_hidden = rk_all - rk_shown</query>
+          <done>
+            <condition match="$result.rk_hidden$ &gt; 0">
+              <set token="kev_conf_hidden">$result.rk_hidden$</set>
+            </condition>
+            <condition>
+              <unset token="kev_conf_hidden"></unset>
+            </condition>
+          </done>
+        </search>
+        <html depends="$kev_conf_hidden$">
+          <div class="rk-status rk-warn" style="margin:8px 0 0">
+            <b>$kev_conf_hidden$ known-exploited mapped finding(s) sit below your confidence filter.</b>
+            <span>
+              These are CVEs on the CISA KEV list that MITRE has mapped to a technique, but the
+              match on this fleet is lower confidence than the filter allows, so they are not
+              drawn above. A lower confidence match can be a false positive, which is why the
+              filter is honoured, but known-exploited is the one category worth a second look:
+              set Confidence to All to see them.
+            </span>
+          </div>
+        </html>
         <viz type="riskability.riskability_chart">
           <search base="rk_kev">
             <query>stats dc(cve_id) AS value, values(comment) AS comment BY tech_label, reach_class
