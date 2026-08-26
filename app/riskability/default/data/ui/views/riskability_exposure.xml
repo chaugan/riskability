@@ -390,6 +390,44 @@
 
   <row>
     <panel>
+      <title>Which open findings are on a library something actually loads</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_open_findings`
+  | search (hostname=$host_tok$)
+  | `riskability_load_evidence`
+  | eval pressure = case(
+      isnotnull(kev_added) AND kev_added != "", "known exploited",
+      isnotnull(epss) AND epss &gt;= 0.1, "high EPSS",
+      1=1, "neither")
+  | stats count AS value BY load_class, load_rank, pressure
+  | sort - load_rank
+  | eval category = load_class, series = pressure
+  | table category, series, value</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">stackedbar</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings yet.</option>
+        <option name="height">300</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>Read the bottom two bars before the top one.</b>
+          <span>
+            <b>Not assessed</b> is not a small bar to be pleased about: it counts findings on
+            hosts that sent no link data at all, which is every Windows host and every
+            collector older than swinv 1.11. <b>Not a linked library</b> counts npm, PyPI and
+            Go findings that no ELF link could ever describe. Neither means "nothing loads
+            it", and a fleet where those two dominate has not been measured rather than
+            found clean. The bar worth acting on is the top one, and the colours say whether
+            those are also the findings the world is exploiting.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
       <title>Open findings on a library a listening process loads</title>
       <viz type="riskability.riskability_grid">
         <search>
