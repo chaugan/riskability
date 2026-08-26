@@ -167,21 +167,20 @@
       <title>Did everything the collector found actually arrive?</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>sourcetype=riskability:swinv index=`riskability_index_inventory` NOT record_type=*
-  | eventstats max(_time) AS rk_newest BY hostname
-  | where _time >= rk_newest
-  | stats count AS arrived BY hostname
+          <query>| inputlookup riskability_scanstate_lookup
   | append
       [| inputlookup riskability_links_hoststate_lookup | table hostname, link_rows]
-  | stats sum(arrived) AS arrived, sum(link_rows) AS links_arrived BY hostname
-  | lookup riskability_scanstate_lookup hostname
-      OUTPUT said_components, said_link, sources_failed, failed_text, swinv_version, scanned_at
-  | eval arrived = coalesce(arrived, 0), links_arrived = coalesce(links_arrived, 0)
+  | stats max(said_components) AS said_components, max(said_link) AS said_link,
+          max(arrived_components) AS arrived, sum(link_rows) AS links_arrived,
+          max(sources_failed) AS sources_failed, values(failed_text) AS failed_text,
+          values(swinv_version) AS swinv_version, max(scanned_at) AS scanned_at BY hostname
+  | eval links_arrived = coalesce(links_arrived, 0)
   | eval shortfall = if(isnull(said_components), null(), said_components - arrived)
   | eval pct = if(isnull(said_components) OR said_components = 0, null(),
                   round(arrived * 100 / said_components, 1))
   | eval verdict = case(
       isnull(said_components), "collector does not report a manifest",
+      isnull(arrived), "last scan is older than the check window",
       sources_failed > 0, "a source failed on the host",
       shortfall > 0, "components went missing on the way in",
       1=1, "everything arrived")

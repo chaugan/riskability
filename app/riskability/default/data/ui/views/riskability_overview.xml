@@ -86,7 +86,8 @@
       <title>Hosts reporting</title>
       <single>
         <search>
-          <query>index=`riskability_index_inventory` sourcetype=riskability:swinv earliest=-7d
+          <query>| `riskability_hosts_seen`
+| where host_last_scan >= relative_time(now(), "-7d")
 | stats dc(hostname) AS hosts</query>
         </search>
         <option name="drilldown">none</option>
