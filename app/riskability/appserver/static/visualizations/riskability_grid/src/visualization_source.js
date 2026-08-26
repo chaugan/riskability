@@ -436,6 +436,18 @@ export default SplunkVisualizationBase.extend({
                 // below still forces a scrollbar on genuinely wide tables like
                 // Findings, where scrolling is the correct answer.
                 layout: 'fitColumns',
+                // Without this a column dragged wider snaps back the moment the
+                // handle is released: fitColumns re-runs its layout after a
+                // resize and redistributes the width it just took. With it the
+                // resize borrows from the neighbouring column instead, the total
+                // stays equal to the panel, and there is nothing for the layout
+                // to undo. Widening a column therefore narrows the next one,
+                // which is the trade fitColumns implies and the price of not
+                // having a horizontal scrollbar under every two-column grid.
+                resizableColumnFit: true,
+                // A visible guide while dragging, so a resize that borrows from
+                // the neighbour reads as deliberate rather than as a glitch.
+                resizableColumnGuide: true,
                 // Virtual DOM. Ten thousand rows rendered eagerly would lock
                 // the tab; Tabulator only builds the visible window.
                 renderVertical: 'virtual',

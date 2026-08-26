@@ -50,6 +50,33 @@ CPE_ECOSYSTEM = "cpe"
 KV_PAGE = 50000
 
 
+# Splunk's automatic JSON extraction hands a Windows path back still escaped.
+# swinv writes correct JSON, where a single backslash is stored doubled, and the
+# extraction does not undo it -- so an operator reading the Findings register
+# sees a doubled separator and cannot copy the path anywhere useful.
+#
+# Written with chr(92) rather than literals so the intent survives being read
+# through a docstring, a regex or a shell.
+_BS = chr(92)
+_DOUBLED = _BS + _BS
+
+
+def _unescape_path(value: str) -> str:
+    """Collapse doubled path separators, for display only.
+
+    Safe for UNC paths: a leading doubled-doubled separator is the escaped form
+    of a UNC prefix and collapses back to it intact.
+
+    Applied to the finding that is emitted, never to the value that feeds
+    finding_key. That key is what a per-file risk acceptance binds to, and
+    rewriting it would silently detach every accepted Windows finding from the
+    decision somebody made about it.
+    """
+    if not value or _DOUBLED not in value:
+        return value
+    return value.replace(_DOUBLED, _BS)
+
+
 @Configuration()
 class RiskabilityMatchCommand(EventingCommand):
     """Turn inventory rows into vulnerability findings."""
@@ -220,6 +247,7 @@ class RiskabilityMatchCommand(EventingCommand):
                 if finding["confidence"] == "informational" and not self.include_informational:
                     continue
                 finding["hostname"] = r.get("hostname", "")
+                finding["path"] = _unescape_path(finding.get("path", ""))
                 # Carry the scan timestamp onto the finding. The command emits
                 # a fresh record per finding, so anything not copied here is
                 # lost -- and without the scan time the lifecycle cannot tell
