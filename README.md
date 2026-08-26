@@ -590,24 +590,55 @@ server = idx1.example.net:9997, idx2.example.net:9997
 
 ## Index names
 
-The app writes to four indexes and ships their definitions in `default/indexes.conf`:
+The app writes to five indexes and ships their definitions in `default/indexes.conf`:
 
 | Index | Holds | Retention |
 |---|---|---|
-| `riskability_inventory` | what swinv reported | 30 days |
+| `riskability_inventory` | the packages swinv reported | 30 days |
+| `riskability_meta` | what swinv reported about the host itself | 1 year |
 | `riskability_findings` | findings as they were produced | 1 year |
 | `riskability_findings_archive` | what was found and when it was fixed | 2 years |
 | `riskability_audit` | the risk-exception trail, append-only | 5 years |
 
-The names are not hardcoded. Four macros - `riskability_index_inventory`,
-`_findings`, `_archive` and `_audit` - are the only place they appear in SPL, so
+`riskability_meta` holds the collector's four non-package record types:
+heartbeats, listening ports, containers and library links. They are routed there
+at index time by a `TRANSFORMS-` rule in the add-on, and they are separated for
+two independent reasons.
+
+The first is cost. `record_type` is a search-time field, so a job wanting only
+listening ports could not prune at the tsidx and paid to decompress and parse
+every package event in its window. Measured on a real fleet, those four types
+together are **0.98%** of the inventory index and packages are the other 99.02%,
+so such a job read a hundred events for every one it kept. An index is a hard
+partition, so reading this one skips the package buckets outright.
+
+The second is retention, and it is the one that changes answers. A host whose
+software has not changed sends no exposure, container or link records at all, so
+the newest record describing what it is listening on can be months old and still
+be current. Ageing those on the 30-day inventory schedule would delete the only
+evidence a stable host has open ports at all.
+
+The names are not hardcoded. Five macros - `riskability_index_inventory`,
+`_meta`, `_findings`, `_archive` and `_audit` - are the only place they appear in
+SPL, so
 a site with its own naming scheme overrides them in `local/macros.conf` and
 everything follows: dashboards, the matcher, the lifecycle jobs, the audit
 trail. The **Feed administration** page writes those overrides for you.
 
-Two things do not follow automatically, because they are not the app's to
-change: the forwarder's `inputs.conf` must send to the same index, and on a
-distributed deployment the indexes must exist **on the indexers**. The app's
+Three things do not follow automatically, because they are not the app's to
+change: the forwarder's `inputs.conf` must send to the same index; the routing
+rule's `FORMAT` in the add-on's `transforms.conf` must name the same
+`riskability_meta` you chose, because a transform runs on the forwarder and
+macros are a search-head idea, so it cannot read one; and on a distributed
+deployment the indexes must exist **on the indexers**.
+
+A `FORMAT` mismatch is quiet in both directions. Name an index the indexers do
+not have and they discard those events; leave it at the default while the search
+head looks elsewhere and the four snapshot jobs read an index nothing writes to.
+Neither empties a dashboard, because those jobs merge rather than replace, but a
+collection frozen at yesterday's contents while still looking populated is the
+worse failure of the two. Coverage is what catches it: the scan manifest
+compares what the collector said it produced against what arrived. The app's
 own `indexes.conf` covers a single instance; for a distributed one, copy it to
 the indexers, or into the cluster manager's bundle. A site using its own index
 names creates those instead.
