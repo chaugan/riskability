@@ -73,6 +73,7 @@
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")
 | eval accepted_label = if(accepted=="1", "accepted", "")
+| eval path = replace(path, "\\\\\\\\", "\\\\")
 | table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
          fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Path",

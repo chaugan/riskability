@@ -341,6 +341,20 @@ export default SplunkVisualizationBase.extend({
                 headerFilterPlaceholder: 'filter…',
                 resizable: true,
                 headerTooltip: title,
+                // The full value on hover. Cells are ellipsised, and a Windows
+                // path or a long CVE summary is exactly the content a reader
+                // needs whole. Without this the only way to read one was to
+                // widen the column, which under fitColumns has to take the room
+                // from a neighbour, so a wide table had no answer at all.
+                tooltip: function (e, cell) {
+                    var v = cell.getValue();
+                    if (v === null || v === undefined || v === '') { return false; }
+                    v = String(v);
+                    // Only when it is actually cut off, or every cell in the
+                    // table sprouts a tooltip nobody asked for.
+                    var el = cell.getElement();
+                    return (el && el.scrollWidth > el.clientWidth + 1) ? v : false;
+                },
                 sorter: numeric ? 'number' : 'string',
                 minWidth: floor,
                 headerMenu: [{

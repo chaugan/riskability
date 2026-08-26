@@ -150,6 +150,7 @@
 | search $rem_sev_filter$
 | eval fixed_after_days = round((last_seen - first_seen)/86400, 1)
 | eval root = if(scope_id!="", scope_id, "host")
+| eval path = replace(path, "\\\\\\\\", "\\\\")
 | table cve_id, package, ecosystem, mitigation, root, hostname, path, fixed_after_days, epss
 | rename cve_id AS "CVE", package AS "Package", ecosystem AS "Type",
          mitigation AS "Version change", root AS "Root", hostname AS "Host",
@@ -182,6 +183,7 @@
 | search $rem_sev_filter$
 | where status="removed" OR status="unknown"
 | eval root = if(scope_id!="", scope_id, "host")
+| eval path = replace(path, "\\\\\\\\", "\\\\")
 | table cve_id, package, last_version, status, root, hostname, path, last_seen
 | eval last_seen = strftime(last_seen, "%Y-%m-%d %H:%M")
 | rename cve_id AS "CVE", package AS "Package", last_version AS "Last seen version",
