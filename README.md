@@ -202,7 +202,7 @@ below.
 |---|---|
 | Search head | The app. Nothing else |
 | Indexer | The app's `default/indexes.conf`. From 0.1.30 the forwarder parses locally, so the `[riskability:swinv]` parsing is no longer required here, but keep it: it is what protects anything reaching the indexers by another route, such as a heavy forwarder, HEC, or a forwarder still on an older add-on. `TA-riskability-indexes` carries both |
-| Universal forwarder | Six lines of `inputs.conf`. Nothing else |
+| Universal forwarder | `inputs.conf`, and the `[riskability:swinv]` stanza from `props.conf`. From 0.1.30 the forwarder parses the inventory itself, which is what stops the parsing depending on a tier you may not own. `TA-riskability` carries both |
 
 The repository also carries `TA-riskability` and `TA-riskability-indexes`,
 prebuilt for those two roles if you would rather install an archive than paste
@@ -509,7 +509,8 @@ uncontroversial; redistributing one is your decision, not this app's.
 
 Do not install the app itself on a universal forwarder. A forwarder ships no
 Python, so the app's modular input cannot be introspected and splunkd logs an
-error on every restart. The forwarder needs the input and nothing else.
+error on every restart. The forwarder needs the input and the parsing, and
+nothing else.
 
 This is the whole of it. Put it in an app of your own on the forwarder, or use
 the prebuilt `TA-riskability`, or push it with a deployment server:
@@ -542,6 +543,34 @@ scan.
 Both are in the shipped `TA-riskability` default because that default cannot
 know which mode you run, and they are the settings that make swinv's own
 defaults work. Neither does any harm if you keep them.
+
+The forwarder also needs the parsing, in the same app:
+
+```ini
+# <your-app>/local/props.conf on the forwarder
+[riskability:swinv]
+force_local_processing = true
+SHOULD_LINEMERGE = false
+LINE_BREAKER = ([\r\n]+)
+TRUNCATE = 0
+TIME_PREFIX = "scanned_at"\s*:\s*"
+TIME_FORMAT = %Y-%m-%dT%H:%M:%S%Z
+MAX_TIMESTAMP_LOOKAHEAD = 32
+```
+
+`force_local_processing` is the line that matters, and it is what changed in
+0.1.30. A universal forwarder normally ships bytes and lets the first full
+Splunk instance parse them, so these settings used to have to be installed on
+the indexing tier instead. That is infrastructure the person installing this app
+often does not own, and missing it is silent: Splunk merges the NDJSON into
+blobs of a few hundred lines, each stops being valid JSON, and `TRUNCATE`
+discards most of the rest. A host reporting 3,993 components arrives as 15,
+produces no findings, and the fleet reads as clean.
+
+Restart the forwarder afterwards. Index-time settings are read at startup, so a
+reload does not apply them. The setting is documented as applicable only on a
+universal forwarder, so it is inert if the file reaches an indexer or a heavy
+forwarder.
 
 If you install `TA-riskability` rather than pasting the above, note that it
 ships the input **disabled** - installing an add-on must not silently start
@@ -580,10 +609,13 @@ Two things do not follow automatically, because they are not the app's to
 change: the forwarder's `inputs.conf` must send to the same index, and on a
 distributed deployment the indexes must exist **on the indexers**. The app's
 own `indexes.conf` covers a single instance; for a distributed one, copy it to
-the indexers, or into the cluster manager's bundle, alongside the
-`[riskability:swinv]` parsing from the app's `props.conf` - a universal
-forwarder does not parse, so index-time settings have to be where the data is
-indexed. A site using its own index names creates those instead.
+the indexers, or into the cluster manager's bundle. A site using its own index
+names creates those instead.
+
+Copying the `[riskability:swinv]` parsing there as well is worth doing but is no
+longer what makes parsing work: from 0.1.30 the forwarder parses locally. On the
+indexers it protects data arriving by another route, such as a heavy forwarder,
+HEC, or a forwarder still on an older add-on.
 
 Nothing here needs `tstatsHomePath`. Splunk's own `system/default/indexes.conf`
 sets it globally for every index, and naming it per stanza only restates the
@@ -622,9 +654,12 @@ a bare `--format ndjson` is not enough, because without `--ndjson-include all`
 there are no exposure records and the entire reachability axis is missing.
 
 Index-time parsing (line breaking and the timestamp) takes effect on the
-**indexer**, because a universal forwarder does not parse. On a single instance
-the app's own `props.conf` covers it. On a distributed one, copy the
-`[riskability:swinv]` stanza and `indexes.conf` to the indexers.
+**forwarder**, because `force_local_processing` makes a universal forwarder run
+the line breaker and aggregator itself. It would otherwise ship bytes and leave
+the parsing to the first full Splunk instance, which put the requirement on a
+tier the installer often does not own and failed silently when it was missed. On
+a single instance the app's own `props.conf` covers it. On a distributed one the
+forwarder needs the stanza and the indexers need `indexes.conf`.
 
 Matching runs in Python because Splunk cannot express dpkg or RPM version
 ordering in SPL. It never streams over raw inventory: the caller reduces to
