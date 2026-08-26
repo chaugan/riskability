@@ -466,4 +466,86 @@
       </viz>
     </panel>
   </row>
+
+    <!-- Slice 4: the highest-leverage control. Ranks MITRE mitigations by how
+         many of the fleet's reachable techniques each one covers, split by reach,
+         so an operator acts on the control that covers the most of what actually
+         answers the network first. Ends the page on an action rather than a fear. -->
+    <row>
+      <panel>
+        <title>One control, many techniques: mitigations ranked by reachable coverage</title>
+        <viz type="riskability.riskability_chart">
+          <search>
+            <query>| `riskability_mitigation_coverage_for($host_tok|s$, $conf_tok|s$)`
+| eventstats sum(techniques) AS rk_total BY mitigation
+| sort 50000 - rk_total
+| streamstats dc(mitigation) AS rk_rank
+| where rk_rank &lt;= 15
+| eval category = mitigation . " " . mitigation_name, series = reach_class, value = techniques
+| table category, series, value</query>
+          </search>
+          <option name="riskability.riskability_chart.chartType">stackedbar</option>
+          <option name="riskability.riskability_chart.emptyText">No reachable finding maps to a technique with a MITRE mitigation. With no inventory or no mapping, that is silence rather than a clean fleet.</option>
+          <option name="height">440</option>
+        </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>The bar is techniques covered, coloured by reach.</b>
+            <span>
+              Each mitigation is ranked by how many distinct ATT&amp;CK techniques it would address
+              among the fleet's open findings, and the segments split that by whether the finding
+              answers the network. A control with a long "answers any address" segment is the one
+              to reach for first. This is coverage of the mapped and reachable set, not a promise:
+              a mitigation reduces the technique, it does not patch the CVE, and the CVEs still need
+              fixing. Techniques with no MITRE mitigation are not counted here, so this is a floor.
+            </span>
+          </div>
+        </html>
+      </panel>
+    </row>
+
+    <!-- Slice 3: CAPEC's own prose, gated by reach. Observed here on the left, the
+         MITRE reference on the right, never multiplied into one number. A table,
+         not a chart, because the value is the sentences and a well made table
+         reads them better than any plot. -->
+    <row>
+      <panel>
+        <title>How an attacker would use this here</title>
+        <viz type="riskability.riskability_grid">
+          <search>
+            <query>| `riskability_attack_patterns_for($host_tok|s$, $conf_tok|s$)`
+| join type=left cve_id
+    [| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+     | stats max(reach_rank) AS peak_reach BY cve_id ]
+| eval reach = case(peak_reach&gt;=3,"answers any address",peak_reach&gt;=2,"answers one address",peak_reach&gt;=1,"loopback only",peak_reach&gt;=0,"no listening port",1=1,"not assessed")
+| stats dc(cve_id) AS cves, values(reach) AS reach_seen, max(peak_reach) AS rk_sort,
+        values(technique) AS techniques BY capec, capec_name, capec_abstraction, capec_severity, capec_likelihood, prerequisites, first_step
+| eval reach = case(rk_sort&gt;=3,"answers any address",rk_sort&gt;=2,"answers one address",rk_sort&gt;=1,"loopback only",rk_sort&gt;=0,"no listening port",1=1,"not assessed")
+| sort 50000 - rk_sort, - cves
+| head 60
+| table reach, capec, capec_name, cves, capec_abstraction, capec_severity, capec_likelihood, prerequisites, first_step
+| rename reach AS "Reachable here", capec AS "CAPEC", capec_name AS "Attack pattern",
+         cves AS "CVEs", capec_abstraction AS "Abstraction",
+         capec_severity AS "MITRE severity", capec_likelihood AS "MITRE likelihood",
+         prerequisites AS "Attacker needs", first_step AS "First move"</query>
+          </search>
+          <option name="riskability.riskability_grid.wrap">yes</option>
+          <option name="riskability.riskability_grid.emptyText">No open finding maps to a CAPEC attack pattern in this scope.</option>
+        </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>Observed on the left, MITRE's generic rating on the right.</b>
+            <span>
+              "Reachable here" is measured on your fleet: whether a copy of the vulnerable package
+              answers the network. "MITRE severity" and "MITRE likelihood" are CAPEC's generic
+              rating for the pattern, not a measurement of your host, and the two are kept apart on
+              purpose so a high generic rating on something unreachable never outranks a reachable
+              finding. The rows are sorted by reach first. "Attacker needs" and "First move" are
+              CAPEC's own words for the entry requirement and the opening step.
+            </span>
+          </div>
+        </html>
+      </panel>
+    </row>
+
 </form>

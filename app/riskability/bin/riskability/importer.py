@@ -64,6 +64,8 @@ COLLECTIONS = {
     # exactly one of them.
     "cvedetail": "riskability_cvedetail",
     "kevmap": "riskability_kevmap",
+    "capec": "riskability_capec",
+    "mitigations": "riskability_mitigations",
 }
 
 MEMBER_FOR = {
@@ -74,6 +76,8 @@ MEMBER_FOR = {
     "tactics": feedlib.TACTICS_MEMBER,
     "cvedetail": feedlib.CVEDETAIL_MEMBER,
     "kevmap": feedlib.KEVMAP_MEMBER,
+    "capec": feedlib.CAPEC_MEMBER,
+    "mitigations": feedlib.MITIGATIONS_MEMBER,
 }
 
 # Per-ecosystem package counts, derived while streaming ranges rather than

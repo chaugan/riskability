@@ -363,6 +363,27 @@ def cmd_build(args) -> int:
                                 "licence": "Apache 2.0; MITRE Center for Threat-Informed Defense"})
             except Exception as exc:
                 print(f"  ERROR {exc} - continuing without the KEV bridge", file=sys.stderr)
+
+            # CAPEC prose, from the catalogue CSV already fetched above. Turns the
+            # invisible join hop into "what an attacker needs and does first".
+            try:
+                capec_rows = feedlib.parse_capec_detail(_fetch_csv(CAPEC_URL))
+                for row in capec_rows:
+                    writer.add_capec(row)
+                print(f"  {len(capec_rows)} CAPEC prose rows", file=sys.stderr)
+            except Exception as exc:
+                print(f"  ERROR {exc} - continuing without CAPEC prose", file=sys.stderr)
+
+            # ATT&CK mitigations, from the STIX bundle already fetched above.
+            try:
+                if technique_meta is not None:
+                    with _open(ATTACK_STIX_URL) as r:
+                        mit_rows = feedlib.parse_attack_mitigations(r.read().decode("utf-8"))
+                    for row in mit_rows:
+                        writer.add_mitigation(row)
+                    print(f"  {len(mit_rows)} ATT&CK mitigation edges", file=sys.stderr)
+            except Exception as exc:
+                print(f"  ERROR {exc} - continuing without mitigations", file=sys.stderr)
         except Exception as exc:
             print(f"  ERROR {exc} - continuing without MITRE mapping", file=sys.stderr)
 

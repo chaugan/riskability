@@ -69,9 +69,18 @@ CVEDETAIL_MEMBER = "cvedetail.jsonl"
 # mapping rather than a weakness-class inference. Absent, the KEV bridge panel
 # says it has no data rather than drawing an empty grid.
 KEVMAP_MEMBER = "kevmap.jsonl"
+
+# CAPEC prose (prerequisites, first step, likelihood, severity) and ATT&CK
+# mitigations (the defender's half of the STIX bundle). Both optional, both feed
+# sized rather than fleet sized, and both turn data the app already fetches into
+# something the operator can act on.
+CAPEC_MEMBER = "capec.jsonl"
+MITIGATIONS_MEMBER = "mitigations.jsonl"
 MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
-           ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER)
-OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER)
+           ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
+           CAPEC_MEMBER, MITIGATIONS_MEMBER)
+OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
+                    CAPEC_MEMBER, MITIGATIONS_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -883,7 +892,7 @@ class BundleWriter:
         os.makedirs(self._staging, exist_ok=True)
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER, KEVMAP_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -908,6 +917,12 @@ class BundleWriter:
     def add_kevmap(self, rec: dict) -> None:
         self.write(KEVMAP_MEMBER, rec)
 
+    def add_capec(self, rec: dict) -> None:
+        self.write(CAPEC_MEMBER, rec)
+
+    def add_mitigation(self, rec: dict) -> None:
+        self.write(MITIGATIONS_MEMBER, rec)
+
     def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
@@ -915,7 +930,7 @@ class BundleWriter:
         digests = {}
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER, KEVMAP_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -1461,6 +1476,95 @@ def parse_attack_stix(raw: str):
             "platforms": platforms,
         }
     return technique_meta, tactic_rows
+
+
+def _first_exec_step(flow_text: str) -> str:
+    """The first step of a CAPEC Execution Flow, as a plain sentence.
+
+    The Execution Flow field packs steps as "::STEP:1:PHASE:Explore:DESCRIPTION:
+    ...:TECHNIQUE:...". Only the first step's description is kept: it is the
+    attacker's opening move, the part that answers "how would this begin here",
+    and shipping the whole flow would multiply the feed for text no panel reads
+    past the first line.
+    """
+    if not flow_text:
+        return ""
+    m = re.search(r"DESCRIPTION:(.*?)(?::TECHNIQUE:|::STEP:|$)", flow_text, re.S)
+    return (m.group(1).strip() if m else "").strip(": ")
+
+
+def parse_capec_detail(csv_text: str) -> List[dict]:
+    """CAPEC catalogue CSV -> one compact prose row per attack pattern.
+
+    The app already uses CAPEC as an invisible join hop and throws away
+    everything it says. This keeps the parts that answer "how would an attacker
+    use this here": the prerequisite an attacker needs, the first move, the
+    generic likelihood and severity MITRE assigns, and the abstraction level so a
+    reader can tell a broad Meta pattern from a specific Detailed one. It is a
+    fixed catalogue, about 559 rows, not fleet sized.
+    """
+    import csv as _csv
+    _csv.field_size_limit(2 ** 27)
+    out = []
+    reader = _csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        capec = (row.get("'ID") or row.get("ID") or "").strip().lstrip("'")
+        if not capec:
+            continue
+        out.append({
+            "capec": capec,
+            "name": (row.get("Name") or "").strip(),
+            "abstraction": (row.get("Abstraction") or "").strip(),
+            "severity": (row.get("Typical Severity") or "").strip(),
+            "likelihood": (row.get("Likelihood Of Attack") or "").strip(),
+            "prerequisites": (row.get("Prerequisites") or "").strip()[:600],
+            "first_step": _first_exec_step(row.get("Execution Flow") or "")[:400],
+        })
+    return out
+
+
+def parse_attack_mitigations(raw: str) -> List[dict]:
+    """MITRE ATT&CK STIX -> one row per (technique, mitigation).
+
+    The STIX bundle the builder already downloads for tactics carries the
+    defender's half of ATT&CK: course-of-action objects, and "mitigates"
+    relationships tying each to a technique, with a technique specific
+    description. The app has only ever used the attacker half. This lets a page
+    end on an action: for a reachable technique, what MITRE says to do about it,
+    and which single control covers the most of them.
+    """
+    doc = json.loads(raw)
+    objs = doc.get("objects") or []
+    coa = {}
+    tid_by_ref = {}
+    for o in objs:
+        if o.get("type") == "course-of-action":
+            ext = ""
+            for r in o.get("external_references") or []:
+                if r.get("source_name") == "mitre-attack":
+                    ext = (r.get("external_id") or "").strip()
+                    break
+            coa[o.get("id")] = {"mitigation": ext, "name": (o.get("name") or "").strip()}
+        elif o.get("type") == "attack-pattern":
+            for r in o.get("external_references") or []:
+                if r.get("source_name") == "mitre-attack":
+                    tid_by_ref[o.get("id")] = (r.get("external_id") or "").strip()
+                    break
+    out = []
+    for o in objs:
+        if o.get("type") != "relationship" or o.get("relationship_type") != "mitigates":
+            continue
+        m = coa.get(o.get("source_ref"))
+        tid = tid_by_ref.get(o.get("target_ref"))
+        if not m or not tid or not m["mitigation"]:
+            continue
+        out.append({
+            "technique": tid,
+            "mitigation": m["mitigation"],
+            "mitigation_name": m["name"],
+            "description": (o.get("description") or "").strip()[:600],
+        })
+    return out
 
 
 def parse_kev_attack(raw: str) -> List[dict]:
