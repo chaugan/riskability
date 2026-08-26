@@ -1,4 +1,4 @@
-<form version="1.1" theme="dark" stylesheet="application.css">
+<form version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
   <label>Exposure</label>
   <description>Which open findings the network can actually reach, and which of them sit inside containers.</description>
   <fieldset submitButton="false" autoRun="true">
@@ -103,6 +103,7 @@
     <set token="exploit_filter">exploit_class=*</set>
     <set token="node_filter">rk_nodes=*</set>
     <set token="host_focus_filter">hostname=*</set>
+    <set token="load_filter">load_class=*</set>
     <!-- Which hosts the chain draws, independent of the page filter. A row
          click points the chain at one machine without collapsing the ranked
          list that the click came from - narrowing the page instead would leave
@@ -223,7 +224,7 @@
     <panel rejects="$any_filter$">
       <html>
         <div class="rk-drill-bar">
-          <span class="rk-drill-hint">Click a matrix cell, chain node or container row to
+          <span class="rk-drill-hint">Click a matrix cell, a library-load bar, a chain node or a container row to
             narrow the detail table at the bottom of this page.</span>
         </div>
       </html>
@@ -408,6 +409,11 @@
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.emptyText">No open findings yet.</option>
         <option name="height">300</option>
+        <drilldown>
+          <set token="load_filter">load_class="$row.category$"</set>
+          <set token="drill_note">$row.category$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -499,7 +505,7 @@
             Link records are read from ELF binaries, so a Windows host has none and neither
             does a collector older than swinv 1.11 or one run without
             <code>--ndjson-include links</code>. Those findings say <b>not assessed</b>
-            rather than <b>not seen in the load list</b>, so a host does not look calmer for
+            rather than <b>not in the load list</b>, so a host does not look calmer for
             having been measured less. "Libraries no package owns" counts files that were
             loaded and that nothing installed provides: vendored or hand-copied
             libraries, which no package feed can ever match and which no version
@@ -624,6 +630,7 @@
 | eval epss = round(epss, 4)
 | eval root = if(scope_id!="", scope_id, "host")
 | `riskability_load_evidence`
+| search $load_filter$
 | table tier, reach_class, exploit_class, load_class, confidence, cve_id, package, last_version,
         fixed_version, hostname, root, ports_text, listener_text, listener_path_text,
         container_text, loaders, kev, epss

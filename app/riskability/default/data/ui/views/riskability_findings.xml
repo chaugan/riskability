@@ -1,4 +1,4 @@
-<form version="1.1" theme="dark" script="riskability_exceptions.js" stylesheet="application.css,riskability_exceptions.css">
+<form version="1.1" theme="dark" script="riskability_help.js,riskability_exceptions.js" stylesheet="application.css,riskability_exceptions.css">
   <label>Findings</label>
   <description>Every vulnerability the current feed can attribute to installed software.</description>
   <fieldset submitButton="false" autoRun="true">
