@@ -128,3 +128,21 @@
 .rk-grid-wrap .tabulator-row {
     height: auto !important;
 }
+
+/* The cell tooltip carries whole values, and the values it exists for are the
+   long ones: a Windows path ending in a 32 character hash, a CVE summary.
+   Tabulator caps the tooltip at 500px and lets the rest overflow, so the one
+   thing you opened it to read arrives behind a horizontal scrollbar.
+   
+   Wrap instead, breaking inside a word where a path component leaves no
+   alternative, and cap the height rather than the width so a very long value
+   scrolls in the direction people expect. */
+.tabulator-tooltip {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    overflow-x: hidden;
+    max-height: 40vh;
+    overflow-y: auto;
+    line-height: 1.45;
+}

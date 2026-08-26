@@ -41,6 +41,15 @@
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
+    <!-- Filtering on the file rather than only in the table header, so the
+         count on the panel is the real one and a link can carry the filter.
+         "*.dll" narrows to libraries, "*Program Files*" to what an installer
+         put there, "*node_modules*" to what an application bundles. -->
+    <input type="text" token="path_tok" searchWhenChanged="true">
+      <label>Found at (wildcards allowed)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
     <input type="text" token="cve_tok" searchWhenChanged="true">
       <label>CVE (wildcards allowed)</label>
       <default>*</default>
@@ -74,6 +83,7 @@
 | eval kev = if(kev_added!="", "yes", "")
 | eval accepted_label = if(accepted=="1", "accepted", "")
 | eval path = replace(path, "\\\\\\\\", "\\\\")
+| search path=$path_tok|s$
 | table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
          fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Found at",
