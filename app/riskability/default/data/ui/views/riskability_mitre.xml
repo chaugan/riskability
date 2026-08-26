@@ -279,14 +279,23 @@
   </row>
 
   <row>
-    <panel>
+    <!-- Waits for a drilldown. This table expands one row per finding per CWE per
+         technique, so running it while the filter tokens are still at their
+         "everything" values built the whole fleet's rows on every page load and
+         then displayed the subset the reader had not chosen yet. any_filter is
+         set by every drilldown path on this page, so the panel appears exactly
+         when it has something to say. -->
+    <panel depends="$any_filter$">
       <title>Findings behind $tech_label$</title>
       <html depends="$tech_tok$">
         <div class="rk-status" style="margin:0 0 8px">
           <b>Showing only $tech_tok$ - $tech_name_tok$.</b>
           <span>
             These findings are real vulnerabilities. The technique is what MITRE says this
-            weakness class could enable, not something anyone observed.
+              weakness class could enable, not something anyone observed, and it is two steps
+              removed from the CVE: the advisory names a weakness class, and that class maps to
+              techniques. A technique can therefore read oddly for a particular CVE. Read the
+              "What it is" column first and treat the technique as the category, not the finding.
             <a href="https://attack.mitre.org/techniques/$tech_tok$/" target="_blank"
                rel="noopener">Read the technique on attack.mitre.org</a> (needs internet).
           </span>
@@ -294,19 +303,19 @@
       </html>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_attack_surface_detail`
-| search hostname=$host_tok|s$ confidence=$conf_tok|s$
+          <query>| `riskability_attack_surface_detail_for($host_tok|s$, $conf_tok|s$)`
 | search $tech_filter$ $cwe_filter$
 | eval root = if(scope_id!="", scope_id, "host")
 | eval installed_version = last_version
-| table technique, technique_name, cve_id, package, installed_version, fixed_version,
-        hostname, root, cwe, via_capec, epss
-| sort 50000 technique, - epss
-| rename technique AS "Technique", technique_name AS "Name", cve_id AS "CVE",
-         package AS "Package", installed_version AS "Installed",
-         fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
-         cwe AS "CWE", via_capec AS "Via CAPEC", epss AS "EPSS"</query>
-        </search>
+| table cve_id, title, severity, epss, package, installed_version, fixed_version,
+          hostname, root, technique, technique_name, cwe, via_capec
+  | sort 50000 technique, - epss
+  | rename cve_id AS "CVE", title AS "What it is", severity AS "Severity", epss AS "EPSS",
+           package AS "Package", installed_version AS "Installed",
+           fixed_version AS "Fixed in", hostname AS "Host", root AS "Root",
+           technique AS "Technique", technique_name AS "Technique name",
+           cwe AS "CWE", via_capec AS "Via CAPEC"</query>
+          </search>
         <option name="riskability.riskability_grid.filterNote">$drill_note$</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No findings map to a technique at this confidence filter.</option>
