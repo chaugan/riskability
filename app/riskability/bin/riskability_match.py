@@ -50,6 +50,18 @@ CPE_ECOSYSTEM = "cpe"
 KV_PAGE = 50000
 
 
+# Kept for reference, and deliberately not applied to the emitted finding.
+#
+# 0.1.24 used this to clean the path on the way out, which made the finding
+# disagree with every other consumer of the same value. The inventory state
+# snapshot groups findings and inventory events together by (hostname,
+# package, path), and inventory keeps the escaped form Splunk extracts, so a
+# Windows finding stopped grouping with its own component and that snapshot
+# wrote nothing but its metadata row.
+#
+# One representation internally, cleaned where it is displayed. That is what
+# 0.1.25 does, and it covers rows written before any of this as well.
+#
 # Splunk's automatic JSON extraction hands a Windows path back still escaped.
 # swinv writes correct JSON, where a single backslash is stored doubled, and the
 # extraction does not undo it -- so an operator reading the Findings register
@@ -247,7 +259,6 @@ class RiskabilityMatchCommand(EventingCommand):
                 if finding["confidence"] == "informational" and not self.include_informational:
                     continue
                 finding["hostname"] = r.get("hostname", "")
-                finding["path"] = _unescape_path(finding.get("path", ""))
                 # Carry the scan timestamp onto the finding. The command emits
                 # a fresh record per finding, so anything not copied here is
                 # lost -- and without the scan time the lifecycle cannot tell

@@ -40,6 +40,15 @@ def lint(path):
         for n, raw in enumerate(fh, 1):
             line = raw.rstrip("\n").rstrip("\r")
             if in_continuation:
+                # A conf value continued with a backslash swallows everything
+                # that follows, including a line that looks like a comment. SPL
+                # has no "#" comment, so such a line becomes part of the search
+                # and, worse, ends the value if it carries no continuation of
+                # its own: the rest of the query is silently dropped. Splunk
+                # accepts the file and the search is wrong.
+                if line.strip().startswith("#"):
+                    bad.append((n, "comment inside a continued value: "
+                                   + line.strip()[:60]))
                 in_continuation = continues(line)
                 continue
             stripped = line.strip()
