@@ -62,39 +62,98 @@
 }
 .rk-drill-clear:hover { border-color: #6b6f76; color: #f2f4f5; text-decoration: none; }
 
-/* The per-panel explanation, and the control that hides it. The captions are
-   the default because a reader who takes a calm number at face value is the
-   failure this app guards against; the toggle exists because someone who has
-   read them once should not read them on every panel forever. */
+/* The per-panel explanation, and the control that shows or hides it.
+
+   The captions are the default, because a reader who takes a calm number at
+   face value is the failure this app guards against. The control exists because
+   someone who has read them once should not read them on every panel forever.
+
+   A labelled switch in the filter band, not a text button above it. The first
+   attempt was a ghost button in muted grey at the top of the page and was
+   effectively invisible: it named an action without saying what it acted on, so
+   there was nothing to recognise unless you already knew it was there.
+
+   Colours are the app's own, and the track when set uses #708794, which is
+   already the colour of a callout's left edge. The control is the same colour
+   as the thing it controls. */
 .rk-help-bar {
   display: flex;
   justify-content: flex-end;
-  margin: 0 0 6px;
+  margin: -2px 0 12px;
 }
 
 .rk-help-toggle {
-  background: transparent;
-  border: 1px solid var(--rk-rule, #2b3a37);
-  color: var(--rk-muted, #8b9792);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #2c2f34;
+  border: 1px solid #46474a;
+  color: #d5d8dc;
   font: inherit;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  padding: 3px 10px;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 11px;
   border-radius: 3px;
   cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
 }
 
 .rk-help-toggle:hover {
-  color: var(--rk-text, #e7ece8);
-  border-color: var(--rk-rule-strong, #3c4c48);
+  color: #f2f4f5;
+  border-color: #708794;
 }
 
 .rk-help-toggle:focus-visible {
-  outline: 2px solid var(--rk-accent, #4fc0a8);
+  outline: 2px solid #708794;
   outline-offset: 2px;
 }
 
-/* Hiding the note leaves the panel it belonged to untouched. */
+.rk-help-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: .85;
+}
+
+.rk-help-label {
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+/* The track states which way the switch is set, so neither position needs its
+   own wording and the label can simply name what is being switched. */
+.rk-help-switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #46474a;
+  transition: background-color .12s ease;
+}
+
+.rk-help-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1a1d21;
+  transition: transform .12s ease;
+}
+
+.rk-help-toggle.is-on { color: #f2f4f5; }
+.rk-help-toggle.is-on .rk-help-switch { background: #708794; }
+.rk-help-toggle.is-on .rk-help-knob { transform: translateX(12px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-help-toggle,
+  .rk-help-switch,
+  .rk-help-knob { transition: none; }
+}
+
+/* Hiding a note leaves the panel it belonged to untouched. */
 body.rk-help-off .rk-status {
   display: none;
 }

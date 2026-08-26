@@ -46,8 +46,8 @@
         var on = state !== "off";
         document.body.classList.toggle(OFF, !on);
         if (button) {
-            button.textContent = on ? "Hide the notes" : "Show the notes";
-            button.setAttribute("aria-pressed", on ? "false" : "true");
+            button.classList.toggle("is-on", on);
+            button.setAttribute("aria-checked", on ? "true" : "false");
             button.title = on
                 ? "Hide the explanation under each panel"
                 : "Show the explanation under each panel";
@@ -57,9 +57,22 @@
     function build() {
         if (document.querySelector(".rk-help-toggle")) { return; }
 
+        // A labelled switch rather than a text button. The first version was a
+        // ghost button in muted grey at the top of the page, which read as
+        // decoration: nobody who did not already know it was there found it.
+        // This says what it controls even when it is doing nothing.
         var button = document.createElement("button");
         button.type = "button";
         button.className = "rk-help-toggle";
+        button.setAttribute("role", "switch");
+        button.innerHTML =
+            '<svg class="rk-help-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">'
+          + '<circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.4"/>'
+          + '<path d="M8 7.1v4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'
+          + '<circle cx="8" cy="4.6" r="0.95" fill="currentColor"/>'
+          + '</svg>'
+          + '<span class="rk-help-label">Panel notes</span>'
+          + '<span class="rk-help-switch"><span class="rk-help-knob"></span></span>';
 
         var state = readPref();
         apply(state, button);
@@ -74,13 +87,20 @@
         bar.className = "rk-help-bar";
         bar.appendChild(button);
 
-        // Splunk's own header markup has moved between versions, so anchor on
-        // the dashboard body and fall back to the top of the document rather
-        // than depending on a class that may not be there.
-        var host = document.querySelector(".dashboard-body")
-                || document.querySelector(".dashboard-view-container")
-                || document.body;
-        host.insertBefore(bar, host.firstChild);
+        // In the filter band, which is where a reader already looks for the
+        // controls of a page. Above the fieldset it sat in a no-man's land at
+        // the very top and was missed. Splunk's header markup has moved between
+        // versions, so fall back rather than depend on a class being there.
+        var fieldset = document.querySelector(".dashboard-body .fieldset")
+                    || document.querySelector(".fieldset");
+        if (fieldset && fieldset.parentNode) {
+            fieldset.parentNode.insertBefore(bar, fieldset.nextSibling);
+        } else {
+            var host = document.querySelector(".dashboard-body")
+                    || document.querySelector(".dashboard-view-container")
+                    || document.body;
+            host.insertBefore(bar, host.firstChild);
+        }
     }
 
     function start() {
