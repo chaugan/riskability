@@ -187,6 +187,14 @@
       <single>
         <search>
           <query>| `riskability_accepted_findings` | where isnotnull(kev_added) AND kev_added!="" | stats dc(cve_id) AS n</query>
+            <done>
+              <condition match="$result.n$ &gt; 0">
+                <set token="kev_accepted">1</set>
+              </condition>
+              <condition>
+                <unset token="kev_accepted"></unset>
+              </condition>
+            </done>
         </search>
         <option name="underLabel">on the CISA KEV list, and excepted</option>
         <option name="rangeColors">["0x53a051","0xdc4e41"]</option>
@@ -194,6 +202,22 @@
         <option name="useColors">1</option>
         <option name="drilldown">none</option>
       </single>
+        <!-- Gated to count over zero: at zero this must say nothing, or it is a
+             standing false alarm. rk-bad so it survives the panel notes toggle,
+             because an actively exploited vulnerability left in place on purpose
+             is wrong now, not an explanation someone can switch off. -->
+        <html depends="$kev_accepted$">
+          <div class="rk-status rk-bad" style="margin:8px 0 0">
+            <b>Here, an accepted risk is a known-exploited one left in place on purpose.</b>
+            <span>
+              Everywhere else in this app "accepted" means reviewed and handled, and excluded from
+              the risk numbers. This is the one panel where that word is dangerous: each of these
+              CVEs is on the CISA KEV list, exploited in the wild, and someone chose not to patch
+              it. That can be a defensible decision, but it is never a low-risk state. Confirm on
+              <b>Risk exceptions</b> that each justification still holds.
+            </span>
+          </div>
+        </html>
     </panel>
   </row>
 

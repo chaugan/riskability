@@ -88,6 +88,19 @@
           <unset token="host_any_filter"></unset>
         </drilldown>
       </viz>
+        <html>
+          <div class="rk-status rk-warn" style="margin:8px 0 0">
+            <b>These are the last snapshot, not a live count.</b>
+            <span>
+              Every number stays as the host last reported it, so a machine that stopped reporting
+              still shows its old findings and KEV as though nothing changed. <b>Silent for</b> is
+              the tell: a large value means the row is stale, not that the host is calm. A host
+              being counted for the first time reads <b>not counted yet</b> under Open findings
+              while its KEV cell still shows 0, so read that 0 as "not measured", never as a clean
+              bill.
+            </span>
+          </div>
+        </html>
     </panel>
   </row>
 

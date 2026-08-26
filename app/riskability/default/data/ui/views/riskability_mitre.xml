@@ -96,20 +96,6 @@
         <search id="rk_kev">
           <query>| `riskability_kev_bridge_for($host_tok|s$, $conf_tok|s$)`</query>
         </search>
-        <search base="rk_kev">
-          <query>stats dc(cve_id) AS value, values(comment) AS comment BY tech_label, reach_class
-| rename tech_label AS technique, reach_class AS reach
-| eval comment = mvindex(comment, 0)
-| table technique, reach, value, technique, comment</query>
-          <done>
-            <condition match="$job.resultCount$ == 0">
-              <set token="kev_empty">1</set>
-            </condition>
-            <condition>
-              <unset token="kev_empty"></unset>
-            </condition>
-          </done>
-        </search>
         <viz type="riskability.riskability_chart">
           <search base="rk_kev">
             <query>stats dc(cve_id) AS value, values(comment) AS comment BY tech_label, reach_class
@@ -266,6 +252,19 @@
         <option name="drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No open finding maps to a technique. Most CVEs carry no CWE: usually a mapping gap, not an absence of exposure.</option>
       </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>Ordered by how many CVEs, not by whether they can be reached.</b>
+            <span>
+              The rank is the count of distinct open CVEs mapping to each technique, so a technique
+              sits at the top on volume alone even when nothing behind it answers the network. For
+              reach, read the known-exploited panel above and the CAPEC table below. A CVE that
+              enables several techniques is counted under each, so the CVEs column does not sum to a
+              fleet total. Platform filtered like the matrix: a technique that can only run on an
+              operating system this scope does not include is dropped.
+            </span>
+          </div>
+        </html>
     </panel>
   </row>
 
@@ -274,7 +273,7 @@
       <title>Weakness classes present in the fleet (CWE)</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <query>| `riskability_finding_cwes_for($host_tok|s$, "*")`
+          <query>| `riskability_finding_cwes_for($host_tok|s$, $conf_tok|s$)`
 | stats dc(cve_id) AS cves BY cwe
 | sort 50000 - cves
 | head 40</query>
@@ -298,6 +297,17 @@
           <set token="any_filter">1</set>
         </drilldown>
       </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>Area is CVEs carrying the weakness, not severity.</b>
+            <span>
+              The treemap draws the 40 largest weakness classes, sized by how many open CVEs
+              carry each. A CVE mapped to several CWEs is counted under each, so the tiles do not
+              add up to your CVE total, and a big tile means a common weakness rather than a
+              severe one.
+            </span>
+          </div>
+        </html>
     </panel>
     <panel>
       <title>Coverage of the mapping itself</title>
@@ -315,6 +325,18 @@
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No open findings to classify.</option>
       </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>The "no CWE recorded" row is this page's blind spot, not a footnote.</b>
+            <span>
+              Every panel here starts from a CVE's weakness class, so a finding with no CWE cannot
+              appear on any of them, however exploitable it is. Read that share as the fraction of
+              your open findings this dashboard cannot place, not as a data quality detail. This
+              count covers all open findings in the host scope at every confidence, so the
+              Confidence filter does not change it.
+            </span>
+          </div>
+        </html>
     </panel>
   </row>
 
