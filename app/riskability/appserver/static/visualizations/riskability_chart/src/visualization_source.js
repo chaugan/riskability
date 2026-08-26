@@ -1174,11 +1174,30 @@ export default SplunkVisualizationBase.extend({
         if (option) { delete option.rkMinHeight; }
         if (wantHeight && wantHeight > 0) {
             var px = Math.round(wantHeight) + 'px';
-            // Both: the canvas is height:100% of a parent Splunk sizes from the
-            // panel's height option, so growing only the child would be clipped
-            // by it and growing only the parent would leave the canvas short.
             host.style.height = px;
-            this.el.style.minHeight = px;
+            // Growing the canvas alone is not enough. Splunk applies the panel's
+            // height option to a wrapper above this element, and our own CSS
+            // makes the chart height:100% of it, so a taller canvas is simply
+            // clipped by an ancestor that was never told about it.
+            //
+            // Walk up and lift the constraint. Bounded, and it stops at the
+            // panel body rather than continuing into the dashboard, because the
+            // panel is the thing that should grow. min-height rather than
+            // height, so nothing is ever made shorter than Splunk intended.
+            var node = this.el;
+            for (var up = 0; node && up < 6; up++) {
+                node.style.minHeight = px;
+                // An inline height set by the framework wins over min-height on
+                // the same element, so relax it where one is present.
+                if (node.style.height && node.style.height !== 'auto') {
+                    node.style.height = 'auto';
+                }
+                var cls = ' ' + (node.className || '') + ' ';
+                if (cls.indexOf('panel-body') > -1 || cls.indexOf('dashboard-cell') > -1) {
+                    break;
+                }
+                node = node.parentElement;
+            }
         }
 
         if (truncated) {
