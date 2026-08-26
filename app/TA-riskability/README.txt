@@ -56,6 +56,29 @@ Note the blacklist on -latest.ndjson. swinv writes one file per scan plus a
 "<host>-latest.ndjson" symlink; monitoring the symlink would re-read the whole
 inventory on every scan.
 
+Parsing
+-------
+From 0.1.30 this add-on parses on the forwarder. swinv writes NDJSON, one JSON
+object per line, and Splunk with no sourcetype configuration merges any line
+that does not begin with a timestamp: the lines become blobs of a few hundred,
+each blob stops being valid JSON, and the default 10,000 byte truncation
+discards most of what is left. A host reporting 3,993 components then arrives as
+15, produces no findings, and reads as clean.
+
+Previously the fix was to install the same parsing on the indexers, which is
+infrastructure the person installing this app often does not own, and missing it
+is silent. force_local_processing makes the universal forwarder run the line
+breaker and aggregator itself, so the data arrives already split and no longer
+depends on the indexing tier being configured.
+
+It costs the forwarder some CPU and memory. For one inventory scan an hour that
+is small, and it is the price of the failure above being impossible rather than
+invisible.
+
+Installing the parsing on the indexers as well is still correct and harmless,
+and remains the right answer for anything that reaches the indexers by another
+route.
+
 Troubleshooting
 ---------------
 No data arriving:

@@ -201,7 +201,7 @@ below.
 | Role | What it needs |
 |---|---|
 | Search head | The app. Nothing else |
-| Indexer | The app's `default/indexes.conf` **and** its `[riskability:swinv]` parsing. Both, not either: the indexes let data land, the parsing is what makes it readable. A universal forwarder does not parse, so this must be on the indexers. `TA-riskability-indexes` carries both from 0.1.15; earlier versions of it carried only the indexes |
+| Indexer | The app's `default/indexes.conf`. From 0.1.30 the forwarder parses locally, so the `[riskability:swinv]` parsing is no longer required here, but keep it: it is what protects anything reaching the indexers by another route, such as a heavy forwarder, HEC, or a forwarder still on an older add-on. `TA-riskability-indexes` carries both |
 | Universal forwarder | Six lines of `inputs.conf`. Nothing else |
 
 The repository also carries `TA-riskability` and `TA-riskability-indexes`,
