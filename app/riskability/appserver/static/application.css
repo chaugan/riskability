@@ -155,7 +155,16 @@
   .rk-help-knob { transition: none; }
 }
 
-/* Hiding a note leaves the panel it belonged to untouched. */
-body.rk-help-off .rk-status {
+/* Hiding a note leaves the panel it belonged to untouched.
+
+   Never a red one. This app's callouts mean one thing each: grey explains,
+   amber cautions, red is a problem. The first two are the app talking about
+   itself and are what the toggle is for. A red one only appears because
+   something is wrong right now, and it is generally inside a row that renders
+   only while that is true, so it is state rather than explanation. Hiding
+   "Some hosts are matched but not folded in" would suppress a warning that open
+   counts are currently over-reported, which is precisely the thing a reader
+   turning off the notes would not expect to lose. */
+body.rk-help-off .rk-status:not(.rk-bad) {
   display: none;
 }

@@ -146,7 +146,7 @@
           <latest>now</latest>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="height">160</option>
+        <option name="height">300</option>
       </viz>
     </panel>
   </row>
