@@ -548,7 +548,7 @@
 | table reach, capec, capec_name, cves, capec_abstraction, capec_severity, capec_likelihood, prerequisites, first_step
 | rename reach AS "Reachable here", capec AS "CAPEC", capec_name AS "Attack pattern",
          cves AS "CVEs", capec_abstraction AS "Abstraction",
-         capec_severity AS "MITRE severity", capec_likelihood AS "MITRE likelihood",
+         capec_severity AS "MITRE rating", capec_likelihood AS "MITRE likelihood",
          prerequisites AS "Attacker needs", first_step AS "First move"</query>
           </search>
           <option name="riskability.riskability_grid.wrap">yes</option>
@@ -559,7 +559,7 @@
             <b>Observed on the left, MITRE's generic rating on the right.</b>
             <span>
               "Reachable here" is measured on your fleet: whether a copy of the vulnerable package
-              answers the network. "MITRE severity" and "MITRE likelihood" are CAPEC's generic
+              answers the network. "MITRE rating" and "MITRE likelihood" are CAPEC's generic
               rating for the pattern, not a measurement of your host, and the two are kept apart on
               purpose so a high generic rating on something unreachable never outranks a reachable
               finding. The rows are sorted by reach first. "Attacker needs" and "First move" are

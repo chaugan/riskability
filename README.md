@@ -809,6 +809,33 @@ advisories. The numbers in them are the ones this README quotes.
 ### MITRE ATT&CK
 ![MITRE ATT&CK](docs/screenshots/mitre-attack.png)
 
+### Known-exploited, mapped to the technique that does it
+
+MITRE's Center for Threat-Informed Defense maps each CISA known-exploited CVE to
+the technique that exploits it. Unlike the weakness-class chain, this is a
+recorded fact about a specific CVE, and the colour is the reach of the finding
+rather than the count: one known-exploited package answering the network is drawn
+as loud as a thousand that answer nothing.
+
+![KEV to ATT&CK bridge](docs/screenshots/kev-bridge.png)
+
+### How an attacker would use this here
+
+CAPEC's own words for the entry requirement and the opening move, per attack
+pattern, sorted by whether a copy of the vulnerable package answers the network.
+The measured reach stays on the left and MITRE's generic rating on the right, so
+a scary rating on something unreachable never outranks a reachable finding.
+
+![CAPEC attack patterns](docs/screenshots/capec-attack-patterns.png)
+
+### One control, many techniques
+
+MITRE mitigations ranked by how many of the fleet's reachable techniques each
+would address, split by reach, so the highest-leverage control is first. A
+mitigation reduces the technique; the CVEs still need fixing.
+
+![Mitigation coverage](docs/screenshots/mitigation-coverage.png)
+
 ### Exposure
 ![Exposure](docs/screenshots/exposure.png)
 

@@ -1517,7 +1517,10 @@ def parse_capec_detail(csv_text: str) -> List[dict]:
             "abstraction": (row.get("Abstraction") or "").strip(),
             "severity": (row.get("Typical Severity") or "").strip(),
             "likelihood": (row.get("Likelihood Of Attack") or "").strip(),
-            "prerequisites": (row.get("Prerequisites") or "").strip()[:600],
+            # CAPEC packs list fields with "::" separators. Rendered raw they
+            # read as noise, so they become sentence breaks here, once, rather
+            # than in every panel that shows the text.
+            "prerequisites": re.sub(r"\s*::\s*", " ", (row.get("Prerequisites") or "")).strip()[:600],
             "first_step": _first_exec_step(row.get("Execution Flow") or "")[:400],
         })
     return out

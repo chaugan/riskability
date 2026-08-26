@@ -556,7 +556,13 @@ function stacked(rows, t, config, horizontal) {
         axisLabel: {
             color: t.muted, fontSize: 10,
             rotate: horizontal ? 0 : 40,
-            formatter: function (v) { return shorten(v, 24); },
+            // Horizontal bars carry the category name flat on the y axis with
+            // containLabel making room, so they can afford real words: at 24
+            // characters "Restrict File and Directory Permissions" was cut to a
+            // stub and the operator had to hover every row to learn which
+            // control it was. Vertical labels are rotated 40 degrees where
+            // every character costs height, so they keep the short budget.
+            formatter: function (v) { return shorten(v, horizontal ? 44 : 24); },
         },
         axisLine: { lineStyle: { color: t.axis } },
     };
@@ -864,7 +870,7 @@ function buildKevBridge(rows, t, config) {
                         escapeHtml(p.data.rkNote) + '</span>' : '');
             },
         },
-        grid: { left: 280, right: 22, top: 64, bottom: 20, containLabel: false },
+        grid: { left: 344, right: 22, top: 64, bottom: 20, containLabel: false },
         xAxis: {
             type: 'category', position: 'top', data: xs,
             splitArea: { show: false }, axisTick: { show: false },
@@ -881,7 +887,7 @@ function buildKevBridge(rows, t, config) {
             axisTick: { show: false },
             axisLine: { lineStyle: { color: t.axis } },
             axisLabel: { color: t.muted, fontSize: 11, interval: 0,
-                         width: 268, overflow: 'truncate' },
+                         width: 330, overflow: 'truncate' },
         },
         series: [{
             type: 'heatmap', data: data,
