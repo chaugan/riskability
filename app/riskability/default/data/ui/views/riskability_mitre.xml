@@ -49,6 +49,14 @@
             here. A CVE with no CWE, or an unmapped CWE, never appears - absence is not safety.
             For real-world exploitation rather than classification, see KEV and EPSS on
             <b>Findings</b>.
+              <br/><br/>
+              <b>This page can only ever speak about a quarter of ATT&amp;CK.</b> Enterprise ATT&amp;CK
+              currently holds 697 live techniques and sub-techniques. CAPEC is the narrow hop:
+              only 177 of its 559 attack patterns carry an ATT&amp;CK mapping at all, and between
+              them they name just 179 techniques. Twelve of those come from a CAPEC with no
+              weakness attached, leaving 167 this app can reach. The other 530 are not techniques
+              your fleet is safe from. They are techniques this chain has nothing to say about,
+              because MITRE never mapped them, and no amount of scanning will make them appear.
           </span>
         </div>
       </html>
