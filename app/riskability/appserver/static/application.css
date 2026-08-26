@@ -79,7 +79,9 @@
 .rk-help-bar {
   display: flex;
   justify-content: flex-end;
-  margin: -2px 0 12px;
+  /* Sits under the dashboard's description and above the filters, so it needs
+     air on both sides rather than being tucked against the row below it. */
+  margin: 4px 0 10px;
 }
 
 .rk-help-toggle {

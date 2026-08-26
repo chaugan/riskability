@@ -87,14 +87,27 @@
         bar.className = "rk-help-bar";
         bar.appendChild(button);
 
-        // In the filter band, which is where a reader already looks for the
-        // controls of a page. Above the fieldset it sat in a no-man's land at
-        // the very top and was missed. Splunk's header markup has moved between
-        // versions, so fall back rather than depend on a class being there.
-        var fieldset = document.querySelector(".dashboard-body .fieldset")
-                    || document.querySelector(".fieldset");
-        if (fieldset && fieldset.parentNode) {
-            fieldset.parentNode.insertBefore(bar, fieldset.nextSibling);
+        // Directly under the dashboard's own description, which is where the
+        // page already explains itself: a control that turns the rest of the
+        // explaining on and off belongs with it rather than among the filters.
+        //
+        // Every dashboard in this app has a description, so the first selector
+        // normally wins. The filter band is kept as a fallback because Splunk's
+        // header markup has moved between versions and a control that vanishes
+        // is worse than one in the second-best place.
+        var anchors = [
+            ".dashboard-header .dashboard-description",
+            ".dashboard-description",
+            ".dashboard-header .description",
+            ".dashboard-body .fieldset",
+            ".fieldset"
+        ];
+        var after = null;
+        for (var i = 0; i < anchors.length && !after; i++) {
+            after = document.querySelector(anchors[i]);
+        }
+        if (after && after.parentNode) {
+            after.parentNode.insertBefore(bar, after.nextSibling);
         } else {
             var host = document.querySelector(".dashboard-body")
                     || document.querySelector(".dashboard-view-container")
