@@ -154,7 +154,7 @@
 | table cve_id, package, ecosystem, mitigation, root, hostname, path, fixed_after_days, epss
 | rename cve_id AS "CVE", package AS "Package", ecosystem AS "Type",
          mitigation AS "Version change", root AS "Root", hostname AS "Host",
-         path AS "Path", fixed_after_days AS "Open for (days)", epss AS "EPSS"
+         path AS "Found at", fixed_after_days AS "Open for (days)", epss AS "EPSS"
 | sort 50000 - "EPSS"</query>
         </search>
         <option name="riskability.riskability_grid.filterNote">$rem_note$</option>
@@ -187,7 +187,7 @@
 | table cve_id, package, last_version, status, root, hostname, path, last_seen
 | eval last_seen = strftime(last_seen, "%Y-%m-%d %H:%M")
 | rename cve_id AS "CVE", package AS "Package", last_version AS "Last seen version",
-         status AS "Status", root AS "Root", hostname AS "Host", path AS "Path",
+         status AS "Status", root AS "Root", hostname AS "Host", path AS "Found at",
          last_seen AS "Last reported"</query>
         </search>
         <option name="riskability.riskability_grid.filterNote">$rem_note$</option>

@@ -76,7 +76,7 @@
 | eval path = replace(path, "\\\\\\\\", "\\\\")
 | table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
-         fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Path",
+         fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Found at",
          ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
          epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted",
          title AS "Summary", finding_key AS "Key"
@@ -92,7 +92,7 @@
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
-          <b>Column filters narrow what is shown, not what was searched.</b>
+          <b>"Found at" is the file that proves the package is installed, not where the vulnerable code lives.</b><span>swinv identifies an npm package by its <code>package.json</code>, a Python one by its <code>dist-info/METADATA</code>, and a deb by the copyright file dpkg records. None of those contains the flaw. What the path does tell you is <b>which copy</b>: two installs of the same package on one host have different files here, are separate findings, and can be accepted separately. That is what it is for.</span><b>Column filters narrow what is shown, not what was searched.</b>
           <span>
             A column header filters the rows already loaded: no re-run, no reach beyond what
             the search returned, no effect on other dashboards. Filter in the search itself

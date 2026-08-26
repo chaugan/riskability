@@ -488,7 +488,20 @@ export default SplunkVisualizationBase.extend({
             freed = true;
             try {
                 var widths = table.getColumns().map(function (c) { return c.getWidth(); });
+                // Both, and the second one is the one that matters. Tabulator's
+                // Layout module reads options.layout once, in initialize, and
+                // keeps it in this.mode:
+                //
+                //   initialize() { var e = this.table.options.layout;
+                //                  modes[e] ? this.mode = e : ... }
+                //
+                // so setting the option afterwards changes nothing at all. The
+                // option is set as well only to keep the two from disagreeing if
+                // anything later reads it.
                 table.options.layout = 'fitData';
+                if (table.modules && table.modules.layout) {
+                    table.modules.layout.mode = 'fitData';
+                }
                 table.getColumns().forEach(function (c, i) {
                     if (widths[i]) { c.setWidth(widths[i]); }
                 });
