@@ -450,17 +450,7 @@ export default SplunkVisualizationBase.extend({
                 // below still forces a scrollbar on genuinely wide tables like
                 // Findings, where scrolling is the correct answer.
                 layout: 'fitColumns',
-                // Without this a column dragged wider snaps back the moment the
-                // handle is released: fitColumns re-runs its layout after a
-                // resize and redistributes the width it just took. With it the
-                // resize borrows from the neighbouring column instead, the total
-                // stays equal to the panel, and there is nothing for the layout
-                // to undo. Widening a column therefore narrows the next one,
-                // which is the trade fitColumns implies and the price of not
-                // having a horizontal scrollbar under every two-column grid.
-                resizableColumnFit: true,
-                // A visible guide while dragging, so a resize that borrows from
-                // the neighbour reads as deliberate rather than as a glitch.
+                // A visible guide while dragging.
                 resizableColumnGuide: true,
                 // Virtual DOM. Ten thousand rows rendered eagerly would lock
                 // the tab; Tabulator only builds the visible window.
@@ -474,6 +464,40 @@ export default SplunkVisualizationBase.extend({
             this._message('bad', 'The table could not be drawn', String(e && e.message || e));
             return;
         }
+
+        // Fit the panel when first drawn, then get out of the way.
+        //
+        // fitColumns is right for an untouched table: every column visible, no
+        // horizontal scrollbar under a two-column grid. It is wrong the moment
+        // somebody drags a handle, because it caps the total at the panel width,
+        // so a column can only grow by taking room from its neighbour and the
+        // last column cannot grow at all. That is the resize that looked like it
+        // snapped back: it had nowhere to go.
+        //
+        // So the constraint is released on the first drag rather than at draw
+        // time. Every column is pinned at the width fitColumns gave it, the
+        // layout stops fitting, and from then on widths are the operator's and
+        // the table scrolls sideways if the sum exceeds the panel. Caught on the
+        // way down, before the drag begins, so the first drag already behaves
+        // like every one after it.
+        var table = this.table;
+        var freed = false;
+        host.addEventListener('mousedown', function (ev) {
+            if (freed || !ev.target || !ev.target.closest) { return; }
+            if (!ev.target.closest('.tabulator-col-resize-handle')) { return; }
+            freed = true;
+            try {
+                var widths = table.getColumns().map(function (c) { return c.getWidth(); });
+                table.options.layout = 'fitData';
+                table.getColumns().forEach(function (c, i) {
+                    if (widths[i]) { c.setWidth(widths[i]); }
+                });
+            } catch (err) {
+                // A layout that cannot be released is not worth losing the table
+                // over; the resize simply keeps its old behaviour.
+                freed = false;
+            }
+        }, true);
 
         // The visible row count is the one number that tells a reader whether
         // a filter did anything, and with a virtual renderer they cannot count
