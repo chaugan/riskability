@@ -303,14 +303,16 @@
       <title>Most affected hosts</title>
       <viz type="riskability.riskability_grid">
         <search>
-          <query>| `riskability_open_findings`
-| where confidence!="informational"
-| stats dc(cve_id) AS cves, dc(package) AS packages BY hostname
-| sort 50000 - cves
-| head 20</query>
+          <query>| inputlookup riskability_openstate_host_lookup
+| sort 50000 - kev, - cves
+| head 20
+| eval top_epss = round(top_epss * 100, 1)
+| table hostname, findings, cves, kev, top_epss, accepted
+| rename hostname AS Host, findings AS "Open findings", cves AS CVEs,
+         kev AS "Known exploited", top_epss AS "Top EPSS %", accepted AS Accepted</query>
         </search>
         <drilldown>
-          <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.hostname$</link>
+          <link target="_blank">/app/riskability/riskability_hosts?form.hostname=$row.Host$</link>
         </drilldown>
         <option name="drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No host has an open finding. With no inventory arriving, that is silence, not a clean fleet.</option>
