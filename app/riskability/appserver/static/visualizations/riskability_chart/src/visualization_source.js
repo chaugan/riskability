@@ -896,7 +896,26 @@ function buildChainGraph(rows, t, config) {
     // have collided, so in a tight column it discards most of them and keeps an
     // arbitrary few.
     var LABEL_PITCH = 15;
-    var plotHeight = Math.max(160, (config && config.height ? config.height : 480) - 62);
+    var CHROME = 62;
+    // A CVE that a dozen distributions have each patched produces a column of
+    // sixty fix versions, and the panel was sized for a fraction of that. Rather
+    // than drop the overflow, ask for the height the data needs: the column is
+    // the answer to "which versions fix this", so a truncated one is not a
+    // smaller answer, it is a misleading one.
+    //
+    // Capped, because a pathological CVE should not produce a page of chart. Past
+    // the cap the label budget still degrades by value, which is the old
+    // behaviour and the only sensible one left.
+    var CHAIN_MAX_HEIGHT = 1600;
+    var densest = 0;
+    Object.keys(byLayer).forEach(function (L) {
+        densest = Math.max(densest, byLayer[L].length);
+    });
+    var wanted = Math.min(CHAIN_MAX_HEIGHT, densest * LABEL_PITCH + CHROME);
+    var configured = (config && config.height ? config.height : 480);
+    var effective = Math.max(configured, wanted);
+
+    var plotHeight = Math.max(160, effective - CHROME);
     var room = Math.max(4, Math.floor(plotHeight / LABEL_PITCH));
     Object.keys(byLayer).forEach(function (L) {
         byLayer[L].slice().sort(function (a, b) { return b.v - a.v; })
@@ -973,6 +992,8 @@ function buildChainGraph(rows, t, config) {
             },
         },
         grid: { left: 18, right: 176, top: 46, bottom: 16, containLabel: false },
+        // Read and removed by _render before the option reaches ECharts.
+        rkMinHeight: effective,
         xAxis: {
             type: 'category', data: LAYERS, position: 'top', boundaryGap: true,
             axisTick: { show: false },
@@ -1144,6 +1165,21 @@ export default SplunkVisualizationBase.extend({
 
         var host = document.createElement('div');
         host.className = 'rk-viz-canvas';
+
+        // A builder may need more room than the panel was given. Only the chain
+        // graph does today, and only when a column is denser than the panel can
+        // label. Growing the host is preferred over dropping labels: the page
+        // scrolls, a missing name does not come back.
+        var wantHeight = option && option.rkMinHeight;
+        if (option) { delete option.rkMinHeight; }
+        if (wantHeight && wantHeight > 0) {
+            var px = Math.round(wantHeight) + 'px';
+            // Both: the canvas is height:100% of a parent Splunk sizes from the
+            // panel's height option, so growing only the child would be clipped
+            // by it and growing only the parent would leave the canvas short.
+            host.style.height = px;
+            this.el.style.minHeight = px;
+        }
 
         if (truncated) {
             // Splunk truncates silently. A chart drawn from the first 10,000
