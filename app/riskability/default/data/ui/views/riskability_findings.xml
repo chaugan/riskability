@@ -73,9 +73,9 @@
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")
 | eval accepted_label = if(accepted=="1", "accepted", "")
-| table cve_id, package, installed_version, fixed_version, hostname, scope_id, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
+| table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
-         fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root",
+         fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Path",
          ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
          epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted",
          title AS "Summary", finding_key AS "Key"

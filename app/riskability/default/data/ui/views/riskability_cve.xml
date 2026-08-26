@@ -303,9 +303,9 @@
 | lookup riskability_reach_lookup hostname, rk_key OUTPUT reach_class
 | eval Reach = coalesce(reach_class, "not assessed")
 | eval Accepted = if(accepted="1", "yes", "")
-| table cve_id, hostname, package, last_version, fixed_version, scope, confidence, Reach, status, Accepted
+| table cve_id, hostname, package, last_version, fixed_version, path, scope, confidence, Reach, status, Accepted
 | rename cve_id AS CVE, hostname AS Host, package AS Package, last_version AS Installed,
-         fixed_version AS "Fixed in", scope AS Scope, confidence AS Confidence, status AS Status
+         fixed_version AS "Fixed in", path AS Path, scope AS Scope, confidence AS Confidence, status AS Status
 | sort 500 CVE, Host, Package</query>
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
