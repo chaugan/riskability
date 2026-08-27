@@ -215,6 +215,12 @@ def cmd_build(args) -> int:
         return 2
 
     sources: List[dict] = []
+    # Fetch failures an operator must see. The manifest carries these and Feed
+    # administration renders them as a warning banner on the imported feed.
+    # Before this they went to stderr only, so a bundle built on a host where a
+    # source failed imported looking complete, and the banner that exists to say
+    # so had never once fired.
+    warnings: List[str] = []
     writer = feedlib.BundleWriter(args.out, sources)
 
     seen_advisories: Dict[str, dict] = {}
@@ -370,6 +376,7 @@ def cmd_build(args) -> int:
                                 "licence": "Apache 2.0; MITRE Center for Threat-Informed Defense"})
             except Exception as exc:
                 print(f"  ERROR {exc} - continuing without the KEV bridge", file=sys.stderr)
+                warnings.append(f"KEV to ATT&CK mapping not fetched: {exc}")
 
             # CAPEC prose, from the catalogue CSV already fetched above. Turns the
             # invisible join hop into "what an attacker needs and does first".
@@ -380,6 +387,7 @@ def cmd_build(args) -> int:
                 print(f"  {len(capec_rows)} CAPEC prose rows", file=sys.stderr)
             except Exception as exc:
                 print(f"  ERROR {exc} - continuing without CAPEC prose", file=sys.stderr)
+                warnings.append(f"CAPEC attack pattern prose not fetched: {exc}")
 
             # ATT&CK mitigations, from the STIX bundle already fetched above.
             try:
@@ -391,8 +399,10 @@ def cmd_build(args) -> int:
                     print(f"  {len(mit_rows)} ATT&CK mitigation edges", file=sys.stderr)
             except Exception as exc:
                 print(f"  ERROR {exc} - continuing without mitigations", file=sys.stderr)
+                warnings.append(f"ATT&CK mitigations not fetched: {exc}")
         except Exception as exc:
             print(f"  ERROR {exc} - continuing without MITRE mapping", file=sys.stderr)
+            warnings.append(f"MITRE CWE and CAPEC mapping not fetched: {exc}")
 
     # Overlays enrich advisories that already exist; they never create findings.
     kev: Dict[str, dict] = {}
@@ -493,7 +503,7 @@ def cmd_build(args) -> int:
             print(f"  ERROR {exc} - continuing without the CVE Program catalogue",
                   file=sys.stderr)
 
-    manifest = writer.close(bundle_version=args.version or "")
+    manifest = writer.close(bundle_version=args.version or "", warnings=warnings)
 
     print(f"\nwrote {args.out}", file=sys.stderr)
     print(f"  bundle_id  {manifest['bundle_id']}", file=sys.stderr)

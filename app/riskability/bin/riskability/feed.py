@@ -886,8 +886,17 @@ class BundleWriter:
         self._dir = os.path.dirname(os.path.abspath(path)) or "."
         os.makedirs(self._dir, exist_ok=True)
         self._files: Dict[str, io.TextIOWrapper] = {}
-        self._counts = {ADVISORIES_NAME: 0, RANGES_NAME: 0, NOTAFFECTED_NAME: 0,
-                        ATTACK_MEMBER: 0, TACTICS_MEMBER: 0, CVEDETAIL_MEMBER: 0}
+        # Derived from the member list rather than written out by hand. The
+        # hand written version fell three members behind when kevmap, capec and
+        # mitigations were added, and because write() increments the counter
+        # after writing the line, each of those members wrote its first record
+        # and then raised KeyError. In the builder those calls sit inside a
+        # try/except that prints "continuing without" and moves on, so every
+        # bundle built with --mitre carried exactly one row of each and reported
+        # it as a failed fetch. One row reads as data on a panel, which is worse
+        # than none. Deriving the set means adding a member can never do this
+        # again.
+        self._counts = {name: 0 for name in MEMBERS if name != MANIFEST_NAME}
         self._staging = self._tmp + ".d"
         os.makedirs(self._staging, exist_ok=True)
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
@@ -945,13 +954,12 @@ class BundleWriter:
             # person importing it on the far side of the air gap can see that
             # it is incomplete without access to the build host's console.
             "warnings": list(warnings or []),
-            "counts": {
-                "advisories": self._counts[ADVISORIES_NAME],
-                "ranges": self._counts[RANGES_NAME],
-                "notaffected": self._counts[NOTAFFECTED_NAME],
-                "attack": self._counts[ATTACK_MEMBER],
-                "tactics": self._counts[TACTICS_MEMBER],
-            },
+            # Derived, for the same reason the counter set is. A hand written
+            # block silently stopped reporting a member the moment one was
+            # added, so a bundle carrying a thousand rows of KEV mapping said
+            # nothing about it and Feed administration had nothing to show.
+            "counts": {name.replace(".jsonl", ""): count
+                       for name, count in sorted(self._counts.items())},
             "digests": digests,
         }
         manifest_path = os.path.join(self._staging, MANIFEST_NAME)
