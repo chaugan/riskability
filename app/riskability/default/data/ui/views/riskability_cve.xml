@@ -378,6 +378,13 @@
         <option name="riskability.riskability_chart.chainKinds">cve:CVE,pkg:package,fix:version that fixes it</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No fixed version for this CVE in the bundle. That is common and is not an error: an advisory that names no fix has none published, so there is no upgrade to point at. Check the affected ranges below for whether a later version is merely "last affected".</option>
+        <!-- Nothing to drill into, so nothing happens on a click. This draws
+             the feed rather than the fleet: every node is already fully spelled
+             out on the diagram, and the question a click would be asking, which
+             of these do we run, is answered by "Matching hosts in this fleet"
+             above. The default drilldown opened this panel's own SPL in the
+             search view, which is a query rather than an answer. -->
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
         <option name="height">560</option>
       </viz>
       <html>

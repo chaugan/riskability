@@ -452,6 +452,10 @@
            epss_pc AS "EPSS %", kev AS "Known exploited",
            loaders AS "Loaded by", loader_count AS "Loaders"</query>
         </search>
+        <!-- The CVE column is a link into the encyclopaedia, which is the only
+             place a row here leads, so a whole-row click has nowhere better to
+             go and used to fall through to this panel's SPL. -->
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No open finding here is on a library that a listening process loads. That is not the same as nothing being exposed: see whether these hosts were assessed at all, below.</option>
         <option name="height">460</option>
       </viz>
