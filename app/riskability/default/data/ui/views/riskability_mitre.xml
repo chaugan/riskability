@@ -163,7 +163,10 @@
               is drawn as loud as a thousand that answer nothing, because reachable is the thing this
               page adds to what EPSS and KEV already tell you. Unlike the matrix below, this is not a
               weakness-class inference: CISA recorded these CVEs being exploited, and MITRE mapped
-              each to the technique that does it.
+              each to the technique that does it. A row marked (impact) is the technique the CVE
+                achieves after exploitation, and (ransomware flag) is a campaign level marker CISA
+                sets rather than a mapping of this CVE, so it is the weakest claim here and is
+                labelled as such.
             </span>
           </div>
         </html>
@@ -181,13 +184,14 @@
         <viz type="riskability.riskability_grid">
           <search base="rk_kev">
             <query>search tech_label=$kev_tech_tok|s$ reach_class=$kev_reach_tok|s$
-| stats values(title) AS title, values(reach_class) AS reach, values(comment) AS how,
-        values(confidence) AS confidence BY cve_id, hostname, package
-| eval title = mvindex(title, 0), how = mvindex(how, 0)
-| table cve_id, title, hostname, package, confidence, reach, how
-| rename cve_id AS "CVE", title AS "What it is", hostname AS "Host",
-         package AS "Package", confidence AS "Confidence", reach AS "Reachable here",
-         how AS "How it is exploited (MITRE)"</query>
+ | stats values(title) AS title, values(reach_class) AS reach, values(comment) AS how,
+         values(map_strength) AS strength, values(confidence) AS confidence BY cve_id, hostname, package
+ | eval title = mvindex(title, 0), how = mvindex(how, 0), strength = mvindex(strength, 0)
+ | eval strength = case(strength="recorded", "recorded exploitation", strength="recorded-impact", "recorded impact", strength="implied", "implied by ransomware flag", 1=1, strength)
+ | table cve_id, title, hostname, package, confidence, reach, strength, how
+ | rename cve_id AS "CVE", title AS "What it is", hostname AS "Host",
+          package AS "Package", confidence AS "Confidence", reach AS "Reachable here",
+          strength AS "Claim", how AS "What MITRE recorded"</query>
           </search>
           <option name="riskability.riskability_grid.wrap">yes</option>
           <option name="riskability.riskability_grid.drilldown">disabled</option>
