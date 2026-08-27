@@ -90,6 +90,18 @@ CASES = [
     # A pseudo-version precedes the release it anticipates.
     (vercmp.go_compare, "v1.2.3-0.20240101000000-abcdef123456", "<", "v1.2.3"),
     (vercmp.go_compare, "v1.9.0", "<", "v1.10.0"),
+    # --- RPM: an empty release is not an absent one ----------------------------
+    # Verified against rpm 6.0.1: absent < "" < any non-empty release.
+    (vercmp.rpm_compare, "1.0", "<", "1.0-"),
+    (vercmp.rpm_compare, "1.0-", "<", "1.0-0"),
+    (vercmp.rpm_compare, "1.0-", "<", "1.0-1"),
+    (vercmp.rpm_compare, "1.0-", "==", "1.0-"),
+    (vercmp.rpm_compare, "1:1.0", "<", "1:1.0-"),
+    # The half-open range check is installed < fixed, so collapsing these two
+    # reported an installed version rpm considers BELOW the fix as not
+    # vulnerable. It failed toward silence.
+    (vercmp.rpm_compare, "1.0", "<", "1.0-1"),
+
 ]
 
 
