@@ -81,6 +81,14 @@ RPM_CORPUS = [
     "4.18.0-513.24.1.el8_9", "4.18.0-513.5.1.el8_9",
     "1.0", "1.0-1", "1.0.1",
     "unknown", "UNKNOWN", "none", "2.0", "1:2.17.1-1", "a", "1a", "a1",
+    # Release present but EMPTY. rpm's full ordering is
+    #   absent  <  ""  <  any non-empty
+    # so "1.0-" sits ABOVE "1.0" and BELOW "1.0-0". Splitting an EVR with
+    # str.partition("-") and defaulting a missing release to "" collapsed the
+    # first two, which made "1.0-" and "1.0" compare equal (issue #3). Every
+    # permutation of these against the rest of the corpus is checked, so the
+    # distinction cannot quietly go away again.
+    "1.0-", "1:1.0-", "1.0-0",
 ]
 
 

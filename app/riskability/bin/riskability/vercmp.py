@@ -197,7 +197,21 @@ def rpm_compare_label(a: str, b: str) -> int:
     return 1 if longer_is_a else -1
 
 
-def _rpm_split(v: str) -> Tuple[int, str, str]:
+def _rpm_split(v: str) -> Tuple[int, str, Optional[str]]:
+    """Split an EVR. The release is None when ABSENT and "" when EMPTY.
+
+    Those are different to rpm and the distinction is the whole reason this
+    returns Optional. ``1.0`` has no release; ``1.0-`` has one that happens to
+    be empty, and rpm orders the second above the first::
+
+        rpm.vercmp("1.0-", "1.0")   ->  1
+        rpm.vercmp("1.0-", "1.0-0") -> -1
+
+    Collapsing both to "" made ``1.0-`` and ``1.0`` compare EQUAL, which in a
+    half-open range check ``installed < fixed`` reads as "not vulnerable" for an
+    installed version that rpm considers below the fix. It fails toward silence,
+    which is the direction that matters here.
+    """
     v = (v or "").strip()
     epoch = 0
     rest = v
@@ -208,7 +222,7 @@ def _rpm_split(v: str) -> Tuple[int, str, str]:
             rest = tail
     version, sep, release = rest.partition("-")
     if not sep:
-        version, release = rest, ""
+        return epoch, rest, None
     return epoch, version, release
 
 
@@ -228,6 +242,13 @@ def rpm_compare(a: str, b: str) -> int:
     r = rpm_compare_label(va, vb)
     if r:
         return r
+    # Absent release sorts below a present one, empty or not. rpm's full
+    # ordering is  absent < "" < any non-empty, and rpm_compare_label already
+    # gives the second half ("" < "0" < "1"); only the absent case needs saying.
+    if ra is None or rb is None:
+        if ra is None and rb is None:
+            return 0
+        return -1 if ra is None else 1
     return rpm_compare_label(ra, rb)
 
 
