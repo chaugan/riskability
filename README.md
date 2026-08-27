@@ -236,21 +236,22 @@ The KV Store must be running on the search head; the feed lives there.
 
 ### The collector version this app needs
 
-**swinv 0.7.1 or later.** That is the floor, and below it the app still runs but
-loses the things that make a large fleet affordable and honest: the heartbeat
-that lets an unchanged host report a small digest instead of its whole inventory,
-and the scan manifest that lets Coverage compare what the collector said it found
-against what arrived. Without the manifest a host that lost data in transit reads
-as a small host.
-
-Individual features have their own landing points, and the app says which is
-missing rather than showing an empty panel:
+**Install the current swinv, 0.8.0.** That is what this app is built against and
+what every panel here assumes. The minimum it tolerates is 0.7.1, which matters
+only when a fleet is part way through a collector rollout: those hosts keep
+working and say what they are missing rather than going quiet.
 
 | swinv | What it adds here |
 |---|---|
 | 0.7.0 | Link records, so a finding on a shared library can be ranked by whether a listening process actually loads it |
-| 0.7.1 | Heartbeats and the scan manifest. This is the floor |
-| 0.8.0 | The configuration surface, which is what fills the ATT&CK page's persistence and privilege techniques |
+| 0.7.1 | Heartbeats and the scan manifest. The minimum this app tolerates |
+| 0.8.0 | The configuration surface, which fills the ATT&CK page's persistence and privilege techniques. **Current, and what to install** |
+
+Below 0.7.1 the app still runs but loses the things that make a large fleet
+affordable and honest: the heartbeat that lets an unchanged host report a small
+digest instead of its whole inventory, and the scan manifest that lets Coverage
+compare what the collector said it found against what arrived. Without the
+manifest a host that lost data in transit reads as a small host.
 
 The version each host reports is on **Coverage**, read from the heartbeat, so the
 floor is checked against the fleet rather than assumed. A panel that needs a
