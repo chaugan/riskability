@@ -421,7 +421,7 @@
           <span>
             <b>Not assessed</b> is not a small bar to be pleased about: it counts findings on
             hosts that sent no link data at all, which is every Windows host and every
-            collector older than swinv 1.11. <b>Not a linked library</b> counts npm, PyPI and
+            collector older than swinv 0.7.0. <b>Not a linked library</b> counts npm, PyPI and
             Go findings that no ELF link could ever describe. Neither means "nothing loads
             it", and a fleet where those two dominate has not been measured rather than
             found clean. The bar worth acting on is the top one, and the colours say whether
@@ -503,7 +503,7 @@
           <b>A host with no link data is not a host that loads nothing.</b>
           <span>
             Link records are read from ELF binaries, so a Windows host has none and neither
-            does a collector older than swinv 1.11 or one run without
+            does a collector older than swinv 0.7.0 or one run without
             <code>--ndjson-include links</code>. Those findings say <b>not assessed</b>
             rather than <b>not in the load list</b>, so a host does not look calmer for
             having been measured less. "Libraries no package owns" counts files that were

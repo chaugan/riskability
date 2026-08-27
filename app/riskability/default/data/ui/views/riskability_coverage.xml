@@ -185,6 +185,14 @@
       shortfall > 0, "components went missing on the way in",
       1=1, "everything arrived")
   | eval reported = strftime(scanned_at, "%Y-%m-%d %H:%M")
+    | rex field=swinv_version "v?(?&lt;rk_maj&gt;\d+)\.(?&lt;rk_min&gt;\d+)\.(?&lt;rk_pat&gt;\d+)"
+    | eval rk_num = if(isnull(rk_maj), null(), tonumber(rk_maj) * 10000 + tonumber(rk_min) * 100 + tonumber(rk_pat))
+    | eval swinv_version = case(
+        isnull(swinv_version), "not reported",
+        isnull(rk_num), swinv_version,
+        rk_num &lt; 701, swinv_version . " (below the 0.7.1 floor)",
+        rk_num &lt; 800, swinv_version . " (no configuration surface)",
+        1=1, swinv_version)
   | sort 5000 - shortfall
   | table hostname, verdict, swinv_version, said_components, arrived, pct, said_link,
           links_arrived, failed_text, reported

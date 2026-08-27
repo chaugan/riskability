@@ -234,6 +234,29 @@ The KV Store must be running on the search head; the feed lives there.
 
 ## What the app reads from the collector
 
+### The collector version this app needs
+
+**swinv 0.7.1 or later.** That is the floor, and below it the app still runs but
+loses the things that make a large fleet affordable and honest: the heartbeat
+that lets an unchanged host report a small digest instead of its whole inventory,
+and the scan manifest that lets Coverage compare what the collector said it found
+against what arrived. Without the manifest a host that lost data in transit reads
+as a small host.
+
+Individual features have their own landing points, and the app says which is
+missing rather than showing an empty panel:
+
+| swinv | What it adds here |
+|---|---|
+| 0.7.0 | Link records, so a finding on a shared library can be ranked by whether a listening process actually loads it |
+| 0.7.1 | Heartbeats and the scan manifest. This is the floor |
+| 0.8.0 | The configuration surface, which is what fills the ATT&CK page's persistence and privilege techniques |
+
+The version each host reports is on **Coverage**, read from the heartbeat, so the
+floor is checked against the fleet rather than assumed. A panel that needs a
+record type the collector did not send says so and names the flag, because an
+empty panel and an unconfigured collector are different facts.
+
 ### Running the collector
 
 Riskability correlates what [`swinv`](https://github.com/chaugan/swinv)
@@ -428,7 +451,7 @@ which one a firewall is blocking.
 ### What each binary actually loads
 
 A CVE in a shared library flags every host that has the library on disk, which
-on a fleet is every host. swinv 1.11 reads each ELF binary's `DT_NEEDED` table
+on a fleet is every host. swinv 0.7.0 reads each ELF binary's `DT_NEEDED` table
 without executing anything, so the app can say which of those hosts run a
 process that actually maps it, and name the process.
 
@@ -457,7 +480,7 @@ limits and the app repeats them rather than smoothing them over:
   than less, so it is counted on the coverage panel instead of being dropped.
 
 A finding says **not assessed** when no link data reached that host, which is
-the case for every Windows host and every collector older than 1.11, and **not
+the case for every Windows host and every collector older than 0.7.0, and **not
 a linked library** for npm, PyPI and Go findings that no ELF link could
 describe. Neither reads the same as "nothing loads it", because a host must
 never look calmer for having been measured less.
