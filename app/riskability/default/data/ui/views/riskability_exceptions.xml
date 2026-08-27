@@ -150,7 +150,7 @@
         <option name="riskability.riskability_grid.hideColumns">Key</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">Nothing has lapsed or been withdrawn.</option>
-        <option name="height">320</option>
+        <option name="height">420</option>
       </viz>
     </panel>
   </row>
@@ -173,7 +173,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No exception activity recorded. The trail is written to an index, so it survives the register being rewritten.</option>
-        <option name="height">340</option>
+        <option name="height">420</option>
       </viz>
       <html>
         <div class="rk-status" style="margin:8px 0 0">

@@ -204,7 +204,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
-        <option name="height">300</option>
+        <option name="height">420</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">

@@ -189,7 +189,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No host has an open finding at this filter.</option>
-        <option name="height">300</option>
+        <option name="height">460</option>
         <drilldown>
           <set token="chain_filter">hostname="$row.Host$"</set>
           <set token="host_focus_filter">hostname="$row.Host$"</set>
@@ -370,7 +370,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
-        <option name="height">300</option>
+        <option name="height">400</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -453,7 +453,7 @@
            loaders AS "Loaded by", loader_count AS "Loaders"</query>
         </search>
         <option name="riskability.riskability_grid.emptyText">No open finding here is on a library that a listening process loads. That is not the same as nothing being exposed: see whether these hosts were assessed at all, below.</option>
-        <option name="height">320</option>
+        <option name="height">460</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -496,7 +496,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No hosts have reported inventory yet.</option>
-        <option name="height">300</option>
+        <option name="height">400</option>
       </viz>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
@@ -537,7 +537,7 @@
         </search>
         <option name="riskability.riskability_grid.drilldown">all</option>
         <option name="riskability.riskability_grid.emptyText">No open finding is scoped to a container. Either no containers were reported, or their images carry no matched vulnerability.</option>
-        <option name="height">320</option>
+        <option name="height">520</option>
         <!-- Also raises the page's shared filter state, so the "Inside ..."
              panel this opens is covered by the one Clear control rather than
              staying on screen through every later click with no way to put it

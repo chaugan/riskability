@@ -74,7 +74,7 @@
           <latest>now</latest>
         </search>
         <option name="riskability.riskability_grid.emptyText">No host has reported an inventory. Nothing can be assessed until swinv data reaches the index.</option>
-        <option name="height">300</option>
+        <option name="height">460</option>
         <drilldown>
           <!-- form.hostname, not hostname: setting the bare token narrows the
                panels but leaves the picker above still reading "All hosts", so
