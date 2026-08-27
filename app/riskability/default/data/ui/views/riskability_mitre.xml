@@ -32,6 +32,8 @@
       <choice value="*">All sources</choice>
       <choice value="capec">Asserted chain only</choice>
       <choice value="cwe_parent">Inherited only</choice>
+      <choice value="cvss_vector">Vector inference only</choice>
+      <choice value="observed">Observed exposure only</choice>
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
@@ -340,28 +342,36 @@
       <!-- The asserted/inherited split, always in frame so choosing All sources
            never blends silently. Reads the rollup, so it costs nothing. -->
       <search>
-        <query>| inputlookup riskability_techstate_lookup
-| eval rk_gate = "$matrix_fleet_q$"
+        <query>| inputlookup riskability_attack_ledger_lookup
 | search confidence=$conf_tok|s$
-| stats sum(eval(if(map_source=="capec", cves, 0))) AS rk_direct, sum(eval(if(map_source=="cwe_parent", cves, 0))) AS rk_inh</query>
+| stats sum(total_open_cves) AS t, sum(placed_any) AS p, sum(via_chain) AS c, sum(only_inherited) AS i, sum(only_vector) AS v, sum(only_observed) AS o, sum(no_cwe_at_all) AS n, sum(unplaced) AS u</query>
         <done>
           <condition>
-            <set token="split_direct">$result.rk_direct$</set>
-            <set token="split_inh">$result.rk_inh$</set>
+            <set token="lg_t">$result.t$</set>
+            <set token="lg_p">$result.p$</set>
+            <set token="lg_c">$result.c$</set>
+            <set token="lg_i">$result.i$</set>
+            <set token="lg_v">$result.v$</set>
+            <set token="lg_o">$result.o$</set>
+            <set token="lg_n">$result.n$</set>
+            <set token="lg_u">$result.u$</set>
           </condition>
         </done>
       </search>
       <html depends="$matrix_fleet_q$">
         <div class="rk-status" style="margin:8px 0 0">
-          <b>Two strengths of claim light this grid, and they are counted apart.</b>
+          <b>$lg_t$ unique open CVEs in scope. $lg_p$ can be placed on ATT&amp;CK. $lg_u$ cannot, and unplaced is not not-vulnerable.</b>
           <span>
-            $split_direct$ CVE placements come from the asserted chain, where MITRE maps the
-            CVE's own weakness class to attack patterns. $split_inh$ more come from
-            inheritance, where the CVE's specific weakness has no mapping of its own and
-            borrows its parent class's, one or two steps up and never from a top level
-            category. An inherited placement is a weaker claim, which is why the Mapping
-            evidence filter can isolate either, and why the two numbers are never added
-            into one.
+            Of the placed: $lg_c$ through the asserted chain, where MITRE maps the CVE's own
+            weakness class to attack patterns; $lg_i$ more only by inheritance from a parent
+            weakness class, one or two steps up and never from a top level category; $lg_v$
+            more only by inference from the CVSS vector, which needs no weakness class at all;
+            and $lg_o$ only because the vulnerable package is observed answering the network.
+            Each is a different strength of claim, the Mapping evidence filter isolates any of
+            them, and they are never added into one number. Of the unplaced, $lg_n$ carry no
+            weakness class and no mappable vector, which is a gap in the record, not a clean
+            bill. These counts are unique CVEs, not findings, because counting per host would
+            inflate the taxonomy by the size of the fleet.
           </span>
         </div>
       </html>
