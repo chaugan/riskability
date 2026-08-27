@@ -663,7 +663,7 @@
             the matrix and technique list stay whole so you can pick something else.</span>
           <span class="rk-drill-state">Filtered by $drill_note$</span>
           <a class="rk-drill-clear"
-             href="riskability_mitre?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
+             href="riskability_mitre?form.host_tok=$host_tok|u$&amp;form.conf_tok=$conf_tok|u$&amp;form.src_tok=$src_tok|u$">Clear</a>
         </div>
       </html>
     </panel>

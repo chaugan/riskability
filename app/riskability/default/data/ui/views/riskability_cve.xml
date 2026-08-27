@@ -28,6 +28,46 @@
     </input>
   </fieldset>
 
+  <!-- Whether the CVE Program catalogue is in this bundle at all. The page's
+       richest panels read that catalogue, and it is opt in behind the builder's
+       cve-list flag, so an absent catalogue used to render as an empty panel
+       that reads like "nothing is known about this CVE". Those are different
+       facts and the reader has to be able to tell them apart, so the count is
+       checked once here and the banner names the reason and the remedy. -->
+  <search>
+    <query>| inputlookup riskability_cvedetail_lookup | stats count AS rk_rows</query>
+    <done>
+      <condition match="$result.rk_rows$ &gt; 0">
+        <set token="cat_rows">$result.rk_rows$</set>
+        <unset token="cat_absent"></unset>
+      </condition>
+      <condition>
+        <set token="cat_absent">1</set>
+        <unset token="cat_rows"></unset>
+      </condition>
+    </done>
+  </search>
+  <row depends="$cat_absent$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0">
+          <b>This bundle carries no CVE Program catalogue, so the descriptions and product
+             names on this page are missing rather than unknown.</b>
+          <span>
+            Findings come from OSV and the distribution advisories, which name a package and a
+            version but rarely describe the vulnerability. The description, the product names
+            and the free text search on this page come from the CVE Program catalogue instead,
+            and that is opt in when the feed is built because it is the largest source by far.
+            A CVE with a finding but no entry here is one this bundle cannot describe, not one
+            nobody has described. Rebuild the feed with <code>--cve-list</code> and import it
+            to fill this in. Everything else on this page, the matching, the severity, the KEV
+            status and the affected ranges, works without it.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
   <row>
     <panel>
       <html>
