@@ -132,6 +132,16 @@
     overflow: visible !important;
     height: auto !important;
     line-height: 1.45;
+    /* pre-wrap breaks at whitespace, and the values these tables wrap for do
+       not have any: a filesystem path, a purl, a container digest. Without a
+       break opportunity the line simply runs past the cell, and overflow is
+       visible here on purpose, so it is drawn straight over the next column.
+       Seen live: a services table where "/usr/lib/systemd/system/acpid.service"
+       printed on top of the account it runs as, and the reader gets a word
+       that is neither field. Break inside the value instead, which is what the
+       tooltip already does with the same values and for the same reason. */
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .rk-grid-wrap .tabulator-row {
     height: auto !important;

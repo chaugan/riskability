@@ -81,5 +81,16 @@ if [ -n "$SHARE_PREFIX" ] && [ -n "$PROXY_BASE" ]; then
 fi
 
 docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "admin:$SPLUNK_PASSWORD" >/dev/null 2>&1 || true
+  # Views are cached by splunkd and are NOT refreshed by "reload auth". Without
+  # this the file on disk is the new one, the REST endpoint still serves the old
+  # one, and the browser draws a dashboard you have already changed. It looks
+  # exactly like a change that did not work, which is the most expensive way to
+  # be wrong about a dashboard: measured a panel height twice against a version
+  # that was no longer on disk.
+  for app in riskability TA-riskability TA-riskability-indexes; do
+    docker exec -u splunk "$CONTAINER" curl -sk -u "admin:$SPLUNK_PASSWORD" -X POST \
+      "https://localhost:8089/servicesNS/nobody/$app/data/ui/views/_reload" \
+      >/dev/null 2>&1 || true
+  done
   echo "deployed (pass RESTART=1 for a full restart when conf files change)"
 fi

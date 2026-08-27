@@ -815,6 +815,9 @@
 | stats dc(cve_id) AS cves, min(rk_rank) AS rk_rank, values(description) AS how
         BY technique, technique_name
 | eval how = mvindex(how, 0)
+| eval how = replace(how, "\(Citation:[^)]*\)", "")
+| eval how = trim(replace(how, "\s+", " "))
+| eval how = if(len(how) > 240, substr(how, 1, 237) . "...", how)
 | eval reach = case(rk_rank=0, "answers any address", rk_rank=1, "answers one address",
                     rk_rank=2, "loopback only", rk_rank=3, "no listening port",
                     1=1, "not assessed")
@@ -836,7 +839,10 @@
               A control that covers many techniques which nothing can reach is still worth
               having, but it is not the one to do first. This counts techniques the mapping
               reached, so it is a floor: a technique with no MITRE mitigation is not counted
-              here at all, and the CVEs still need patching either way.
+              here at all, and the CVEs still need patching either way. The last column is
+              MITRE's own wording for this control against that technique, trimmed of its
+              citation markers and cut to its opening so the table stays a list rather than
+              an essay. attack.mitre.org carries it in full.
             </span>
           </div>
         </html>
