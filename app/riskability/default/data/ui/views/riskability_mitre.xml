@@ -217,7 +217,7 @@
         <viz type="riskability.riskability_chart">
           <search>
             <query>| inputlookup riskability_config_lookup
-| where hostname=$host_tok|s$
+| search hostname=$host_tok|s$
 | stats count AS mechanisms, sum(n_evidence) AS weaknesses, dc(hostname) AS hosts BY attack, kind
 | eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", 1=1, kind)
 | eval series = if(weaknesses > 0, "flagged by swinv", "surface, no weakness flagged")

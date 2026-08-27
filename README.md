@@ -809,6 +809,28 @@ advisories. The numbers in them are the ones this README quotes.
 ### MITRE ATT&CK
 ![MITRE ATT&CK](docs/screenshots/mitre-attack.png)
 
+### The configuration surface, the half of ATT&CK a CVE feed cannot reach
+
+swinv reports what a host is configured to run: cron, systemd timers and
+services, SUID and SGID binaries, each carrying the ATT&CK technique it is the
+surface for. These persistence and privilege techniques appear nowhere in the
+CVE matrix, because they are configuration rather than software defect. Counted
+in mechanisms, kept apart from the CVE grid, and a mechanism is not a finding
+until swinv's own weakness count says so.
+
+![Configuration surface](docs/screenshots/config-surface.png)
+
+### The matrix places far more, and states its own denominator
+
+Four evidence sources now place a CVE on ATT&CK, each labelled and filterable:
+the asserted weakness chain, a mapping inherited from a parent weakness class,
+inference from the CVSS vector where no weakness class exists, and observed
+exposure. The caption is the honest denominator: unique open CVEs in scope, how
+many placed and through which source, how many not and why, with unplaced is not
+not-vulnerable in the same frame.
+
+![ATT&CK matrix and denominator](docs/screenshots/attack-matrix-fuller.png)
+
 ### Known-exploited, mapped to the technique that does it
 
 MITRE's Center for Threat-Informed Defense maps each CISA known-exploited CVE to
