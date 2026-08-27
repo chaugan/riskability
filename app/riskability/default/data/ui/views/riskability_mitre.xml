@@ -6,6 +6,34 @@
       <label>Host (wildcards allowed)</label>
       <default>*</default>
       <initialValue>*</initialValue>
+      <!-- The matrix has two data paths and this decides which runs. The fleet
+           view reads a rollup precomputed once an hour, because expanding every
+           open finding through the weakness chain on each page load does not
+           survive a large fleet. A single host is small, so it computes live and
+           stays second-accurate. The gate tokens keep the inactive path from
+           dispatching at all. -->
+      <change>
+        <condition value="*">
+          <set token="matrix_fleet_q"></set>
+          <unset token="matrix_host_q"></unset>
+        </condition>
+        <condition>
+          <set token="matrix_host_q"></set>
+          <unset token="matrix_fleet_q"></unset>
+        </condition>
+      </change>
+    </input>
+    <input type="radio" token="src_tok" searchWhenChanged="true">
+      <label>Mapping evidence</label>
+      <!-- The matrix can be lit by the asserted chain or by a mapping inherited
+           from a parent weakness class. They are different strengths of claim,
+           so the reader can isolate either, and the caption under the matrix
+           always states the split so choosing All never blends them silently. -->
+      <choice value="*">All sources</choice>
+      <choice value="capec">Asserted chain only</choice>
+      <choice value="cwe_parent">Inherited only</choice>
+      <default>*</default>
+      <initialValue>*</initialValue>
     </input>
     <input type="dropdown" token="conf_tok" searchWhenChanged="true">
       <label>Confidence</label>
@@ -41,6 +69,7 @@
            keep-all is the safe default: never hide a technique before we know. -->
       <set token="host_plat_re">Windows|Linux|macOS</set>
       <set token="host_plat_label">all platforms</set>
+      <set token="matrix_fleet_q"></set>
     </init>
 
     <!-- The ATT&CK platform families present in the selected host scope, resolved
@@ -203,14 +232,55 @@
   <row>
     <panel>
       <title>ATT&amp;CK matrix - where open findings sit in an attack</title>
+      <!-- Fleet view: the precomputed rollup. A few hundred rows read in
+           milliseconds, however large the fleet, because the expansion ran in
+           the hourly rollup job rather than here. rk_gate holds the mode token
+           so this search does not dispatch at all when a host is picked. -->
+      <search id="rk_matrix_fleet">
+        <query>| inputlookup riskability_techstate_lookup
+| eval rk_gate = "$matrix_fleet_q$"
+| eval rk_want = if("$src_tok$" = "*", "any", "$src_tok$")
+| where map_source = rk_want
+| search confidence=$conf_tok|s$
+| stats sum(cves) AS cves, values(platforms) AS rk_pf BY tactic_name, tactic_order, technique_name, technique
+| eval rk_has_hostos = if(match(rk_pf, "(?i)Windows|Linux|macOS"), 1, 0)
+| eval rk_in_scope = if(match(rk_pf, "(?i)($host_plat_re$)"), 1, 0)
+| where rk_has_hostos = 0 OR rk_in_scope = 1</query>
+      </search>
+      <!-- Host view: live, because one host is small and deserves to be
+           second-accurate rather than an hour old. -->
       <search id="rk_matrix">
         <query>| `riskability_attack_matrix_for($host_tok|s$, $conf_tok|s$)`
+| eval rk_gate = "$matrix_host_q$"
+| search map_source=$src_tok|s$
 | stats dc(cve_id) AS cves, values(platforms) AS rk_pf BY tactic_name, tactic_order, technique_name, technique
 | eval rk_has_hostos = if(match(rk_pf, "(?i)Windows|Linux|macOS"), 1, 0)
 | eval rk_in_scope = if(match(rk_pf, "(?i)($host_plat_re$)"), 1, 0)
 | where rk_has_hostos = 0 OR rk_in_scope = 1</query>
       </search>
-      <viz type="riskability.riskability_chart">
+      <viz type="riskability.riskability_chart" depends="$matrix_fleet_q$">
+        <search base="rk_matrix_fleet">
+          <query>eventstats max(cves) AS peak BY technique_name
+| sort 50000 - peak
+| streamstats dc(technique_name) AS rk_rank
+| where rk_rank &lt;= 120
+| sort 50000 tactic_order
+| fields tactic_name, technique_name, cves</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">heatmap</option>
+        <option name="riskability.riskability_chart.valueLabel">CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">No tactic data. Either the rollup has not run yet (it runs hourly at :43) or the bundle lacks the ATT&amp;CK tactic mapping - rebuild with --mitre and import.</option>
+        <option name="height">1040</option>
+        <drilldown>
+          <set token="tech_name_tok">$row.technique_name$</set>
+          <set token="tech_filter">technique_name="$row.technique_name$"</set>
+          <set token="tech_label">$row.technique_name$</set>
+          <set token="drill_note">technique $row.technique_name$</set>
+          <set token="any_filter">1</set>
+          <unset token="tech_tok"></unset>
+        </drilldown>
+      </viz>
+      <viz type="riskability.riskability_chart" depends="$matrix_host_q$">
         <search base="rk_matrix">
           <query>eventstats max(cves) AS peak BY technique_name
 | sort 50000 - peak
@@ -240,7 +310,7 @@
              rather than the exception. rk-bad, so it survives the panel notes toggle:
              someone hiding the explanations is not asking to stop being told the
              picture is partial. -->
-        <search base="rk_matrix">
+        <search base="rk_matrix_fleet">
           <query>stats dc(technique_name) AS rk_total
 | eval rk_hidden = if(rk_total &gt; 120, rk_total - 120, 0)
 | table rk_total, rk_hidden</query>
@@ -267,6 +337,34 @@
             </span>
           </div>
         </html>
+      <!-- The asserted/inherited split, always in frame so choosing All sources
+           never blends silently. Reads the rollup, so it costs nothing. -->
+      <search>
+        <query>| inputlookup riskability_techstate_lookup
+| eval rk_gate = "$matrix_fleet_q$"
+| search confidence=$conf_tok|s$
+| stats sum(eval(if(map_source=="capec", cves, 0))) AS rk_direct, sum(eval(if(map_source=="cwe_parent", cves, 0))) AS rk_inh</query>
+        <done>
+          <condition>
+            <set token="split_direct">$result.rk_direct$</set>
+            <set token="split_inh">$result.rk_inh$</set>
+          </condition>
+        </done>
+      </search>
+      <html depends="$matrix_fleet_q$">
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Two strengths of claim light this grid, and they are counted apart.</b>
+          <span>
+            $split_direct$ CVE placements come from the asserted chain, where MITRE maps the
+            CVE's own weakness class to attack patterns. $split_inh$ more come from
+            inheritance, where the CVE's specific weakness has no mapping of its own and
+            borrows its parent class's, one or two steps up and never from a top level
+            category. An inherited placement is a weaker claim, which is why the Mapping
+            evidence filter can isolate either, and why the two numbers are never added
+            into one.
+          </span>
+        </div>
+      </html>
       <html>
         <div class="rk-status rk-warn" style="margin:8px 0 0">
           <b>An empty matrix means the tactic mapping is missing.</b>

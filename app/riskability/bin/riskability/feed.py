@@ -1608,6 +1608,87 @@ def parse_kev_attack(raw: str) -> List[dict]:
     return rows
 
 
+_CHILDOF_RE = re.compile(r"NATURE:ChildOf:CWE ID:(\d+):VIEW ID:1000(?::|$)")
+
+
+def parse_cwe_hierarchy(csv_text: str):
+    """CWE id -> abstraction level, and CWE id -> its ChildOf parents.
+
+    Both come from the same CWE-1000 catalogue CSV the build already downloads.
+    The abstraction is what bounds the inheritance walk: a Pillar is a topic
+    label, not a weakness, so inheriting its techniques would assert everything
+    about anything. The VIEW ID:1000 anchor keeps the walk inside the research
+    view; the other views list different edges.
+    """
+    import csv as _csv
+    abstraction, parents = {}, {}
+    for row in _csv.DictReader(io.StringIO(csv_text)):
+        cwe = (row.get("CWE-ID") or "").strip()
+        if not cwe:
+            continue
+        abstraction[f"CWE-{cwe}"] = (row.get("Weakness Abstraction") or "").strip()
+        ps = _CHILDOF_RE.findall(row.get("Related Weaknesses") or "")
+        if ps:
+            parents[f"CWE-{cwe}"] = [f"CWE-{q}" for q in dict.fromkeys(ps)]
+    return abstraction, parents
+
+
+MAX_INHERIT_DEPTH = 2
+
+
+def build_inherited_attack_rows(direct_rows, abstraction, parents):
+    """Techniques borrowed from a parent CWE, for leaf CWEs that reach none.
+
+    A CVE tagged with a specific leaf like CWE-787 (out of bounds write) often
+    places nowhere, while its parent CWE-119 carries CAPEC edges. A bounded walk
+    toward the root, at most two levels and never through a Pillar, inherits the
+    parent's techniques for that leaf. A borrowed row is a weaker claim than an
+    asserted one and says so in its own fields, so the reader can tell them apart
+    and switch inheritance off entirely.
+
+    Nearest mapped ancestor wins, and the two depths are never unioned for one
+    leaf, because that would blend two confidence distances into one cell set.
+    """
+    DONOR_OK = ("Class", "Base", "Variant", "Compound")
+    mapped = {}
+    for r in direct_rows:
+        mapped.setdefault(r["cwe"], []).append(r)
+    out = []
+    for leaf, ab in abstraction.items():
+        if leaf in mapped or ab == "Pillar":
+            continue
+        frontier, depth = parents.get(leaf, []), 1
+        while frontier and depth <= MAX_INHERIT_DEPTH:
+            donors = [q for q in frontier
+                      if abstraction.get(q) in DONOR_OK and q in mapped]
+            if donors:
+                seen = {}
+                for q in donors:
+                    for r in mapped[q]:
+                        e = seen.get(r["technique"])
+                        if e is None:
+                            e = dict(r)
+                            e["cwe"] = leaf
+                            e["map_source"] = "cwe_parent"
+                            e["inherit_depth"] = str(depth)
+                            e["via_capec"] = list(r.get("via_capec") or [])
+                            e["inherited_from"] = q
+                            seen[r["technique"]] = e
+                        else:
+                            for c in (r.get("via_capec") or []):
+                                if c not in e["via_capec"]:
+                                    e["via_capec"].append(c)
+                            froms = e["inherited_from"].split(",")
+                            if q not in froms:
+                                e["inherited_from"] = ",".join(froms + [q])
+                out.extend(seen.values())
+                break
+            frontier = [g for q in frontier if abstraction.get(q) in DONOR_OK
+                        for g in parents.get(q, [])]
+            depth += 1
+    return out
+
+
 def build_attack_rows(cwe_capec: Dict[str, List[str]],
                       capec_attack: Dict[str, List[dict]],
                       technique_meta: Optional[Dict[str, dict]] = None) -> List[dict]:
@@ -1633,6 +1714,12 @@ def build_attack_rows(cwe_capec: Dict[str, List[str]],
                     "cwe": cwe,
                     "technique": tid,
                     "technique_name": name,
+                    # Every row self-describes its source so SPL can filter by it
+                    # and switch the inferred sources off. A direct row is the
+                    # asserted CWE to CAPEC to ATT&CK chain.
+                    "map_source": "capec",
+                    "inherited_from": "",
+                    "inherit_depth": "0",
                     # Comma-joined rather than a list: the KV Store lookup path
                     # already flattens multivalue fields, and the macro that
                     # reads this splits on comma exactly as it does for cwes.

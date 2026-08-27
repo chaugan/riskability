@@ -315,7 +315,9 @@ def cmd_build(args) -> int:
     if args.mitre:
         print(f"fetching MITRE CWE    {CWE_URL}", file=sys.stderr)
         try:
-            cwe_capec = feedlib.parse_cwe_capec(_fetch_csv(CWE_URL))
+            cwe_csv = _fetch_csv(CWE_URL)
+            cwe_capec = feedlib.parse_cwe_capec(cwe_csv)
+            cwe_abstraction, cwe_parents = feedlib.parse_cwe_hierarchy(cwe_csv)
             print(f"  {len(cwe_capec)} CWEs with attack patterns", file=sys.stderr)
             print(f"fetching MITRE CAPEC  {CAPEC_URL}", file=sys.stderr)
             capec_attack = feedlib.parse_capec_attack(_fetch_csv(CAPEC_URL))
@@ -341,12 +343,17 @@ def cmd_build(args) -> int:
                       file=sys.stderr)
 
             rows = feedlib.build_attack_rows(cwe_capec, capec_attack, technique_meta)
-            for row in rows:
+            inherited = feedlib.build_inherited_attack_rows(rows, cwe_abstraction, cwe_parents)
+            for row in rows + inherited:
                 writer.add_attack(row)
-            print(f"  {len(rows)} CWE -> ATT&CK technique mappings", file=sys.stderr)
+            print(f"  {len(rows)} direct CWE -> ATT&CK mappings, "
+                  f"{len(inherited)} inherited from a parent CWE", file=sys.stderr)
             sources.append({"name": "mitre-attack", "url": CAPEC_URL,
                             "fetched_at": int(time.time()), "records": len(rows),
                             "licence": "MITRE CWE/CAPEC; see MITRE terms of use"})
+            sources.append({"name": "mitre-attack-inherited", "url": CWE_URL,
+                            "fetched_at": int(time.time()), "records": len(inherited),
+                            "licence": "MITRE CWE hierarchy; see MITRE terms of use"})
 
             # The KEV to ATT&CK bridge. Independent of the CAPEC chain above and
             # not fatal if it fails: a failed fetch leaves the bridge panel with
