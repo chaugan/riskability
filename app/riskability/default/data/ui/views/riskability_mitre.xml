@@ -872,24 +872,38 @@
     [| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
      | stats max(reach_rank) AS peak_reach BY cve_id ]
 | eval reach = case(peak_reach&gt;=3,"answers any address",peak_reach&gt;=2,"answers one address",peak_reach&gt;=1,"loopback only",peak_reach&gt;=0,"no listening port",1=1,"not assessed")
-| stats dc(cve_id) AS cves, values(reach) AS reach_seen, max(peak_reach) AS rk_sort,
-        values(technique) AS techniques BY capec, capec_name, capec_abstraction, capec_severity, capec_likelihood, prerequisites, first_step
+| stats dc(cve_id) AS n_cves, values(cve_id) AS cve_list, dc(hostname) AS hosts,
+        values(package) AS packages, max(epss) AS top_epss,
+        max(peak_reach) AS rk_sort
+        BY capec, capec_name, capec_severity, capec_likelihood, prerequisites, first_step
 | eval reach = case(rk_sort&gt;=3,"answers any address",rk_sort&gt;=2,"answers one address",rk_sort&gt;=1,"loopback only",rk_sort&gt;=0,"no listening port",1=1,"not assessed")
-| sort 50000 - rk_sort, - cves
+| eval packages = mvjoin(mvindex(mvdedup(packages), 0, 5), ", ")
+        . if(mvcount(mvdedup(packages)) &gt; 6, " and " . (mvcount(mvdedup(packages)) - 6) . " more", "")
+| eval cve_list = mvjoin(mvindex(cve_list, 0, 4), ", ")
+        . if(n_cves &gt; 5, " and " . (n_cves - 5) . " more", "")
+| eval top_epss = if(isnull(top_epss), "unscored", round(top_epss * 100, 1) . "%")
+| eval rating = capec_severity . if(capec_likelihood="", "", ", seen " . lower(capec_likelihood))
+| sort 50000 - rk_sort, - n_cves
 | head 60
-| table reach, capec, capec_name, cves, capec_abstraction, capec_severity, capec_likelihood, prerequisites, first_step
+| table reach, capec, capec_name, hosts, packages, n_cves, cve_list, top_epss,
+        rating, prerequisites, first_step
 | rename reach AS "Reachable here", capec AS "CAPEC", capec_name AS "Attack pattern",
-         cves AS "CVEs", capec_abstraction AS "Abstraction",
-         capec_severity AS "MITRE rating", capec_likelihood AS "MITRE likelihood",
+         hosts AS "Hosts", packages AS "In these packages", n_cves AS "CVEs",
+         cve_list AS "Which CVEs", top_epss AS "Likeliest of them",
+         rating AS "MITRE rates the pattern",
          prerequisites AS "Attacker needs", first_step AS "First move"</query>
           </search>
           <option name="riskability.riskability_grid.wrap">yes</option>
-          <!-- No drilldown. Every row already carries the whole story, the
-               prerequisite and the first move in full, so there is nothing
-               further to show. Without this Splunk falls through to its default,
-               which opens the panel's own SPL in the search view, and a raw
-               search is not an answer to a click. -->
-          <option name="riskability.riskability_grid.drilldown">disabled</option>
+          <!-- Clicking a pattern opens the findings behind it. This panel used
+               to have no drilldown, on the reasoning that the row already held
+               the whole story. It held the whole CAPEC story and almost none of
+               the fleet's: a count of CVEs and seven columns of catalogue text
+               that read the same on every install. The row now names what is
+               affected, and the click goes to the findings themselves. -->
+          <drilldown>
+            <set token="capec_tok">$row.CAPEC$</set>
+            <set token="capec_name_tok">$row.Attack pattern$</set>
+          </drilldown>
           <option name="riskability.riskability_grid.emptyText">No open finding maps to a CAPEC attack pattern in this scope.</option>
         </viz>
         <html>
@@ -901,7 +915,67 @@
               rating for the pattern, not a measurement of your host, and the two are kept apart on
               purpose so a high generic rating on something unreachable never outranks a reachable
               finding. The rows are sorted by reach first. "Attacker needs" and "First move" are
-              CAPEC's own words for the entry requirement and the opening step.
+              CAPEC's own words for the entry requirement and the opening step. Everything to the
+              left of "MITRE rates the pattern" is measured on your fleet: which hosts, which
+              packages, which CVEs, and the highest EPSS among them. Click a row for the findings
+              behind it.
+            </span>
+            <b>A large CVE count here is a wide net, not a big problem.</b>
+            <span>
+              A CVE reaches a pattern through its weakness class, and a class is coarse: every
+              CVE tagged with one inherits every pattern that class maps to. That is why a single
+              pattern can carry hundreds of CVEs across packages with nothing to do with each
+              other. Read a row as "this is the shape of attack these weaknesses would permit",
+              never as "somebody is doing this". The narrow rows, the ones with few CVEs and a
+              named package, are the ones worth reading first.
+            </span>
+          </div>
+        </html>
+      </panel>
+    </row>
+
+    <!-- The findings behind one attack pattern. This is what the pattern table
+         used to lack: it counted CVEs and named none of them, so the page could
+         say a pattern was reachable without ever saying on what. -->
+    <row>
+      <panel depends="$capec_tok$">
+        <title>Findings behind CAPEC-$capec_tok$, $capec_name_tok$</title>
+        <viz type="riskability.riskability_grid">
+          <search>
+            <query>| `riskability_attack_patterns_for($host_tok|s$, $conf_tok|s$)`
+| search capec=$capec_tok|s$
+| join type=left cve_id
+    [| `riskability_reachability_for($host_tok|s$, $conf_tok|s$)`
+     | stats max(reach_rank) AS peak_reach BY cve_id ]
+| eval reach = case(peak_reach&gt;=3, "answers any address", peak_reach&gt;=2, "answers one address",
+                    peak_reach&gt;=1, "loopback only", peak_reach&gt;=0, "no listening port",
+                    1=1, "not assessed")
+| eval epss_pc = if(isnull(epss), null(), round(epss * 100, 1))
+| eval scope = if(isnull(scope_id) OR scope_id="" OR scope_id="/", "host", scope_id)
+| stats values(technique) AS techniques, max(epss_pc) AS epss_pc, values(reach) AS reach,
+        values(cwe) AS cwe, max(peak_reach) AS rk_sort
+        BY hostname, package, scope, cve_id
+| eval techniques = mvjoin(mvdedup(techniques), ", ")
+| eval reach = mvindex(reach, 0), cwe = mvjoin(mvdedup(cwe), ", ")
+| sort 5000 - rk_sort, - epss_pc
+| table reach, hostname, package, scope, cve_id, epss_pc, cwe, techniques
+| rename reach AS "Reachable here", hostname AS "Host", package AS "Package",
+         scope AS "Where", cve_id AS "CVE", epss_pc AS "EPSS %",
+         cwe AS "Weakness", techniques AS "Techniques it enables"</query>
+          </search>
+          <option name="riskability.riskability_grid.wrap">yes</option>
+          <option name="riskability.riskability_grid.drilldown">disabled</option>
+          <option name="riskability.riskability_grid.emptyText">Nothing behind this pattern at the current filters. Changing Host or Confidence after clicking can leave this pointing at a pattern that no longer appears; click the table again.</option>
+        </viz>
+        <html>
+          <div class="rk-status" style="margin:8px 0 0">
+            <b>These are the findings the pattern was counted from.</b>
+            <span>
+              One row per host, package and CVE. <b>Where</b> separates a copy inside a container
+              or a snap from the one on the host, because they are different installs of the same
+              name and are patched separately. The route from a CVE to an attack pattern runs
+              through its weakness class, so a pattern reached this way is a statement about what
+              the weakness would allow, not evidence that anybody has done it here.
             </span>
           </div>
         </html>

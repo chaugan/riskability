@@ -87,10 +87,18 @@ docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "adm
   # exactly like a change that did not work, which is the most expensive way to
   # be wrong about a dashboard: measured a panel height twice against a version
   # that was no longer on disk.
+  # Views AND saved searches are both cached by splunkd, and neither is
+  # refreshed by "reload auth". The saved search case is the nastier of the two:
+  # dispatching one over REST runs the definition splunkd has in memory, so a
+  # pipeline test can pass or fail against a version of the search that is no
+  # longer on disk. Cost an afternoon: a field added to a snapshot job kept
+  # coming back empty because the job being run was the previous one.
   for app in riskability TA-riskability TA-riskability-indexes; do
-    docker exec -u splunk "$CONTAINER" curl -sk -u "admin:$SPLUNK_PASSWORD" -X POST \
-      "https://localhost:8089/servicesNS/nobody/$app/data/ui/views/_reload" \
-      >/dev/null 2>&1 || true
+    for endpoint in data/ui/views saved/searches admin/macros admin/transforms-lookup admin/collections-conf; do
+      docker exec -u splunk "$CONTAINER" curl -sk -u "admin:$SPLUNK_PASSWORD" -X POST \
+        "https://localhost:8089/servicesNS/nobody/$app/$endpoint/_reload" \
+        >/dev/null 2>&1 || true
+    done
   done
   echo "deployed (pass RESTART=1 for a full restart when conf files change)"
 fi
