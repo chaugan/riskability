@@ -21,7 +21,6 @@ import {
     GridComponent,
     VisualMapComponent,
     TitleComponent,
-    CalendarComponent,
     LegendComponent,
 } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -33,7 +32,7 @@ echarts.use([
     TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
     PieChart, LineChart, GraphChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
-    CalendarComponent, LegendComponent, CanvasRenderer,
+    LegendComponent, CanvasRenderer,
 ]);
 
 /*
@@ -207,6 +206,7 @@ function buildTreemap(rows, t, config) {
         d.itemStyle = { color: RAMP[idx] };
     });
     return {
+        animation: false,
         tooltip: {
             backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -252,6 +252,7 @@ function buildSankey(rows, t, config) {
     if (!links.length) { return null; }
     var nodes = Object.keys(nodeSet).map(function (n) { return { name: n }; });
     return {
+        animation: false,
         tooltip: {
             trigger: 'item', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -296,6 +297,7 @@ function buildHeatmap(rows, t, config) {
     }
     if (!data.length) { return null; }
     return {
+        animation: false,
         tooltip: {
             backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -396,6 +398,7 @@ function buildBoxplot(rows, t, config) {
     }
     if (!data.length) { return null; }
     return {
+        animation: false,
         tooltip: {
             trigger: 'item', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -453,6 +456,7 @@ function buildBar(rows, t, config) {
     }
     if (!cats.length) { return null; }
     return {
+        animation: false,
         tooltip: {
             trigger: 'axis', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -501,6 +505,7 @@ function buildDonut(rows, t, config) {
     }
     if (!data.length) { return null; }
     return {
+        animation: false,
         tooltip: {
             trigger: 'item', backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
@@ -571,6 +576,7 @@ function stacked(rows, t, config, horizontal) {
         splitLine: { lineStyle: { color: t.axis } },
     };
     return {
+        animation: false,
         tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' },
                    backgroundColor: t.tooltipBg, borderColor: t.axis,
                    textStyle: { color: t.text } },
@@ -600,6 +606,7 @@ function buildLine(rows, t, config) {
     }
     if (!xs.length) { return null; }
     return {
+        animation: false,
         tooltip: { trigger: 'axis', backgroundColor: t.tooltipBg,
                    borderColor: t.axis, textStyle: { color: t.text } },
         grid: { left: 44, right: 24, top: 34, bottom: 12, containLabel: true },
