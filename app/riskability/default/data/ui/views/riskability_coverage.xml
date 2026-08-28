@@ -48,6 +48,7 @@
 | head 40</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
         <option name="riskability.riskability_chart.emptyText">No inventory received. Nothing can be assessed until swinv data reaches the index.</option>
         <option name="height">380</option>

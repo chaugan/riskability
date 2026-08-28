@@ -265,11 +265,17 @@
           <query>| inputlookup riskability_openstate_dim_lookup
 | where dim="package"
 | rename value AS package
-| table package, cves
+| table package, cves, top_epss
 | sort 50000 - cves
 | head 60</query>
         </search>
         <option name="riskability.riskability_chart.chartType">treemap</option>
+        <!-- Size is how many, colour is how likely. Colouring a treemap by the
+             same number its area already encodes says nothing twice; the third
+             column is EPSS, on FIRST's absolute bands, so a big pale tile is a
+             large pile of unlikely things and a small red one is the tile to
+             open first. -->
+        <option name="riskability.riskability_chart.colorScale">epss</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open findings. With no feed imported the app cannot assess anything yet, which is not a clean fleet - check the Feed administration page.</option>
         <option name="height">420</option>

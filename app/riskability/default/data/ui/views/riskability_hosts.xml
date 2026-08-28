@@ -118,6 +118,7 @@
           <latest>now</latest>
         </search>
         <option name="riskability.riskability_chart.chartType">bar</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
         <option name="riskability.riskability_chart.valueLabel">components</option>
         <option name="riskability.riskability_chart.emptyText">No inventory reported. Nothing here can be assessed.</option>
         <option name="height">360</option>

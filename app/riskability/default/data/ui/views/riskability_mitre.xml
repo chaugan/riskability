@@ -564,6 +564,7 @@
              the note claimed a technique filter the query never applied. A
              panel asserting it shows a subset while showing everything is the
              exact failure the note exists to prevent. -->
+        <option name="riskability.riskability_chart.colorScale">category</option>
         <option name="riskability.riskability_chart.valueLabel">CVEs</option>
         <option name="riskability.riskability_chart.emptyText">No open finding carries a CWE. Most CVEs have no recorded weakness class: a mapping gap, not an absence of risk. See the coverage panel.</option>
         <option name="height">400</option>

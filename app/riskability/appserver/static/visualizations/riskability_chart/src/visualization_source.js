@@ -66,6 +66,55 @@ var SEMANTIC = {
 // the matrix as it does on the treemap.
 var RAMP = ['#2b3a4a', '#33566b', '#3f7d7a', '#6e9c4f', '#c9a227', '#dc4e41'];
 
+/* Magnitude bands, on a fixed log10 scale rather than stretched across
+ * whatever this fleet happens to hold.
+ *
+ * These builders used to colour by value/max, which makes the largest cell red
+ * on every install: a fleet whose worst package holds three findings drew the
+ * same picture as one holding nine thousand. On a treemap that is worse than
+ * useless, because the tile's AREA already says how big it is, so the colour
+ * was a second encoding of the number the reader could already see, and the
+ * only thing it added was the alarm. It also moved under the reader: filtering
+ * to one host dropped the max, and a blue tile turned red while nothing about
+ * the risk had changed.
+ *
+ * Powers of ten are the one set of thresholds for a count that is not
+ * arbitrary, and they are how people already talk about counts. A pale chart
+ * now says something true: nothing here reaches three figures.
+ *
+ * This is the same rule epssBand follows, and for the reason stated there. */
+var MAGNITUDE = [
+    { max: 0, color: '#243040', label: 'none' },
+    { max: 9, color: '#33566b', label: '1 to 9' },
+    { max: 99, color: '#3f7d7a', label: '10 to 99' },
+    { max: 999, color: '#6e9c4f', label: '100 to 999' },
+    { max: 9999, color: '#c9a227', label: '1,000 to 9,999' },
+    { max: Infinity, color: '#dc4e41', label: '10,000 or more' },
+];
+
+function magnitudeBand(v) {
+    for (var i = 0; i < MAGNITUDE.length; i++) {
+        if (v <= MAGNITUDE[i].max) { return MAGNITUDE[i]; }
+    }
+    return MAGNITUDE[MAGNITUDE.length - 1];
+}
+
+/* How a panel wants its values coloured. Absolute magnitude is the default
+ * because an absolute scale is the house rule; a panel that has something
+ * better to say with hue asks for it by name.
+ *
+ *   magnitude  fixed log10 bands (default)
+ *   category   colour by identity, for a composition where area is the value
+ *              and hue should say WHICH rather than repeat HOW MANY
+ *   epss       colour by an exploitation probability in a third column, on
+ *              FIRST's own absolute bands, so size says how many and hue says
+ *              how likely
+ */
+function colorMode(config) {
+    var m = String(config.colorScale || 'magnitude').toLowerCase();
+    return (m === 'category' || m === 'epss') ? m : 'magnitude';
+}
+
 /* The row cap Splunk applies to results handed to a visualization. A result
  * set that lands exactly on it has almost certainly been truncated, and a
  * truncated security chart is a wrong chart, not a smaller one. */
@@ -192,18 +241,44 @@ function categoryColor(name, fallback) {
     return CATEGORY_COLOR[String(name).toLowerCase()] || fallback;
 }
 
+/* Hues for identities that carry no ordering at all: an ecosystem, a weakness
+ * class, a package name. Deliberately NOT the value ramp. Cycling RAMP here
+ * would land some categories on its red end for no reason but their position
+ * in a sort, which is the same manufactured alarm the absolute scale exists to
+ * stop, arriving by accident. Nothing in this palette reads as danger and
+ * nothing reads as fixed: no alarm red, no success green. They differ in hue
+ * so they can be told apart, and not in intensity so none looks worse. */
+var IDENTITY_PALETTE = [
+    '#4a7fa5', '#3f7d7a', '#7b6ca8', '#5f8f5a', '#a07a4f',
+    '#5a8ca8', '#8a6f9e', '#6d8f7a', '#94795c', '#4f6f8f',
+];
+
+function identityColor(name, i) {
+    return CATEGORY_COLOR[String(name).toLowerCase()] ||
+        IDENTITY_PALETTE[i % IDENTITY_PALETTE.length];
+}
+
 function buildTreemap(rows, t, config) {
-    var data = [];
+    var mode = colorMode(config), data = [];
     for (var i = 0; i < rows.length; i++) {
         var v = num(rows[i][1]);
         if (v === null || v <= 0) { continue; }
-        data.push({ name: String(rows[i][0]), value: v });
+        // An optional third column carries the probability the epss mode
+        // colours by. Absent, a tile is unscored rather than assumed safe.
+        var e = rows[i].length > 2 ? num(rows[i][2]) : null;
+        data.push({ name: String(rows[i][0]), value: v, rkEpss: e });
     }
     if (!data.length) { return null; }
-    var max = data.reduce(function (m, d) { return Math.max(m, d.value); }, 0);
-    data.forEach(function (d) {
-        var idx = Math.min(RAMP.length - 1, Math.floor((d.value / max) * RAMP.length));
-        d.itemStyle = { color: RAMP[idx] };
+    data.forEach(function (d, di) {
+        var band;
+        if (mode === 'category') {
+            d.itemStyle = { color: identityColor(d.name, di) };
+            d.rkBand = '';
+            return;
+        }
+        band = (mode === 'epss') ? epssBand(d.rkEpss) : magnitudeBand(d.value);
+        d.itemStyle = { color: band.color };
+        d.rkBand = band.label;
     });
     return {
         animation: false,
@@ -211,8 +286,10 @@ function buildTreemap(rows, t, config) {
             backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
             formatter: function (p) {
+                var band = p.data && p.data.rkBand;
                 return escapeHtml(p.name) + '<br/><b>' + p.value + '</b> ' +
-                    escapeHtml(config.valueLabel || 'CVEs');
+                    escapeHtml(config.valueLabel || 'CVEs') +
+                    (band ? '<br/>' + escapeHtml(band) : '');
             },
         },
         series: [{
@@ -285,7 +362,7 @@ function buildSankey(rows, t, config) {
 }
 
 function buildHeatmap(rows, t, config) {
-    var xs = [], ys = [], xi = {}, yi = {}, data = [], max = 0;
+    var xs = [], ys = [], xi = {}, yi = {}, data = [];
     for (var i = 0; i < rows.length; i++) {
         var x = String(rows[i][0] || ''), y = String(rows[i][1] || '');
         var v = num(rows[i][2]);
@@ -293,7 +370,6 @@ function buildHeatmap(rows, t, config) {
         if (!(x in xi)) { xi[x] = xs.length; xs.push(x); }
         if (!(y in yi)) { yi[y] = ys.length; ys.push(y); }
         data.push([xi[x], yi[y], v]);
-        if (v > max) { max = v; }
     }
     if (!data.length) { return null; }
     return {
@@ -340,10 +416,18 @@ function buildHeatmap(rows, t, config) {
             },
             axisLine: { lineStyle: { color: t.axis } },
         },
+        // Piecewise on fixed bounds, not a continuous ramp to this fleet's own
+        // max. The legend then reads as a key rather than as a thermometer,
+        // and two installs can be compared by colour at all.
         visualMap: {
-            min: 0, max: max || 1, calculable: true, orient: 'horizontal',
-            left: 'center', bottom: 5, textStyle: { color: t.muted },
-            inRange: { color: RAMP },
+            type: 'piecewise', orient: 'horizontal', left: 'center', bottom: 5,
+            textStyle: { color: t.muted }, itemWidth: 14, itemHeight: 10,
+            pieces: MAGNITUDE.map(function (b, i) {
+                var lo = i === 0 ? 0 : MAGNITUDE[i - 1].max + 1;
+                var piece = { color: b.color, label: b.label, gte: lo };
+                if (b.max !== Infinity) { piece.lte = b.max; }
+                return piece;
+            }),
         },
         series: [{
             type: 'heatmap', data: data,
@@ -446,13 +530,12 @@ function buildBoxplot(rows, t, config) {
 }
 
 function buildBar(rows, t, config) {
-    var cats = [], vals = [], max = 0;
+    var cats = [], vals = [];
     for (var i = 0; i < rows.length; i++) {
         var v = num(rows[i][1]);
         if (v === null) { continue; }
         cats.push(String(rows[i][0]));
         vals.push(v);
-        if (v > max) { max = v; }
     }
     if (!cats.length) { return null; }
     return {
@@ -479,9 +562,11 @@ function buildBar(rows, t, config) {
         },
         series: [{
             type: 'bar',
-            data: vals.map(function (v) {
-                var idx = Math.min(RAMP.length - 1, Math.floor((v / (max || 1)) * RAMP.length));
-                return { value: v, itemStyle: { color: RAMP[idx] } };
+            data: vals.map(function (v, i) {
+                var color = colorMode(config) === 'category'
+                    ? identityColor(cats[i], i)
+                    : magnitudeBand(v).color;
+                return { value: v, itemStyle: { color: color } };
             }),
         }],
     };
@@ -1287,6 +1372,9 @@ export default SplunkVisualizationBase.extend({
         try {
             option = builder(rows, theme(), {
                 valueLabel: this._opt(config, 'valueLabel'),
+                // How this panel wants its values coloured. Absolute magnitude
+                // unless it names something better. See colorMode.
+                colorScale: this._opt(config, 'colorScale'),
                 // Lets a panel relabel the chain's columns. See chainSchema.
                 chainKinds: this._opt(config, 'chainKinds'),
                 // The panel's pixel height, so a builder can decide what fits
