@@ -66,6 +66,7 @@ COLLECTIONS = {
     "kevmap": "riskability_kevmap",
     "capec": "riskability_capec",
     "mitigations": "riskability_mitigations",
+    "winpatch": "riskability_winpatch",
 }
 
 MEMBER_FOR = {
@@ -78,6 +79,7 @@ MEMBER_FOR = {
     "kevmap": feedlib.KEVMAP_MEMBER,
     "capec": feedlib.CAPEC_MEMBER,
     "mitigations": feedlib.MITIGATIONS_MEMBER,
+    "winpatch": feedlib.WINPATCH_MEMBER,
 }
 
 # Per-ecosystem package counts, derived while streaming ranges rather than

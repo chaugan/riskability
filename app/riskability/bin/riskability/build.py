@@ -18,6 +18,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import re
 import os
 import shutil
 import tempfile
@@ -38,6 +39,15 @@ OSV_BASE = "https://storage.googleapis.com/osv-vulnerabilities"
 # to draw a matrix rather than a list.
 ATTACK_STIX_URL = ("https://raw.githubusercontent.com/mitre-attack/attack-stix-data"
                    "/master/enterprise-attack/enterprise-attack.json")
+
+# Microsoft Security Update Guide: one CVRF document a month, naming the KB
+# for each product and the exact build it produces. Public, no key.
+MSRC_UPDATES_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
+MSRC_CVRF_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/{id}"
+# Monthly rollups are the documents that carry FixedBuild; the index also
+# lists older non Windows release notes under other id shapes.
+_MONTHLY_RE = re.compile(r"^\d{4}-[A-Z][a-z]{2}$")
+
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 # The bulk JSON feeds that used to live under nvd.nist.gov/feeds are retired
@@ -98,8 +108,11 @@ def osv_url(ecosystem: str) -> str:
     return f"{OSV_BASE}/{urllib.parse.quote(ecosystem)}/all.zip"
 
 
-def _open(url: str, timeout: int = 300):
+def _open(url: str, timeout: int = 300, accept: str = ""):
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    # Microsoft's update guide content negotiates and defaults to CVRF XML.
+    if accept:
+        req.add_header("Accept", accept)
     return urllib.request.urlopen(req, timeout=timeout)
 
 
@@ -158,6 +171,7 @@ def online() -> Dict[str, bool]:
             year=feedlib.NVD_LATEST_YEAR),
         "nvd api": feedlib.NVD_API_URL + "?resultsPerPage=1",
         "mitre": CWE_URL,
+        "windows_updates": MSRC_UPDATES_URL,
         "kev": KEV_URL,
         "epss": EPSS_URL,
     }
@@ -225,6 +239,7 @@ def build_bundle(
     nvd: str = "",
     nvd_source: str = "auto",
     mitre: bool = False,
+    windows_updates: int = 0,
     cve_list: bool = False,
     cve_list_file: str = "",
     kev: bool = False,
@@ -313,6 +328,40 @@ def build_bundle(
         sources.append({"name": "nvd", "url": feedlib.NVD_API_URL,
                         "fetched_at": int(time.time()), "records": n_cve,
                         "licence": "NIST/NVD; US Government work. Not endorsed by NVD."})
+
+    if windows_updates:
+        months = max(1, min(int(windows_updates), 120))
+        say(f"fetching Windows update history, last {months} months")
+        try:
+            with _open(MSRC_UPDATES_URL, accept="application/json") as r:
+                index = json.loads(r.read().decode("utf-8"))
+            ids = []
+            for entry in index.get("value") or []:
+                ident = str(entry.get("ID") or "")
+                if _MONTHLY_RE.match(ident):
+                    ids.append((entry.get("InitialReleaseDate") or "", ident))
+            ids.sort()
+            ids = ids[-months:]
+            win_rows = 0
+            for released, ident in ids:
+                try:
+                    with _open(MSRC_CVRF_URL.format(id=ident),
+                               accept="application/json") as r:
+                        rows = feedlib.parse_msrc_cvrf(r.read().decode("utf-8"),
+                                                       released=released[:10])
+                except Exception as exc:
+                    # One unreadable month is a gap in the history, not a dead
+                    # source. Name the month rather than losing the lot.
+                    failed(f"Windows update history for {ident}", exc)
+                    continue
+                for row in rows:
+                    writer.add_winpatch(row)
+                win_rows += len(rows)
+            say(f"  {win_rows} Windows update rows over {len(ids)} months")
+        except Exception as exc:
+            failed("Windows update history", exc)
+            say("  WARNING: no Windows build data. The Windows patch panel will "
+                "say so rather than implying every Windows host is current.")
 
     if mitre:
         say("fetching MITRE CWE and CAPEC catalogues")
@@ -482,7 +531,10 @@ def build_bundle(
     # working feed with nothing -- on the one host that cannot simply rebuild
     # it. Fail here instead, and leave no file to carry.
     counts = manifest.get("counts", {})
-    if not any(counts.get(k, 0) for k in ("advisories", "ranges", "attack")):
+    # winpatch counts because a Windows build check is a complete answer on its
+    # own: a bundle carrying only that is a small, useful feed rather than the
+    # empty one this guard exists to refuse.
+    if not any(counts.get(k, 0) for k in ("advisories", "ranges", "attack", "winpatch")):
         try:
             os.unlink(out_path)
         except OSError:

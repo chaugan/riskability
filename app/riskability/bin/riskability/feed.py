@@ -76,11 +76,24 @@ KEVMAP_MEMBER = "kevmap.jsonl"
 # something the operator can act on.
 CAPEC_MEMBER = "capec.jsonl"
 MITIGATIONS_MEMBER = "mitigations.jsonl"
+
+# What the latest Windows cumulative update is, per servicing branch, from
+# Microsoft's own Security Update Guide. Optional like the others.
+#
+# This is the only member that answers a question about the OS rather than
+# about a package. Windows software carries no package identity, so every
+# Windows finding this app produces from a display name is low confidence by
+# construction, and that is the honest floor for that method. A build number is
+# different: the host reports the cumulative update it is running, Microsoft
+# states which build each KB takes you to, and comparing two integers is not an
+# inference. Absent, the Windows patch panel says it has no data rather than
+# implying every Windows host is current.
+WINPATCH_MEMBER = "winpatch.jsonl"
 MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
            ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
-           CAPEC_MEMBER, MITIGATIONS_MEMBER)
+           CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER)
 OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
-                    CAPEC_MEMBER, MITIGATIONS_MEMBER)
+                    CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -901,7 +914,8 @@ class BundleWriter:
         os.makedirs(self._staging, exist_ok=True)
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER,
+                     WINPATCH_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -932,6 +946,9 @@ class BundleWriter:
     def add_mitigation(self, rec: dict) -> None:
         self.write(MITIGATIONS_MEMBER, rec)
 
+    def add_winpatch(self, rec: dict) -> None:
+        self.write(WINPATCH_MEMBER, rec)
+
     def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
@@ -939,7 +956,8 @@ class BundleWriter:
         digests = {}
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
-                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER):
+                     TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER,
+                     WINPATCH_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -1532,6 +1550,143 @@ def parse_capec_detail(csv_text: str) -> List[dict]:
             "first_step": _first_exec_step(row.get("Execution Flow") or "")[:400],
         })
     return out
+
+
+_MSRC_BUILD_RE = re.compile(r"^10\.0\.(\d+)\.(\d+)$")
+
+
+def parse_msrc_cvrf(raw: str, released: str = "") -> List[dict]:
+    """One month of Microsoft's Security Update Guide -> one row per (KB, branch).
+
+    The CVRF document names, for every vulnerability Microsoft fixed that month,
+    which products it affects and which update fixes it. The remediation carries
+    the piece nothing else has: FixedBuild, the exact build number the update
+    takes the machine to. That turns "is this host patched" from an inference
+    about display names into a comparison of two integers.
+
+    Rows are keyed on (KB, branch) rather than on KB alone, because one KB
+    routinely serves two branches. Windows 11 25H2 ships as an enablement
+    package over 24H2, so KB5121003 fixes both 10.0.26100.9168 and
+    10.0.26200.9168: same update, same UBR, two builds. Keying on the KB alone
+    would make those one row and lose the branch the host is actually on.
+
+    Only base operating system products are kept. The document also carries
+    .NET, Office, Azure and much else, and those are matched by the ordinary
+    package path; a build number means nothing for them.
+    """
+    doc = json.loads(raw)
+    names = {}
+    for p in (doc.get("ProductTree") or {}).get("FullProductName") or []:
+        pid, val = p.get("ProductID"), (p.get("Value") or "").strip()
+        if pid and val:
+            names[pid] = val
+
+    rows = {}
+    for vuln in doc.get("Vulnerability") or []:
+        cve = (vuln.get("CVE") or "").strip()
+        for rem in vuln.get("Remediations") or []:
+            kb = ((rem.get("Description") or {}).get("Value") or "").strip()
+            fixed = (rem.get("FixedBuild") or "").strip()
+            if not kb.isdigit() or not fixed:
+                continue
+            m = _MSRC_BUILD_RE.match(fixed)
+            if not m:
+                continue
+            branch, ubr = m.group(1), int(m.group(2))
+            # Client and server share a build number and do not share a UBR
+            # range: Windows 11 24H2 and Windows Server 2025 are both 26100,
+            # but the client sits near 9,000 and the server near 33,000.
+            # Keyed on branch alone, a fully patched laptop would measure
+            # twenty four thousand updates behind a server it is not.
+            editions = {_edition(names.get(pid, "")) for pid in rem.get("ProductID") or []
+                        if _is_base_os(names.get(pid, ""))}
+            for edition in (editions or set()):
+                key = (kb, branch, edition)
+                row = rows.get(key)
+                if row is None:
+                    row = rows[key] = {
+                        "kb": "KB" + kb,
+                        "branch": branch,
+                        "edition": edition,
+                        "ubr": ubr,
+                        "fixed_build": fixed,
+                        "released": released,
+                        "subtype": (rem.get("SubType") or "").strip(),
+                        "supersedes": _supersedes(rem.get("Supercedence")),
+                        "products": set(),
+                        "cves": set(),
+                    }
+                # A KB can appear on several vulnerabilities with the same
+                # build; keep the highest UBR in case the document disagrees
+                # with itself.
+                if ubr > row["ubr"]:
+                    row["ubr"], row["fixed_build"] = ubr, fixed
+                for pid in rem.get("ProductID") or []:
+                    val = names.get(pid)
+                    if val and _is_base_os(val) and _edition(val) == edition:
+                        row["products"].add(val)
+                if cve:
+                    row["cves"].add(cve)
+
+    out = []
+    for row in rows.values():
+        if not row["products"]:
+            continue
+        cves = sorted(row["cves"])
+        out.append({
+            "kb": row["kb"],
+            "branch": row["branch"],
+            "edition": row["edition"],
+            "ubr": row["ubr"],
+            "fixed_build": row["fixed_build"],
+            "released": row["released"],
+            "subtype": row["subtype"],
+            "supersedes": row["supersedes"],
+            "product": _product_label(row["products"]),
+            "products_text": ";".join(sorted(row["products"])),
+            "n_products": len(row["products"]),
+            "cves_text": ",".join(cves),
+            "n_cves": len(cves),
+        })
+    out.sort(key=lambda r: (r["branch"], r["edition"], -r["ubr"]))
+    return out
+
+
+def _supersedes(value) -> str:
+    """Supercedence is a KB number, sometimes bare, sometimes already prefixed."""
+    v = str(value or "").strip()
+    if not v:
+        return ""
+    return v if v.upper().startswith("KB") else "KB" + v
+
+
+# "Windows 11 Version 24H2 for x64-based Systems", "Windows Server 2025".
+# Deliberately anchored: "Microsoft .NET Framework 4.8.1 on Windows 11 ..." is
+# a .NET product that happens to name Windows, and it has no OS build of its own.
+_BASE_OS_RE = re.compile(
+    r"^Windows (?:1[01](?: Version \S+)?|Server(?: \d{4}| Version \S+)?)\b",
+    re.IGNORECASE)
+
+
+def _is_base_os(value: str) -> bool:
+    return bool(_BASE_OS_RE.match(value.strip()))
+
+
+# "Windows 11 Version 24H2 for x64-based Systems" and its ARM64 twin are one
+# product as far as a build number is concerned, and the host reports its own
+# architecture anyway. Taking the first alphabetically labelled every 24H2 host
+# ARM64, which is wrong on almost all of them.
+_ARCH_SUFFIX_RE = re.compile(r"\s+for\s+\S+-based\s+Systems\s*$", re.IGNORECASE)
+
+
+def _product_label(products) -> str:
+    trimmed = {_ARCH_SUFFIX_RE.sub("", p).strip() for p in products}
+    return sorted(trimmed)[0] if trimmed else ""
+
+
+def _edition(value: str) -> str:
+    """Server or client, which is what decides the UBR range for a build."""
+    return "server" if value.strip().lower().startswith("windows server") else "client"
 
 
 def parse_attack_mitigations(raw: str) -> List[dict]:

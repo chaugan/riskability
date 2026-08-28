@@ -690,6 +690,16 @@
         mitreLab.appendChild(document.createTextNode(" MITRE ATT&CK mapping"));
         extras.appendChild(mitreLab);
 
+        // On by default and cheap: about 20 rows a month, a megabyte for two
+        // years. It is the only Windows assessment in the app that compares
+        // numbers rather than inferring from a display name.
+        var winCb = el("input"); winCb.type = "checkbox"; winCb.checked = true;
+        var winLab = el("label", "rk-pick");
+        winLab.appendChild(winCb);
+        winLab.appendChild(document.createTextNode(
+            " Windows update history, for build level (small)"));
+        extras.appendChild(winLab);
+
         var overlayCb = el("input"); overlayCb.type = "checkbox"; overlayCb.checked = true;
         var overlayLab = el("label", "rk-pick");
         overlayLab.appendChild(overlayCb);
@@ -723,6 +733,7 @@
                 ecosystems: ecosystems,
                 nvd: nvdCb.checked ? "2015-2026" : "",
                 mitre: mitreCb.checked,
+                windows_updates: winCb.checked ? 24 : 0,
                 kev: overlayCb.checked,
                 epss: overlayCb.checked,
                 cve_list: cveCb.checked

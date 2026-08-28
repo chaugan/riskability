@@ -32,6 +32,7 @@ import argparse
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -79,6 +80,13 @@ KEV_ATTACK_URL = ("https://raw.githubusercontent.com/center-for-threat-informed-
                   "/mappings-explorer/main/mappings/kev/attack-16.1/kev-07.28.2025"
                   "/enterprise/kev-07.28.2025_attack-16.1-enterprise.json")
 
+# Microsoft's Security Update Guide, one CVRF document per month. Public, no
+# key. Each remediation names the KB, the products it applies to, and FixedBuild:
+# the exact build the update takes the machine to. That last field is why this
+# source is worth carrying across an air gap.
+MSRC_UPDATES_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/updates"
+MSRC_CVRF_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/{id}"
+
 # Ecosystems worth offering, with the swinv package types they answer for.
 KNOWN_ECOSYSTEMS = {
     "Debian":      "deb packages on Debian hosts",
@@ -100,8 +108,15 @@ KNOWN_ECOSYSTEMS = {
 }
 
 
-def _open(url: str, timeout: int = 300):
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+def _open(url: str, timeout: int = 300, accept: str = ""):
+    headers = {"User-Agent": USER_AGENT}
+    # Microsoft's Security Update Guide content negotiates, and its default is
+    # CVRF XML. Without an explicit Accept it hands back a document that parses
+    # as neither JSON nor an error, so the failure reads as a corrupt feed
+    # rather than as the wrong format having been asked for.
+    if accept:
+        headers["Accept"] = accept
+    req = urllib.request.Request(url, headers=headers)
     return urllib.request.urlopen(req, timeout=timeout)
 
 
@@ -404,6 +419,64 @@ def cmd_build(args) -> int:
             print(f"  ERROR {exc} - continuing without MITRE mapping", file=sys.stderr)
             warnings.append(f"MITRE CWE and CAPEC mapping not fetched: {exc}")
 
+    # Microsoft's own statement of what the current Windows build is.
+    #
+    # Separate from every other source here, and deliberately so: the rest of
+    # this feed says which package versions are affected, and Windows software
+    # carries no package identity, so a Windows finding is always an inference
+    # from a display name. This is not an inference. The host reports the
+    # cumulative update it is running, Microsoft states the build each update
+    # produces, and the comparison is arithmetic.
+    if args.windows_updates:
+        try:
+            months = int(str(args.windows_updates).strip())
+        except ValueError:
+            months = 24
+        months = max(1, min(months, 120))
+        print(f"fetching Windows updates  last {months} months", file=sys.stderr)
+        try:
+            with _open(MSRC_UPDATES_URL, accept="application/json") as r:
+                index = json.loads(r.read().decode("utf-8"))
+            # The index is every document ever published, oldest first, and it
+            # includes non Windows release notes. Take the newest MONTHS whose
+            # id looks like a monthly rollup, since those are the ones that
+            # carry FixedBuild.
+            ids = []
+            for entry in index.get("value") or []:
+                ident = str(entry.get("ID") or "")
+                if re.match(r"^\d{4}-[A-Z][a-z]{2}$", ident):
+                    ids.append((entry.get("InitialReleaseDate") or "", ident))
+            ids.sort()
+            ids = ids[-months:]
+            win_rows = 0
+            for released, ident in ids:
+                url = MSRC_CVRF_URL.format(id=ident)
+                try:
+                    with _open(url, accept="application/json") as r:
+                        rows = feedlib.parse_msrc_cvrf(r.read().decode("utf-8"),
+                                                       released=released[:10])
+                except Exception as exc:
+                    # One unreadable month is a gap in the history, not a
+                    # failure of the source. Say which month and carry on.
+                    print(f"  ERROR {ident}: {exc} - skipping that month",
+                          file=sys.stderr)
+                    warnings.append(f"Windows update history for {ident} not fetched: {exc}")
+                    continue
+                for row in rows:
+                    writer.add_winpatch(row)
+                win_rows += len(rows)
+                print(f"  {ident}  {len(rows)} branch updates", file=sys.stderr)
+            print(f"  {win_rows} Windows update rows over {len(ids)} months",
+                  file=sys.stderr)
+            sources.append({"name": "microsoft-security-update-guide",
+                            "url": MSRC_UPDATES_URL,
+                            "fetched_at": int(time.time()), "records": win_rows,
+                            "licence": "Microsoft Security Update Guide; see Microsoft terms"})
+        except Exception as exc:
+            print(f"  ERROR {exc} - continuing without Windows update data",
+                  file=sys.stderr)
+            warnings.append(f"Windows update history not fetched: {exc}")
+
     # Overlays enrich advisories that already exist; they never create findings.
     kev: Dict[str, dict] = {}
     if args.kev_file:
@@ -551,6 +624,13 @@ def main(argv=None) -> int:
                         "Needed for Windows and other unmanaged software.")
     b.add_argument("--mitre", action="store_true",
                    help="include the MITRE CWE->CAPEC->ATT&CK mapping")
+    b.add_argument("--windows-updates", metavar="MONTHS", nargs="?", const="24",
+                   default="",
+                   help="include Microsoft's Security Update Guide: which cumulative "
+                        "update is current for each Windows servicing branch, and the "
+                        "CVEs each one fixes. MONTHS is how far back to fetch, default "
+                        "24. This is the only source that can say whether a Windows "
+                        "host is patched rather than guess from a display name.")
     b.add_argument("--cve-list", action="store_true",
                    help="include the CVE Program catalogue: descriptions and product "
                         "names for the CVE encyclopaedia. About 600 MB to download and "

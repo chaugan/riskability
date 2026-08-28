@@ -226,4 +226,51 @@
       </html>
     </panel>
   </row>
+
+  <!-- The one Windows assessment that is not an inference. Every other Windows
+       finding in this app is reached through a display name and a generated
+       CPE, which is why they are all low confidence; this compares two build
+       numbers Microsoft published. It belongs on the page that admits the
+       weakness, immediately after it. -->
+  <row>
+    <panel>
+      <title>Windows patch level, from Microsoft's own build numbers</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_winstate_lookup
+| eval behind = case(isnull(latest_ubr), "not in the feed",
+                     behind_ubr &lt;= 0, "up to date",
+                     1=1, tostring(behind_ubr) . " builds behind")
+| eval reported = strftime(scanned_at, "%Y-%m-%d %H:%M")
+| sort 5000 - behind_ubr, hostname
+| table hostname, product, current_build, latest_build, latest_kb, latest_released,
+        behind, n_installed_kbs, reported
+| rename hostname AS "Host", product AS "Windows release",
+         current_build AS "Build it is on", latest_build AS "Build the feed knows",
+         latest_kb AS "That update", latest_released AS "Released",
+         behind AS "Distance", n_installed_kbs AS "Standalone KBs",
+         reported AS "Scanned at"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No Windows host reports a cumulative update. Either the fleet is all Linux, or the collector predates swinv 0.9.0, or the bundle was built without the Windows update source. None of those means the Windows hosts are patched.</option>
+        <option name="height">420</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>This one is arithmetic, not inference.</b>
+          <span>
+            Everywhere else on this page Windows is the weak case: the software carries no
+            package identity, so the app matches a display name against a generated CPE and
+            reports every result at low confidence, honestly. A build number is different.
+            The host states the cumulative update it is running, Microsoft states the build
+            each update produces, and the two are compared. <b>Build the feed knows</b> is the
+            newest update in the bundle you imported, so this measures distance from your feed
+            rather than from today: a stale feed makes a stale fleet look current, and the feed
+            age is at the top of every page for that reason. A host missing from this table
+            reported no cumulative update at all, which is not the same as being up to date.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
 </form>

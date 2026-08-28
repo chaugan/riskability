@@ -354,7 +354,15 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         # rather than the encyclopaedia's source being reachable only through
         # the offline builder.
         cve_list = bool(body.get("cve_list"))
-        if not (ecosystems or nvd or mitre or kev or epss or cve_list):
+        # Months of Microsoft update history. Bounded here rather than trusted:
+        # this arrives from a browser, and each month is a separate download.
+        try:
+            windows_updates = int(body.get("windows_updates") or 0)
+        except (TypeError, ValueError):
+            windows_updates = 0
+        windows_updates = max(0, min(windows_updates, 120))
+        if not (ecosystems or nvd or mitre or kev or epss or cve_list
+                or windows_updates):
             raise ValueError("select at least one source to fetch")
 
         self._queue(service, {
@@ -365,6 +373,7 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             "kev": kev,
             "epss": epss,
             "cve_list": cve_list,
+            "windows_updates": windows_updates,
             "requested_by": user,
             "requested_at": int(time.time()),
             "state": "pending",

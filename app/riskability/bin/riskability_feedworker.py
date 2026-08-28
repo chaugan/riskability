@@ -269,6 +269,7 @@ class FeedWorker(Script):
                     kev=bool(request.get("kev")),
                     epss=bool(request.get("epss")),
                     cve_list=bool(request.get("cve_list")),
+                    windows_updates=int(request.get("windows_updates") or 0),
                     version=f"online-{stamp}",
                     log=say,
                 )
