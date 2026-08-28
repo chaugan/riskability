@@ -194,6 +194,7 @@
         rk_num &lt; 701, swinv_version . " (below the 0.7.1 floor)",
         rk_num &lt; 800, swinv_version . " (no configuration surface)",
         rk_num &lt; 900, swinv_version . " (no Windows library loads or Windows autoruns)",
+        rk_num &lt; 902, swinv_version . " (no Windows build number)",
         1=1, swinv_version)
   | sort 5000 - shortfall
   | table hostname, verdict, swinv_version, said_components, arrived, pct, said_link,
@@ -243,10 +244,11 @@
                      1=1, tostring(behind_ubr) . " builds behind")
 | eval reported = strftime(scanned_at, "%Y-%m-%d %H:%M")
 | sort 5000 - behind_ubr, hostname
-| table hostname, product, current_build, latest_build, latest_kb, latest_released,
-        behind, n_installed_kbs, reported
+| table hostname, product, current_build, build_source, latest_build, latest_kb,
+        latest_released, behind, n_installed_kbs, reported
 | rename hostname AS "Host", product AS "Windows release",
-         current_build AS "Build it is on", latest_build AS "Build the feed knows",
+         current_build AS "Build it is on", build_source AS "Where the build came from",
+         latest_build AS "Build the feed knows",
          latest_kb AS "That update", latest_released AS "Released",
          behind AS "Distance", n_installed_kbs AS "Standalone KBs",
          reported AS "Scanned at"</query>
@@ -268,6 +270,12 @@
             rather than from today: a stale feed makes a stale fleet look current, and the feed
             age is at the top of every page for that reason. A host missing from this table
             reported no cumulative update at all, which is not the same as being up to date.
+            <b>Where the build came from</b> matters more than it looks. swinv 0.9.2 reports
+            the running build directly; before that it can only be derived from the cumulative
+            update component, and that component names the servicing branch rather than the
+            build. A Windows 11 25H2 machine on 10.0.26200.9168 carries a component reading
+            26100.9168, because 25H2 ships as an enablement package over the 24H2 base, so a
+            derived row can name the wrong release while still getting the update right.
           </span>
         </div>
       </html>
