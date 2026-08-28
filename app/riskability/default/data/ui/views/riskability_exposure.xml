@@ -513,7 +513,9 @@
             having been measured less. "Libraries no package owns" counts files that were
             loaded and that nothing installed provides: vendored or hand-copied
             libraries, which no package feed can ever match and which no version
-            comparison will ever flag.
+            comparison will ever flag. Libraries the operating system itself ships are
+            not counted, because a Windows host loads hundreds of them and
+            <code>KERNEL32.dll</code> is not the unowned code anybody is looking for.
           </span>
         </div>
       </html>

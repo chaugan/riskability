@@ -192,6 +192,7 @@
         isnull(rk_num), swinv_version,
         rk_num &lt; 701, swinv_version . " (below the 0.7.1 floor)",
         rk_num &lt; 800, swinv_version . " (no configuration surface)",
+        rk_num &lt; 900, swinv_version . " (no Windows library loads or Windows autoruns)",
         1=1, swinv_version)
   | sort 5000 - shortfall
   | table hostname, verdict, swinv_version, said_components, arrived, pct, said_link,

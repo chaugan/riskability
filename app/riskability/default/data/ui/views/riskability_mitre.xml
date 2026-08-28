@@ -219,7 +219,7 @@
             <query>| inputlookup riskability_config_lookup
 | search hostname=$host_tok|s$
 | stats count AS mechanisms, sum(n_evidence) AS weaknesses, dc(hostname) AS hosts BY attack, kind
-| eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", 1=1, kind)
+| eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", kind="scheduled-task", "Scheduled Tasks", kind="autorun", "Run key and Startup autoruns", 1=1, kind)
 | eval series = if(weaknesses > 0, "flagged by swinv", "surface, no weakness flagged")
 | sort 50000 - mechanisms
 | table label, series, mechanisms</query>
@@ -236,8 +236,10 @@
             <b>Measured configuration, counted in mechanisms, not a vulnerability finding.</b>
             <span>
               Each bar is a persistence or privilege mechanism the collector read directly from
-              the host, and the ATT&amp;CK technique it is the surface for. These four techniques
-              are exactly the kind a CVE feed can never reach, which is why they appear nowhere in
+              the host, and the ATT&amp;CK technique it is the surface for. Six mechanisms are
+              collected: cron, systemd timers, systemd services and SUID binaries on Linux,
+              Scheduled Tasks and Run key autoruns on Windows. The techniques behind them are
+              exactly the kind a CVE feed can never reach, which is why they appear nowhere in
               the matrix below. A mechanism is not itself a weakness: a root cron job whose script
               anyone can write, or a SUID binary no package owns, is the finding, and swinv makes
               that judgment because it knows the context an outside join does not. The weaknesses
@@ -261,15 +263,18 @@
           <search>
             <query>| inputlookup riskability_config_lookup
 | search hostname=$host_tok|s$
-| eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", 1=1, kind)
+| eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", kind="scheduled-task", "Scheduled Tasks", kind="autorun", "Run key and Startup autoruns", 1=1, kind)
 | search label=$cfg_label_tok|s$
 | eval owner = if(isnull(purl) OR purl="", "no package owns this", replace(replace(purl, "^pkg:[^/]+/", ""), "\?.*$", ""))
 | eval flagged = if(tonumber(n_evidence) &gt; 0, n_evidence, "none")
+| eval writable = case(world_writable="true" OR world_writable=1, "anyone can write it",
+                       isnull(world_writable) OR world_writable="", "",
+                       1=1, "no")
 | sort 50000 hostname, name
-| table hostname, name, path, user, schedule, owner, mode, flagged
+| table hostname, name, path, user, schedule, owner, mode, writable, flagged
 | rename hostname AS "Host", name AS "Name", path AS "Path", user AS "Runs as",
          schedule AS "Schedule", owner AS "Owning package", mode AS "Mode",
-         flagged AS "Weaknesses flagged"</query>
+         writable AS "World writable", flagged AS "Weaknesses flagged"</query>
           </search>
           <option name="riskability.riskability_grid.wrap">yes</option>
           <option name="riskability.riskability_grid.drilldown">disabled</option>
@@ -284,7 +289,10 @@
               this</b> is the interesting case rather than the alarming one: it is often a
               container or a snap, which is why the collector's own weakness count, not this
               column, decides what is a finding. <b>Weaknesses flagged</b> is that count, and
-              none is the ordinary state of a healthy host.
+              none is the ordinary state of a healthy host. <b>World writable</b> is the one that
+              turns a mechanism into a route on its own: a scheduled job running as root whose
+              script anyone on the box can rewrite is that job running as anyone. It is blank
+              where the collector does not report it, which on Windows is everywhere.
             </span>
           </div>
         </html>
