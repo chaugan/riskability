@@ -157,6 +157,22 @@ def probe(url: str) -> Dict[str, str]:
                 f"corporate or home network.")}
         if exc.code == 404:
             return {"ok": False, "detail": f"HTTP 404: the feed URL has moved."}
+        # 405 and 501 are the server saying it does not do HEAD, not that it is
+        # unreachable. Microsoft's update index answers HEAD with 405 and GET
+        # with 200, so probing by HEAD alone reported the Windows build source
+        # as unreachable on a host that could fetch it perfectly well. Ask the
+        # way the real fetch asks, and read only enough to prove it answered.
+        if exc.code in (405, 501):
+            try:
+                get = urllib.request.Request(url, method="GET",
+                                             headers={"User-Agent": USER_AGENT})
+                with urllib.request.urlopen(get, timeout=30) as r:
+                    r.read(1)
+                    return {"ok": True, "detail": f"HTTP {r.status}"}
+            except urllib.error.HTTPError as get_exc:
+                return {"ok": False, "detail": f"HTTP {get_exc.code}"}
+            except Exception as get_exc:
+                return {"ok": False, "detail": str(get_exc)}
         return {"ok": False, "detail": f"HTTP {exc.code}"}
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", exc)
@@ -179,10 +195,10 @@ def online() -> Dict[str, bool]:
             year=feedlib.NVD_LATEST_YEAR),
         "nvd api": feedlib.NVD_API_URL + "?resultsPerPage=1",
         "mitre": CWE_URL,
-        "windows_updates": MSRC_UPDATES_URL,
+        "windows updates": MSRC_UPDATES_URL,
         "kev": KEV_URL,
         "epss": EPSS_URL,
-        "lifecycle": EOL_FULL_URL,
+        "support lifecycles": EOL_FULL_URL,
     }
     return {name: probe(url) for name, url in checks.items()}
 
