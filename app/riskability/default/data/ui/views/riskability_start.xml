@@ -243,24 +243,36 @@
     <panel>
       <title>Where the hour is</title>
       <!-- Almost every schedule in this app is hourly, so one turn of the dial
-           is one full cycle of the pipeline. Drilldown is switched off on
-           purpose: there is nothing useful to drill to from a scheduled job,
-           and left on, Splunk supplies its own default and a click opens a raw
-           SPL search. -->
+           is one full cycle of the pipeline.
+
+           How each job last finished comes from the search jobs endpoint rather
+           than from the scheduler's log in _internal. Both describe the same
+           runs, but reading an index needs a capability a restricted role
+           often does not have, and this panel already has to read
+           saved/searches to know the schedules at all. One permission surface
+           instead of two, and every one of the app's schedules is covered:
+           Splunk keeps the artefacts long enough that all of them are visible.
+
+           Drilldown is switched off on purpose: there is nothing useful to
+           drill to from a scheduled job, and left on, Splunk supplies its own
+           default and a click opens a raw SPL search. -->
       <viz type="riskability.riskability_chart">
         <search>
           <query>| rest /servicesNS/nobody/riskability/saved/searches splunk_server=local
 | search eai:acl.app=riskability cron_schedule=* is_scheduled=1
 | rex field=cron_schedule "^(?&lt;sched_min&gt;\d+)\s+(?&lt;sched_hour&gt;\S+)"
 | where sched_hour=="*"
-| eval savedsearch_name = title
-| join type=left savedsearch_name
-    [ search index=_internal sourcetype=scheduler app=riskability status=* earliest=-3h latest=now
-    | stats latest(status) AS run_status latest(run_time) AS run_secs BY savedsearch_name ]
+| eval job_label = title
+| join type=left job_label
+    [| rest /services/search/jobs splunk_server=local
+     | search label="Riskability*"
+     | eval job_label = label, pub = strptime(published, "%Y-%m-%dT%H:%M:%S.%3N%z")
+     | sort 0 - pub
+     | stats first(isFailed) AS failed, first(runDuration) AS secs BY job_label]
 | eval label = replace(title, "^Riskability - ", "")
 | eval minute = tonumber(sched_min)
-| eval state = coalesce(run_status, "unknown")
-| eval seconds = round(tonumber(coalesce(run_secs, 0)), 2)
+| eval state = case(isnull(failed), "unknown", tonumber(failed) = 1, "failed", 1=1, "success")
+| eval seconds = round(tonumber(coalesce(secs, 0)), 2)
 | table label, minute, state, seconds
 | sort minute</query>
           <earliest>-3h</earliest>
@@ -270,7 +282,7 @@
         </search>
         <option name="riskability.riskability_chart.chartType">schedule</option>
         <option name="riskability.riskability_chart.drilldown">disabled</option>
-        <option name="riskability.riskability_chart.emptyText">No scheduled searches were readable. This panel reads the app's own schedules, so an account without access to them sees nothing here rather than an empty pipeline.</option>
+        <option name="riskability.riskability_chart.emptyText">No scheduled searches were readable. This panel reads the app's own schedules through Splunk's REST endpoints, so an account that cannot see them gets nothing here rather than a picture of an idle pipeline.</option>
         <option name="height">330</option>
       </viz>
       <html depends="$offhour_line$">
