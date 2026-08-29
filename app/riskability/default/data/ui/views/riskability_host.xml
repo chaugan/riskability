@@ -1,0 +1,563 @@
+<form version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+  <label>Host detail</label>
+  <description>Everything this app knows about one machine: what has been measured on it, what has not, and what to do first.</description>
+
+  <fieldset submitButton="false" autoRun="true">
+    <!-- No "All hosts" choice and no wildcard default. A host page showing every
+         host is the Hosts page again, and every panel below reads a KV
+         collection with hostname pushed down: without a single host the config
+         collection alone is millions of rows at fleet scale. -->
+    <input type="dropdown" token="hostname" searchWhenChanged="true">
+      <label>Host</label>
+      <fieldForLabel>hostname</fieldForLabel>
+      <fieldForValue>hostname</fieldForValue>
+      <search>
+        <query>| `riskability_hosts_seen` | sort 50000 hostname | fields hostname</query>
+        <earliest>0</earliest>
+        <latest>now</latest>
+      </search>
+    </input>
+    <!-- Defaults to high, as Exposure does. With "*" this page counts
+         informational findings and reports a larger number than the Hosts page
+         for the same machine, with nothing on screen explaining the difference. -->
+    <input type="dropdown" token="conf_tok" searchWhenChanged="true">
+      <label>Confidence</label>
+      <choice value="high">High only</choice>
+      <choice value="*">All, including informational</choice>
+      <default>high</default>
+      <initialValue>high</initialValue>
+    </input>
+  </fieldset>
+
+  <!-- The findings table shows everything until a matrix cell narrows it.
+       Without this it renders "waiting for input" on first load, which reads as
+       a broken panel rather than as an unfiltered one. Splunk 9 has no hidden
+       input, so these are set in init rather than as <input type="hidden">,
+       which would put two editable SPL boxes in the filter bar. -->
+  <init>
+    <set token="cell_exploit">*</set>
+    <set token="cell_reach">*</set>
+    <set token="cell_note"></set>
+  </init>
+
+  <!-- Sets host_late, which gates the out-of-contact banner. Its own search
+       because a <done> handler does not fire on a shared base search, and a
+       banner driven by a token nothing sets is a banner that never appears. -->
+  <search id="latecheck">
+    <query>| inputlookup riskability_hostcadence_lookup where hostname=$hostname|s$
+| eval late_flag = if(tonumber(learned) = 1 AND tonumber(late) = 1, "yes", "no")
+| fields late_flag</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.late_flag$ == &quot;yes&quot;">
+        <set token="host_late">1</set>
+      </condition>
+      <condition>
+        <unset token="host_late"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- One dispatch feeding the configuration chart and its table. The kind to
+       label map is the same case() the MITRE page uses; two copies would give
+       the sixteen mechanisms two names on two pages. -->
+  <search id="cfg_base">
+    <query>| inputlookup riskability_config_lookup where (hostname=$hostname|s$)
+| eval label = attack . " " . case(kind="cron", "cron jobs", kind="systemd-timer", "systemd timers", kind="systemd-service", "systemd services", kind="suid", "SUID and SGID binaries", kind="sudo-rule", "sudo rules", kind="ssh-authorized-key", "authorized SSH keys", kind="account", "login accounts", kind="kernel-module", "kernel modules", kind="preload", "linker preloads", kind="shell-init", "shell init scripts", kind="scheduled-task", "Scheduled Tasks", kind="autorun", "Run key and Startup autoruns", kind="service", "Windows services", kind="ifeo", "Image File Execution Options debuggers", kind="appinit", "AppInit DLLs", kind="av-exclusion", "Defender exclusions", 1=1, kind)</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+  </search>
+
+  <!-- P1. Identity, then the four clocks.
+       Deliberately not one Tabulator grid: a single row of facts wrapped in
+       column filters and a CSV button is 400px spent on one machine's name, and
+       it is how a page comes to look assembled rather than designed. A compact
+       Simple XML table has no 340px floor, and the clocks are the same <single>
+       tiles the landing page uses for the same three questions.
+       The base search is shared, so all five panels here cost one dispatch. -->
+  <search id="clocks">
+    <query>| inputlookup riskability_hoststate_lookup where _key=$hostname|s$
+| lookup riskability_scanstate_lookup hostname
+    OUTPUT swinv_version, os_build, os_display_version, os_edition, scan_profile, full_scan, scanned_at
+| lookup riskability_matchstate_lookup hostname OUTPUT matched_at, digest_changed_at
+| lookup riskability_hostcadence_lookup hostname OUTPUT n_gaps, median_gap, learned, late
+| appendcols
+    [| inputlookup riskability_feedstate_lookup where _key="current"
+     | eval feed_at = coalesce(imported_at, built_at) | fields feed_at]
+| eval os_line = coalesce(os, "unknown") . if(isnull(release) OR release="", "", " " . release)
+      . if(isnull(os_display_version) OR os_display_version="", "",
+           " (" . os_display_version . if(isnull(os_edition) OR os_edition="", "", ", " . os_edition) . ")")
+| eval machine_line = coalesce(arch, "?")
+      . if(isnull(os_build) OR os_build="", "", "  ·  " . os_build)
+      . if(isnull(machine_id) OR machine_id="", "", "  ·  " . machine_id)
+| eval rhythm = case(
+        isnull(learned) OR tonumber(learned) != 1,
+          "rhythm not learned, " . coalesce(tostring(n_gaps), "0") . " of 3 intervals seen",
+        tonumber(late) = 1,
+          "late against its own pattern, normally every " . tostring(round(median_gap/3600, 1)) . " h",
+        1=1, "on its own schedule, normally every " . tostring(round(median_gap/3600, 1)) . " h")
+| eval collector = coalesce(swinv_version, "version not reported")
+      . if(isnull(scan_profile) OR scan_profile="", ", scan profile not declared",
+           if(full_scan="True" OR full_scan="true", ", full scan", ", partial scan"))
+| eval h_contact = if(isnull(host_last_scan), null(), round((now() - host_last_scan)/3600, 1))
+| eval d_soft = case(isnotnull(digest_changed_at), round((now() - digest_changed_at)/86400, 1),
+                     isnotnull(scanned_at), round((now() - scanned_at)/86400, 1), 1=1, null())
+| eval h_match = if(isnull(matched_at), null(), round((now() - matched_at)/3600, 1))
+| eval d_feed = if(isnull(feed_at), null(), round((now() - feed_at)/86400, 1))
+| eval late_flag = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+  </search>
+
+  <!-- Only fires when the host is late against its own learned pattern, never
+       on a flat threshold. rk-bad so it survives the panel notes toggle: this
+       one is on screen because something is wrong now. -->
+  <row>
+    <panel>
+      <html depends="$host_late$">
+        <div class="rk-status rk-bad" style="margin:0 0 4px">
+          <b>This host has gone quiet against its own reporting pattern.</b>
+          <span>
+            Everything below is frozen at what it last reported and nothing is confirming it.
+            A host that stopped reporting looks exactly like a host with nothing new. This is
+            a collector, forwarder or machine fault, and it is not a statement about the risk
+            on this host.
+          </span>
+        </div>
+      </html>
+      <table>
+        <search base="clocks">
+          <query>| table os_line, machine_line, rhythm, collector
+| rename os_line AS "Operating system", machine_line AS "Architecture, build, machine id",
+         rhythm AS "Reporting rhythm", collector AS "Collector"</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+        <option name="rowNumbers">false</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Last contact</title>
+      <single>
+        <search base="clocks">
+          <query>| fields h_contact</query>
+        </search>
+        <option name="field">h_contact</option>
+        <option name="underLabel">hours since the collector last ran here, heartbeat included</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Software last changed</title>
+      <single>
+        <search base="clocks">
+          <query>| fields d_soft</query>
+        </search>
+        <option name="field">d_soft</option>
+        <option name="underLabel">days since this host's inventory digest changed</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Last compared to the feed</title>
+      <single>
+        <search base="clocks">
+          <query>| fields h_match</query>
+        </search>
+        <option name="field">h_match</option>
+        <option name="underLabel">hours since this host was matched</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Feed imported</title>
+      <single>
+        <search base="clocks">
+          <query>| fields d_feed</query>
+        </search>
+        <option name="field">d_feed</option>
+        <option name="underLabel">days since the vulnerability data was built</option>
+        <option name="drilldown">none</option>
+        <option name="numberPrecision">0.0</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Four different clocks, and nothing below is fresher than the oldest of them.</b>
+          <span>
+            <b>Last contact</b> is the collector running at all. <b>Software last changed</b>
+            is a different fact and usually much older: a host that contacted an hour ago and
+            last changed its software in June is not stale, it is confirmed unchanged. None of
+            these is coloured, because how old is too old depends on this host's own rhythm
+            rather than on a number that would have to be right for every machine at once.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P2. The assessment ledger, and the answer to "calculated health".
+       Not a score. A score's inputs here are missing at unrelated rates, so it
+       must either treat missing as zero, which is forbidden, or normalise over
+       what is present, which is monotone the wrong way: the fewer things we
+       managed to measure about a host, the better it scores. A collector too
+       old to report ports, config or a build number has three fewer ways to
+       lose points. So the ledger shows what a score would have been made of,
+       at the grain where each piece is either known or not.
+       Ranked worst first, and the order is published in the caption, because
+       an unstated cross-vocabulary ordering is a composite score with the
+       arithmetic hidden in a sort. -->
+  <row>
+    <panel>
+      <title>What has been measured on this host, and what has not</title>
+      <table>
+        <search>
+          <query>| inputlookup riskability_scanstate_lookup where hostname=$hostname|s$
+| appendcols [| inputlookup riskability_openstate_host_lookup where hostname=$hostname|s$ | fields findings, cves, rolled_at]
+| appendcols [| inputlookup riskability_exposure_hoststate_lookup where hostname=$hostname|s$ | fields listeners, assessed_at]
+| appendcols [| inputlookup riskability_links_hoststate_lookup where hostname=$hostname|s$ | fields link_rows, unowned_libraries]
+| appendcols [| inputlookup riskability_winstate_lookup where hostname=$hostname|s$ | fields status, behind_ubr, latest_ubr]
+| appendcols [| inputlookup riskability_hostcadence_lookup where hostname=$hostname|s$ | fields learned, late, n_gaps]
+| appendcols [| inputlookup riskability_config_lookup where hostname=$hostname|s$ | stats count AS config_rows]
+| eval shortfall = if(isnull(said_components), null(), said_components - arrived_components)
+| eval rk = mvappend(
+    "1|Inventory arrived intact|" . case(
+        isnull(said_components), "not assessed;the collector reports no manifest",
+        shortfall &gt; 0, "assessed, failing;" . tostring(shortfall, "commas") . " of " . tostring(said_components, "commas") . " components did not arrive",
+        1=1, "assessed;all " . tostring(said_components, "commas") . " components arrived") . "|" . coalesce(scanned_at, ""),
+    "2|Collector sources|" . case(
+        isnull(sources_ok), "not assessed;the collector does not report its sources",
+        tonumber(sources_failed) &gt; 0, "assessed, failing;" . failed_text,
+        tonumber(sources_shrank) = 1, "assessed, narrower than last scan;" . tostring(n_sources) . " sources ran, " . tostring(prev_n_sources) . " last time",
+        1=1, "assessed;" . tostring(n_sources) . " sources ran") . "|" . coalesce(scanned_at, ""),
+    "3|Configuration surface|" . case(
+        isnull(config_rows) OR tonumber(config_rows) = 0, "not assessed;no configuration records, so the probe did not run",
+        1=1, "assessed;" . tostring(config_rows, "commas") . " mechanisms read") . "|" . coalesce(scanned_at, ""),
+    "4|Listening ports|" . case(
+        isnull(listeners), "not assessed;exposure was never measured on this host",
+        1=1, "assessed;" . tostring(listeners, "commas") . " listeners") . "|" . coalesce(assessed_at, ""),
+    "5|Library loads|" . case(
+        isnull(link_rows), "not assessed;no link records reached this host",
+        1=1, "assessed;" . tostring(link_rows, "commas") . " loads, " . tostring(coalesce(unowned_libraries, 0), "commas") . " unowned") . "|" . coalesce(assessed_at, ""),
+    "6|Compared against the feed|" . case(
+        isnull(rolled_at), "not assessed;this host has never been matched",
+        1=1, "assessed;" . tostring(coalesce(cves, 0), "commas") . " CVEs across " . tostring(coalesce(findings, 0), "commas") . " findings") . "|" . coalesce(rolled_at, ""),
+    "7|Windows patch level|" . case(
+        isnull(status), "not assessed;no build reported, or this is not Windows",
+        isnull(latest_ubr), "not assessed;this build is not in the imported feed",
+        tonumber(behind_ubr) &gt; 0, "assessed, failing;" . tostring(behind_ubr, "commas") . " revisions behind the feed",
+        1=1, "assessed;current with the feed") . "|" . coalesce(scanned_at, ""),
+    "8|Still reporting|" . case(
+        isnull(learned) OR tonumber(learned) != 1, "not assessed;rhythm not learned, " . coalesce(tostring(n_gaps), "0") . " of 3 intervals seen",
+        tonumber(late) = 1, "assessed, failing;this host has gone quiet against its own pattern",
+        1=1, "assessed;contacting on its own schedule") . "|" . coalesce(scanned_at, ""))
+| fields rk
+| mvexpand rk
+| eval p = split(rk, "|")
+| eval ord = tonumber(mvindex(p, 0)), check = mvindex(p, 1)
+| eval rest = split(mvindex(p, 2), ";")
+| eval state = mvindex(rest, 0), evidence = mvindex(rest, 1)
+| eval as_of = mvindex(p, 3)
+| eval as_of = if(isnull(as_of) OR as_of="", "", strftime(tonumber(as_of), "%Y-%m-%d %H:%M"))
+| eval rank = case(state="assessed, failing", 1, state="assessed, narrower than last scan", 2,
+                   state="not assessed", 3, 1=1, 4)
+| sort 20 rank, ord
+| table check, state, evidence, as_of
+| rename check AS "Check", state AS "State", evidence AS "Evidence", as_of AS "As of"</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">10</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <format type="color" field="State">
+          <colorPalette type="map">{"assessed, failing":#dc4e41,"assessed, narrower than last scan":#f8be34,"not assessed":#6b5a2a,"assessed":#3f7d7a}</colorPalette>
+        </format>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>This says what has been measured, not whether the host is safe.</b>
+          <span>
+            A row reading <b>not assessed</b> is a gap in what we looked at, never a clean
+            result, and it is why there is no score here: a number would have to treat those
+            rows as zero or leave them out, and leaving them out rewards a host for being
+            measured less. Ordered failing, then narrower, then not assessed, then assessed.
+            That order is published so it cannot become a hidden weighting.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P3. Same macro call as the Exposure page, host pinned. One definition
+       rendered twice rather than two that can disagree. -->
+  <row>
+    <panel>
+      <title>What to do first</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_reachability_for($hostname|s$, $conf_tok|s$)`
+| stats count AS findings BY exploit_class, reach_class, tier
+| fields exploit_class, reach_class, findings, tier</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">prioritymatrix</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either this host has no open findings at this confidence, or exposure was never measured on it, in which case every finding sits in "not assessed" rather than being absent.</option>
+        <option name="height">400</option>
+        <drilldown>
+          <set token="cell_exploit">$row.exploit_class$</set>
+          <set token="cell_reach">$row.reach_class$</set>
+          <set token="cell_note">$row.exploit_class$, $row.reach_class$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Colour is what to do, not how much there is.</b>
+          <span>
+            Position is exploitability against reachability, not importance. The
+            <b>not assessed</b> row means exposure was never measured on this host, and it is
+            drawn even when empty so it cannot be mistaken for a row with nothing in it.
+            Click a cell to filter the findings below.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P4. Lexicographic, not weighted: no dimension trades against another and
+       a null in one position never invents a middle value. -->
+  <row>
+    <panel>
+      <title>Open findings on this host $cell_note$</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| `riskability_reachability_for($hostname|s$, $conf_tok|s$)`
+| search exploit_class=$cell_exploit|s$ reach_class=$cell_reach|s$
+| eval age_days = if(isnull(first_seen), null(), round((now() - first_seen)/86400, 1))
+| eval epss_pc = if(isnull(epss), null(), round(epss * 100, 1))
+| eval kev = if(isnotnull(kev_added) AND kev_added != "", "yes", "")
+| eval scope = if(isnull(scope_id) OR scope_id="" OR scope_id="/", "host", scope_id)
+| sort 5000 tier, - exploit_rank, - reach_rank, - epss
+| table tier, cve_id, package, last_version, fixed_version, scope, reach_class,
+        exploit_class, kev, epss_pc, severity, confidence, age_days
+| rename tier AS "Do", cve_id AS "CVE", package AS "Package", last_version AS "Installed",
+         fixed_version AS "Fixed in", scope AS "Where", reach_class AS "Reachable here",
+         exploit_class AS "Exploitation", kev AS "Known exploited", epss_pc AS "EPSS %",
+         severity AS "Severity", confidence AS "Confidence", age_days AS "Days open"</query>
+        </search>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No open findings match. If a matrix cell above is selected, clear it by reloading the page. No findings at all is not a clean bill: check the ledger for what was never measured.</option>
+        <option name="height">520</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Ordered, not scored.</b>
+          <span>
+            What to do first, then whether the world is exploiting it, then whether this copy
+            answers the network, then how likely. Each is a tie-break on the one before it and
+            nothing is added to anything else, so a missing value never becomes a middle one.
+            <b>Reachable here</b> reading not assessed means exposure was never measured on
+            this host, not that nothing listens.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P5. The literal request, and the sharpest rows in the app: a Defender
+       exclusion nobody remembers adding, a root job anyone can rewrite.
+       The kind label map is the same case() the MITRE page uses, or sixteen
+       mechanisms get two names on two pages. -->
+  <row>
+    <panel>
+      <title>What this host is configured to run</title>
+      <viz type="riskability.riskability_chart">
+        <search base="cfg_base">
+          <query>| eval series = if(tonumber(n_evidence) &gt; 0, "flagged by swinv", "surface, no weakness flagged")
+| stats count AS mechanisms BY label, series
+| sort 50000 - mechanisms</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">stackedbar</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
+        <option name="riskability.riskability_chart.valueLabel">mechanisms</option>
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <option name="riskability.riskability_chart.emptyText">No configuration records for this host. Either the collector ran without the config flag, or it predates swinv 0.8.0. Absence here is missing data, not a hardened host.</option>
+        <option name="height">360</option>
+      </viz>
+    </panel>
+  </row>
+  <row>
+    <panel>
+      <viz type="riskability.riskability_grid">
+        <search base="cfg_base">
+          <query>| eval writable = case(world_writable="true" OR world_writable=1, "anyone can write it",
+                       isnull(world_writable) OR world_writable="", "", 1=1, "no")
+| eval flagged = if(tonumber(n_evidence) &gt; 0, n_evidence, "none")
+| eval owner = if(isnull(purl) OR purl="", "no package owns this",
+                  replace(replace(purl, "^pkg:[^/]+/", ""), "\?.*$", ""))
+| sort 50000 - n_evidence, kind, name
+| table kind, attack, name, path, executable, user, schedule, owner, mode, writable, flagged
+| rename kind AS "Kind", attack AS "Technique", name AS "Name", path AS "Path",
+         executable AS "Runs", user AS "Runs as", schedule AS "Schedule",
+         owner AS "Owning package", mode AS "Mode", writable AS "World writable",
+         flagged AS "Weaknesses flagged"</query>
+        </search>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No configuration records for this host.</option>
+        <option name="height">460</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>What the host is configured to run, not a flaw in it.</b>
+          <span>
+            <b>Weaknesses flagged</b> is swinv's own count, carried through and never
+            re-derived here, because it knows a context an outside join does not. A kind with
+            no rows means nothing was found inside this scan's configuration scope; on a
+            collector below 0.8.0 it means the probe never ran. Filter the Kind column for
+            Defender exclusions, cron or Scheduled Tasks.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P6. Never coalesce the listener count to zero here. On the fleet page an
+       adjacent status column rescues that; on one host it would flatten "never
+       reported a listening port" into "nothing is listening". -->
+  <row>
+    <panel>
+      <title>What answers the network</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_exposure_lookup where (hostname=$hostname|s$)
+| eval where = case(bind_scope="any", "any address", bind_scope="one", "one address",
+                    bind_scope="loopback", "loopback only", 1=1, coalesce(bind_scope, "not stated"))
+| sort 5000 bind_scope, port
+| table port, protocol, address, where, executable, unit, container
+| rename port AS "Port", protocol AS "Protocol", address AS "Bound to", where AS "Reach",
+         executable AS "Process", unit AS "Service", container AS "Container"</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No listening ports recorded. If exposure was never measured on this host, that is not the same as nothing listening: the ledger above says which it is.</option>
+        <option name="height">400</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>An empty table here has two meanings and the ledger tells them apart.</b>
+          <span>
+            Measured and nothing listening is a result. Never measured is a gap. This panel
+            refuses to merge them into a zero. A port whose process could not be named is
+            still a port: that is not "no process".
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P7. Always rendered. On Linux it says so rather than disappearing. -->
+  <row>
+    <panel>
+      <title>Windows patch level</title>
+      <table>
+        <search>
+          <query>| inputlookup riskability_winstate_lookup where hostname=$hostname|s$
+| eval distance = case(isnull(latest_ubr), "not in the feed",
+                       tonumber(behind_ubr) &lt;= 0, "up to date",
+                       1=1, tostring(behind_ubr, "commas") . " revisions behind")
+| table product, release, current_build, build_source, latest_build, latest_kb,
+        latest_released, distance, n_installed_kbs
+| rename product AS "Windows release", release AS "Version", current_build AS "Build it is on",
+         build_source AS "Where that came from", latest_build AS "Build the feed knows",
+         latest_kb AS "That update", latest_released AS "Released", distance AS "Distance",
+         n_installed_kbs AS "Standalone KBs"</query>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+        <option name="rowNumbers">false</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Distance">
+          <colorPalette type="map">{"up to date":#3f7d7a,"not in the feed":#6b5a2a}</colorPalette>
+        </format>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Empty here means not assessed, and that is three different things.</b>
+          <span>
+            This panel is Windows only: Riskability compares components against CVE data and
+            does not track vendor update streams, so on Linux there is nothing to show and
+            that is not a gap. On Windows an empty row means no cumulative update was
+            reported, which is a collector below swinv 0.9.0, or a bundle built without the
+            Windows update source. None of those is a patched host.
+          </span>
+          <b>When it does report, it is the only assessment here that does not infer.</b>
+          <span>
+            The host reports the build it is running, Microsoft states the build each update
+            produces, and the two are compared. <b>Distance</b> counts revisions behind the
+            newest build the imported feed knows, not the newest Microsoft has shipped, so a
+            stale feed makes a stale host look current. <b>Where that came from</b> matters:
+            a build derived from the cumulative update component names the servicing branch
+            and can name the wrong release while still getting the update right.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- P8. The donut, and the one place a ring is honest here: four mutually
+       exclusive states that sum to the host's installed instances. -->
+  <row>
+    <panel>
+      <title>Can the feed even see this host's software?</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| inputlookup riskability_hostecostate_lookup where (hostname=$hostname|s$)
+| stats sum(instances) AS instances, sum(cpe_ident) AS cpe_ident BY type
+| append [| `riskability_feed_ecosystems` | rename ecosystem AS type]
+| eventstats max(eval(if(type=="cpe", feed_ranges, null()))) AS cpe_ranges
+| stats max(instances) AS instances, max(cpe_ident) AS cpe_ident,
+        max(feed_ranges) AS feed_ranges, max(cpe_ranges) AS cpe_ranges BY type
+| where isnotnull(instances)
+| eval feed_ranges = coalesce(feed_ranges, 0)
+| eval status = case(
+        feed_ranges &gt; 0, "covered",
+        cpe_ident &gt; 0 AND cpe_ranges &gt; 0, "covered through CPE",
+        type IN ("linux-kernel-module","linux-kernel","github-action","github-action-workflow","binary","hotfix"), "no feed exists for this type",
+        1=1, "add this ecosystem to the bundle")
+| stats sum(instances) AS instances BY status
+| sort 10 - instances</query>
+        </search>
+        <option name="riskability.riskability_chart.chartType">donut</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
+        <option name="riskability.riskability_chart.valueLabel">installed instances</option>
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <option name="riskability.riskability_chart.emptyText">No inventory recorded for this host, so there is nothing to assess coverage of.</option>
+        <option name="height">360</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <b>Every installed instance on this host is in exactly one of these four states.</b>
+          <span>
+            The circle sums to installed instances, not distinct package names, which is a
+            different and larger number than the one on Coverage. <b>No feed exists for this
+            type</b> is a measured category rather than a gap in what we looked at: it is why
+            part of this machine can never produce a finding at all. <b>Add this ecosystem to
+            the bundle</b> is the only slice you can act on.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</form>

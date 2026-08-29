@@ -168,3 +168,77 @@
 body.rk-help-off .rk-status:not(.rk-bad) {
   display: none;
 }
+
+/* ---- Host detail: the dossier header -------------------------------------
+ *
+ * A host page is not a smaller fleet page. Fleet asks which one, host asks what
+ * about this one, so the dominant element here is typographic rather than a
+ * grid. A single row of facts rendered as a Tabulator table is 400px of column
+ * filters and a CSV button wrapped around one machine's name, which is how a
+ * page comes to look assembled rather than designed.
+ *
+ * Three surfaces and three text tones, no fourth of either. Monospace is used
+ * only for strings a machine wrote: the build number, the machine id. On a
+ * security page "monospace means a machine said this, not a person" carries
+ * more than any colour would. */
+.rk-hostcard {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(420px, 1.6fr);
+    gap: 4px 32px;
+    padding: 16px 18px 14px;
+    background: #23272e;
+    border: 1px solid #33383f;
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.rk-hostcard-id { min-width: 0; }
+.rk-hostname {
+    font-size: 20px; font-weight: 600; color: #f2f4f5;
+    line-height: 1.2; word-break: break-all;
+}
+.rk-hostos { font-size: 13px; color: #d5d8dc; margin-top: 3px; }
+.rk-hostmachine {
+    font-family: Menlo, Consolas, monospace;
+    font-size: 11px; color: #9aa4ae; margin-top: 5px;
+    word-break: break-all; line-height: 1.5;
+}
+
+/* Two columns of clocks rather than four across: four abreast collapses to one
+ * on a narrow window and the labels wrap mid-phrase. */
+.rk-hostcard-clocks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    gap: 8px 24px;
+    align-content: start;
+}
+.rk-clock { display: flex; flex-direction: column; min-width: 0; }
+.rk-clock-k {
+    font-size: 11px; color: #9aa4ae; text-transform: none;
+    letter-spacing: 0.01em;
+}
+.rk-clock-v { font-size: 14px; font-weight: 600; color: #f2f4f5; margin-top: 1px; }
+.rk-hostcard-foot {
+    grid-column: 1 / -1;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid #33383f;
+    font-size: 12px; color: #9aa4ae;
+}
+
+/* A caption that reads as a footnote rather than as a second panel. The house
+ * rule that every panel explains itself is right, and on an eight panel page it
+ * is also the biggest visual threat: eight four-line grey blocks is a wall of
+ * prose nobody reads, at which point the honesty captions have failed at the
+ * one job they exist for. */
+.rk-status.rk-note {
+    background: transparent;
+    border-left: 2px solid #33383f;
+    padding: 6px 0 6px 10px;
+    font-size: 11px;
+    margin: 8px 0 0;
+}
+.rk-status.rk-note b { font-weight: 600; }
+
+@media (max-width: 1100px) {
+    .rk-hostcard { grid-template-columns: 1fr; gap: 14px; }
+    .rk-hostcard-clocks { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+}
