@@ -3,6 +3,33 @@
   <description>What the feed can and cannot say anything about. Read this before trusting a low finding count.</description>
 
   <fieldset submitButton="false" autoRun="true">
+    <input type="dropdown" token="eol_horizon" searchWhenChanged="true">
+      <label>Look ahead</label>
+      <choice value="6">the next 6 months</choice>
+      <choice value="12">the next 12 months</choice>
+      <choice value="24">the next 24 months</choice>
+      <default>6</default>
+      <initialValue>6</initialValue>
+    </input>
+    <input type="multiselect" token="eol_products" searchWhenChanged="true">
+      <label>Products</label>
+      <search>
+        <query>| inputlookup riskability_eolstate_lookup
+| where coalesce(eol_from, "") != ""
+| eval product_line = coalesce(label, product) . " " . cycle
+| stats count BY product_line
+| sort product_line</query>
+        <earliest>0</earliest>
+        <latest>now</latest>
+      </search>
+      <fieldForLabel>product_line</fieldForLabel>
+      <fieldForValue>product_line</fieldForValue>
+      <valuePrefix>"</valuePrefix>
+      <valueSuffix>"</valueSuffix>
+      <delimiter>,</delimiter>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
   </fieldset>
 
   <!-- Drilldown state, set here rather than by <input type="hidden">.
@@ -17,6 +44,8 @@
     <set token="eco_filter">type=*</set>
     <set token="eco_label"></set>
     <set token="eco_name">*</set>
+    <set token="eol_pick">*</set>
+    <set token="eol_note"></set>
   </init>
 
   <row>
@@ -279,6 +308,91 @@
           </span>
         </div>
       </html>
+    </panel>
+  </row>
+
+  <!-- Support lifecycles. Fleet wide, so it lives here rather than on the host
+       page: Coverage is the page about what this app can and cannot speak to,
+       and a dataset that describes a minority of any inventory is in its
+       natural home on it. Already past its date is included rather than only
+       what is upcoming, because a product whose support ended last year is the
+       urgent end of the same timeline, not a different question. -->
+  <row>
+    <panel>
+      <title>When support ends for the software found on this fleet</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| inputlookup riskability_eolstate_lookup
+| where coalesce(eol_from, "") != ""
+| eval eol_at = strptime(eol_from, "%Y-%m-%d")
+| eval days = round((eol_at - now()) / 86400)
+| where days &lt;= (30.44 * $eol_horizon$)
+| eval product_line = coalesce(label, product) . " " . cycle
+| search product_line IN ($eol_products$)
+| stats min(eol_at) AS eol_at, min(days) AS days, dc(hostname) AS hosts BY product_line
+| sort 400 days
+| eval eol_ms = eol_at * 1000
+| eval state = if(days &lt; 0, "overdue", "supported")
+| table product_line, eol_ms, state</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_chart.chartType">timeline</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
+        <option name="riskability.riskability_chart.emptyText">No product on this fleet has a support date inside the window. That is not a statement that everything is supported: lifecycle data covers a minority of any inventory, and everything it cannot speak to is absent from this chart rather than shown as safe.</option>
+        <!-- Deliberately short. The builder raises it through rkMinHeight to
+             whatever the stacked labels need, so the panel is the height of its
+             content rather than a fixed box that is mostly empty at three
+             products and clips at forty. -->
+        <option name="height">180</option>
+        <drilldown>
+          <set token="eol_pick">$click.value$</set>
+          <set token="eol_note">· $click.value$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Everything already past its date, plus everything due within the window.</b>
+          <span>
+            The window looks forward only. Whatever is chosen here sets how far into the
+            future to reach; everything already out of support is always shown, back to the
+            oldest date on the fleet, because a product that died three years ago is the
+            urgent end of the same timeline rather than a different question. Scroll to zoom
+            the axis, drag to pan.
+          </span>
+          <span>
+            Dates are upstream: when the people who publish the software stop fixing it.
+            Whether a particular copy is still supported depends on who ships it, which the
+            table below states per host. A distribution that backports keeps its own package
+            supported well past the upstream date, and an ESM stamped package says so in its
+            own version string.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Where it is installed $eol_note$</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_eolstate_lookup
+| eval product_line = coalesce(label, product) . " " . cycle
+| search product_line=$eol_pick|s$
+| eval "Support ends" = if(coalesce(eol_from, "") == "", "not stated", eol_from)
+| sort 5000 rung, product_line, hostname
+| table product_line, hostname, package, version, ecosystem, support, confidence, reach, "Support ends", latest, path
+| rename product_line AS "Product and release", hostname AS "Host", package AS "Package",
+         version AS "Version installed", ecosystem AS "Ecosystem", support AS "Supported by",
+         confidence AS "Confidence", reach AS "Evidence it runs", latest AS "Newest in that release",
+         path AS "Path"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_grid.emptyText">Click a bar above to list every host carrying that product, or leave it unfiltered to see all of them.</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+      </viz>
     </panel>
   </row>
 </form>

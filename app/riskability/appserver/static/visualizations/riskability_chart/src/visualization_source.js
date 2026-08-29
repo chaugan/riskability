@@ -15,10 +15,15 @@
  */
 import * as echarts from 'echarts/core';
 import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
-         PieChart, LineChart, GraphChart } from 'echarts/charts';
+         PieChart, LineChart, GraphChart, ScatterChart } from 'echarts/charts';
 import {
     TooltipComponent,
     GridComponent,
+    // The support timeline draws a dashed line at today and lets the reader
+    // scroll to zoom the axis. Both are components, not chart types, and a
+    // tree shaken build throws rather than ignoring a missing one.
+    MarkLineComponent,
+    DataZoomInsideComponent,
     VisualMapComponent,
     TitleComponent,
     LegendComponent,
@@ -29,10 +34,10 @@ import SplunkVisualizationBase from 'api/SplunkVisualizationBase';
 import vizUtils from 'api/SplunkVisualizationUtils';
 
 echarts.use([
-    TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
+    TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart, ScatterChart,
     PieChart, LineChart, GraphChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
-    LegendComponent, CanvasRenderer,
+    LegendComponent, MarkLineComponent, DataZoomInsideComponent, CanvasRenderer,
 ]);
 
 /*
@@ -186,6 +191,9 @@ var CONTRACTS = {
     heatmap: ['x', 'y', 'value'],
     boxplot: ['category', 'min', 'q1', 'median', 'q3', 'max'],
     bar: ['label', 'value'],
+    // label, the date support ends as epoch milliseconds, and whether that date
+    // has already passed. A point in time, not a span.
+    timeline: ['label', 'ends_ms', 'state'],
     stackedbar: ['category', 'series', 'value'],
     stackedcolumn: ['category', 'series', 'value'],
     line: ['x', 'value'],
@@ -525,6 +533,114 @@ function buildBoxplot(rows, t, config) {
         series: [{
             type: 'boxplot', data: data,
             emphasis: { itemStyle: { borderWidth: 2.5 } },
+        }],
+    };
+}
+
+
+/* A timeline of support end dates: one axis, one marker per product release,
+ * labels stacked into lanes so none is hidden.
+ *
+ * A point, not a bar. An end of support date is an instant, and the earlier
+ * bar version encoded a duration from today that is not in the data. A shared
+ * axis also shows clustering, which one row per product destroys: a fleet whose
+ * software all expires in the same quarter looks nothing like one that expires
+ * steadily, and that is visible here and nowhere else.
+ *
+ * Labels are never dropped when they collide. The panel grows instead, through
+ * rkMinHeight, for the reason the chain graph does: the page scrolls, a missing
+ * name does not come back.
+ *
+ * Columns: label, end of support epoch ms, state ("overdue" or not).
+ */
+function buildTimeline(rows, t, config) {
+    var recs = [], lo = null, hi = null, i;
+    for (i = 0; i < rows.length; i++) {
+        var d = num(rows[i][1]);
+        if (d === null) { continue; }
+        recs.push({
+            name: String(rows[i][0]),
+            d: d,
+            overdue: String(rows[i][2] === undefined ? '' : rows[i][2]) === 'overdue',
+        });
+        if (lo === null || d < lo) { lo = d; }
+        if (hi === null || d > hi) { hi = d; }
+    }
+    if (!recs.length) { return null; }
+
+    var now = Date.now();
+    lo = Math.min(lo, now);
+    hi = Math.max(hi, now);
+    var pad = Math.max((hi - lo) * 0.06, 86400000);
+    lo -= pad; hi += pad;
+    var span = hi - lo || 1;
+
+    // Lane packing, in date order. The pixel width is an estimate because the
+    // builder runs before the panel is measured; it only has to be close
+    // enough that two labels never share a lane when they would overlap. Zoom
+    // only ever spreads them further apart, so the estimate errs safely.
+    recs.sort(function (a, b) { return a.d - b.d; });
+    var WIDTH = 1200, CHAR = 6.6, GAP = 18, laneEnd = [], maxLane = 0;
+    for (i = 0; i < recs.length; i++) {
+        var x = ((recs[i].d - lo) / span) * WIDTH;
+        var w = recs[i].name.length * CHAR + GAP;
+        var lane = 0;
+        while (laneEnd[lane] !== undefined && laneEnd[lane] > x) { lane++; }
+        laneEnd[lane] = x + w;
+        recs[i].lane = lane;
+        if (lane > maxLane) { maxLane = lane; }
+    }
+
+    var pts = [];
+    for (i = 0; i < recs.length; i++) {
+        pts.push({
+            value: [recs[i].d, recs[i].lane],
+            name: recs[i].name,
+            itemStyle: { color: recs[i].overdue ? '#dc4e41' : '#3f7d7a' },
+        });
+    }
+
+    return {
+        animation: false,
+        rkMinHeight: 96 + (maxLane + 1) * 26,
+        grid: { left: 8, right: 28, top: 16, bottom: 30, containLabel: true },
+        tooltip: {
+            backgroundColor: t.tooltipBg, borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                return escapeHtml(p.data.name) + '<br/>support ends '
+                    + new Date(p.value[0]).toISOString().slice(0, 10);
+            },
+        },
+        // Scroll to zoom in time, drag to pan. filterMode none so a marker
+        // scrolled out of view keeps its lane and nothing reflows underneath.
+        dataZoom: [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }],
+        xAxis: {
+            type: 'time', min: lo, max: hi,
+            axisLine: { lineStyle: { color: t.axis } },
+            axisLabel: { color: t.muted },
+            splitLine: { show: false },
+        },
+        yAxis: {
+            type: 'value', min: -0.6, max: maxLane + 0.4,
+            inverse: true, show: false,
+        },
+        series: [{
+            type: 'scatter', symbolSize: 11, data: pts,
+            label: {
+                show: true, position: 'right', distance: 8,
+                color: t.text, fontSize: 11,
+                // The text is a click target too. An 11px dot is a poor one.
+                triggerEvent: true,
+                formatter: function (p) { return p.data.name; },
+            },
+            markLine: {
+                silent: true, symbol: 'none',
+                lineStyle: { color: t.muted, type: 'dashed', width: 1 },
+                label: { show: true, formatter: 'today', color: t.muted,
+                         fontSize: 10, position: 'start' },
+                data: [{ xAxis: now }],
+            },
         }],
     };
 }
@@ -1279,6 +1395,7 @@ var BUILDERS = {
     heatmap: buildHeatmap,
     boxplot: buildBoxplot,
     bar: buildBar,
+    timeline: buildTimeline,
     prioritymatrix: buildPriorityMatrix,
     kevbridge: buildKevBridge,
     chaingraph: buildChainGraph,
@@ -1472,7 +1589,18 @@ export default SplunkVisualizationBase.extend({
         }
         // notMerge, or a previous series survives a token change and two
         // filters are drawn on top of each other.
-        this.chart.setOption(option, { notMerge: true });
+        //
+        // Guarded for the same reason init is. A chart type that asks for an
+        // ECharts component this tree shaken build does not register throws
+        // here, and Splunk replaces the whole panel with "Error rendering",
+        // which names neither the chart nor the cause.
+        try {
+            this.chart.setOption(option, { notMerge: true });
+        } catch (e) {
+            this._message('bad', 'The ' + chartType + ' chart could not be drawn',
+                String((e && e.message) || e));
+            return;
+        }
 
         // Before the drilldown check: hovering must work on a panel whose
         // drilldown is switched off.

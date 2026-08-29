@@ -89,11 +89,20 @@ MITIGATIONS_MEMBER = "mitigations.jsonl"
 # inference. Absent, the Windows patch panel says it has no data rather than
 # implying every Windows host is current.
 WINPATCH_MEMBER = "winpatch.jsonl"
+
+# Support lifecycle: when a release series stops receiving fixes from whoever
+# publishes it. A different question from "is there a CVE in it", and one no
+# advisory answers: software with no supported release is not a vulnerability,
+# it is the absence of any future fix for every vulnerability it will have.
+# Upstream dates only. Whether THIS copy is still supported depends on who
+# ships it, which the matcher decides from the package's own ecosystem.
+LIFECYCLE_MEMBER = "lifecycle.jsonl"
 MEMBERS = (MANIFEST_NAME, ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME,
            ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
-           CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER)
+           CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER, LIFECYCLE_MEMBER)
 OPTIONAL_MEMBERS = (ATTACK_MEMBER, TACTICS_MEMBER, CVEDETAIL_MEMBER, KEVMAP_MEMBER,
-                    CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER)
+                    CAPEC_MEMBER, MITIGATIONS_MEMBER, WINPATCH_MEMBER,
+                    LIFECYCLE_MEMBER)
 
 # An uploaded archive is attacker-controlled input parsed by a privileged
 # process. These caps bound the damage a hostile bundle can do.
@@ -915,7 +924,7 @@ class BundleWriter:
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
                      TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER,
-                     WINPATCH_MEMBER):
+                     WINPATCH_MEMBER, LIFECYCLE_MEMBER):
             self._files[name] = open(os.path.join(self._staging, name), "w", encoding="utf-8")
 
     def write(self, name: str, record: dict) -> None:
@@ -949,6 +958,9 @@ class BundleWriter:
     def add_winpatch(self, rec: dict) -> None:
         self.write(WINPATCH_MEMBER, rec)
 
+    def add_lifecycle(self, rec: dict) -> None:
+        self.write(LIFECYCLE_MEMBER, rec)
+
     def close(self, bundle_version: str = "", warnings=None) -> dict:
         for f in self._files.values():
             f.close()
@@ -957,7 +969,7 @@ class BundleWriter:
         for name in (ADVISORIES_NAME, RANGES_NAME, NOTAFFECTED_NAME, ATTACK_MEMBER,
                      CVEDETAIL_MEMBER,
                      TACTICS_MEMBER, KEVMAP_MEMBER, CAPEC_MEMBER, MITIGATIONS_MEMBER,
-                     WINPATCH_MEMBER):
+                     WINPATCH_MEMBER, LIFECYCLE_MEMBER):
             digests[name] = _sha256_file(os.path.join(self._staging, name))
 
         manifest = {
@@ -1553,6 +1565,79 @@ def parse_capec_detail(csv_text: str) -> List[dict]:
 
 
 _MSRC_BUILD_RE = re.compile(r"^10\.0\.(\d+)\.(\d+)$")
+
+
+def _eol_rows(body: dict) -> List[dict]:
+    """Rows for one product's release series. See parse_eol_full."""
+    if not isinstance(body, dict):
+        return []
+    slug = str(body.get("name") or "").strip()
+    if not slug:
+        return []
+    label = body.get("label") or slug
+    category = body.get("category") or ""
+    out = []
+    for rel in body.get("releases") or []:
+        if not isinstance(rel, dict):
+            continue
+        cycle = str(rel.get("name") or "").strip()
+        if not cycle:
+            continue
+        latest = rel.get("latest")
+        latest_name = latest.get("name") if isinstance(latest, dict) else (latest or "")
+        out.append({
+            "_key": "%s|%s" % (slug, cycle),
+            "product": slug,
+            "label": label,
+            "category": category,
+            "cycle": cycle,
+            "codename": rel.get("codename") or "",
+            "released": rel.get("releaseDate") or "",
+            "eol_from": rel.get("eolFrom") or "",
+            # End of extended support, where a vendor sells or grants time past
+            # the ordinary date. Distinct from eol_from, and the reason a
+            # release can be past its end of life and still receiving fixes.
+            "eoes_from": rel.get("eoesFrom") or "",
+            "lts": 1 if rel.get("isLts") else 0,
+            "latest": latest_name or "",
+            # What the source believed on the day of the fetch, for provenance.
+            "eol_at_build": 1 if rel.get("isEol") else 0,
+            "maintained_at_build": 1 if rel.get("isMaintained") else 0,
+        })
+    return out
+
+
+def parse_eol_full(raw: str) -> List[dict]:
+    """Every product and release series endoflife.date publishes.
+
+    One request to the bulk endpoint rather than one per product. That is 467
+    products in a couple of megabytes against 467 round trips to a free
+    community service, and it means a build either has the whole catalogue or
+    visibly has none of it, instead of a partial one nobody can characterise.
+    """
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    body = payload.get("result") if isinstance(payload, dict) else payload
+    if not isinstance(body, list):
+        return []
+    out = []
+    for product in body:
+        out.extend(_eol_rows(product))
+    return out
+
+
+def parse_eol_product(slug: str, raw: str) -> List[dict]:
+    """One product, from the per-product endpoint. Used by tests and by hand."""
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return []
+    body = payload.get("result") if isinstance(payload, dict) else payload
+    if isinstance(body, dict) and not body.get("name"):
+        body = dict(body, name=slug)
+    return _eol_rows(body)
 
 
 def parse_msrc_cvrf(raw: str, released: str = "") -> List[dict]:

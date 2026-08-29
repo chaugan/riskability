@@ -100,7 +100,10 @@ $buildArgs = @(
     '--ecosystem', 'PyPI',
     '--ecosystem', 'Go',
     '--ecosystem', 'Maven',
-    '--kev', '--epss', '--mitre'
+    '--kev', '--epss', '--mitre',
+    # Support lifecycles. Small, and the only source that answers "is anyone
+    # still fixing this at all", which no advisory ever states.
+    '--lifecycle'
 )
 
 switch ($FeedProfile) {

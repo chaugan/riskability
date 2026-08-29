@@ -48,6 +48,13 @@ MSRC_CVRF_URL = "https://api.msrc.microsoft.com/cvrf/v3.0/cvrf/{id}"
 # lists older non Windows release notes under other id shapes.
 _MONTHLY_RE = re.compile(r"^\d{4}-[A-Z][a-z]{2}$")
 
+# endoflife.date: when a release series stops receiving fixes from whoever
+# publishes it. The bulk endpoint hands over every product in one request,
+# which is a couple of megabytes against 467 round trips to a service that is
+# community run and free. It also means a build has the whole catalogue or
+# visibly none of it, rather than a partial one nobody can characterise.
+EOL_FULL_URL = "https://endoflife.date/api/v1/products/full"
+
 KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS_URL = "https://epss.empiricalsecurity.com/epss_scores-current.csv.gz"
 # The bulk JSON feeds that used to live under nvd.nist.gov/feeds are retired
@@ -73,6 +80,7 @@ NETWORK_HOSTS = [
     "objects.githubusercontent.com",  # where those release assets are served from
     "api.github.com",           # resolving the latest CVE Program release
     "cwe.mitre.org",            # MITRE CWE catalogue
+    "endoflife.date",           # support lifecycles for products and OS releases
     "capec.mitre.org",          # MITRE CAPEC catalogue
     "raw.githubusercontent.com", # MITRE ATT&CK STIX bundle
     "www.cisa.gov",             # CISA KEV
@@ -174,6 +182,7 @@ def online() -> Dict[str, bool]:
         "windows_updates": MSRC_UPDATES_URL,
         "kev": KEV_URL,
         "epss": EPSS_URL,
+        "lifecycle": EOL_FULL_URL,
     }
     return {name: probe(url) for name, url in checks.items()}
 
@@ -246,6 +255,8 @@ def build_bundle(
     epss: bool = False,
     kev_file: str = "",
     epss_file: str = "",
+    lifecycle: bool = False,
+    lifecycle_file: str = "",
     version: str = "",
     include_withdrawn: bool = False,
     log: Optional[Callable[[str], None]] = None,
@@ -362,6 +373,38 @@ def build_bundle(
             failed("Windows update history", exc)
             say("  WARNING: no Windows build data. The Windows patch panel will "
                 "say so rather than implying every Windows host is current.")
+
+    if lifecycle or lifecycle_file:
+        # A local file wins over the download, the same way KEV does. The whole
+        # catalogue is one JSON document, so an operator who cannot reach
+        # endoflife.date from the build host can save it from a browser and
+        # pass it in without losing anything.
+        origin = lifecycle_file or EOL_FULL_URL
+        say("reading support lifecycles from a file" if lifecycle_file
+            else "fetching support lifecycles")
+        try:
+            if lifecycle_file:
+                with open(lifecycle_file, "rb") as fh:
+                    raw = fh.read()
+            else:
+                with _open(EOL_FULL_URL, accept="application/json") as r:
+                    raw = r.read()
+            rows = feedlib.parse_eol_full(raw.decode("utf-8"))
+            if not rows:
+                raise ValueError("no product cycles parsed; not the v1 "
+                                 "products/full document")
+            for row in rows:
+                writer.add_lifecycle(row)
+            say(f"  {len(rows)} release series over "
+                f"{len({r['product'] for r in rows})} products")
+            sources.append({"name": "lifecycle", "url": origin,
+                            "fetched_at": int(time.time()), "records": len(rows),
+                            "licence": "endoflife.date, CC BY-SA 4.0. Community "
+                                       "maintained; not a vendor statement."})
+        except Exception as exc:
+            failed("support lifecycles", exc)
+            say("  WARNING: no lifecycle data. The end of life panels will say "
+                "so rather than implying every install is supported.")
 
     if mitre:
         say("fetching MITRE CWE and CAPEC catalogues")
@@ -531,10 +574,12 @@ def build_bundle(
     # working feed with nothing -- on the one host that cannot simply rebuild
     # it. Fail here instead, and leave no file to carry.
     counts = manifest.get("counts", {})
-    # winpatch counts because a Windows build check is a complete answer on its
-    # own: a bundle carrying only that is a small, useful feed rather than the
-    # empty one this guard exists to refuse.
-    if not any(counts.get(k, 0) for k in ("advisories", "ranges", "attack", "winpatch")):
+    # winpatch and lifecycle count because each is a complete answer on its own:
+    # a bundle carrying only one of them is a small, useful feed rather than the
+    # empty one this guard exists to refuse. "Nothing here is supported any
+    # more" needs no advisory to be worth carrying.
+    if not any(counts.get(k, 0)
+               for k in ("advisories", "ranges", "attack", "winpatch", "lifecycle")):
         try:
             os.unlink(out_path)
         except OSError:

@@ -66,11 +66,14 @@ def cmd_sources(args):
     print("  --mitre        MITRE CWE -> CAPEC -> ATT&CK mapping")
     print("  --kev          CISA known-exploited catalogue")
     print("  --epss         FIRST exploitation-probability scores")
+    print("  --lifecycle    endoflife.date support lifecycles, for products and")
+    print("                 OS releases. One request, about 3 MB")
     print("")
     print("  --kev-file PATH   use a downloaded copy instead of fetching. CISA serves")
     print("                    KEV behind a CDN that refuses many datacentre ranges, so")
     print("                    this is often the only way to get it onto a build host.")
     print("  --epss-file PATH  same, for the EPSS csv or csv.gz")
+    print("  --lifecycle-file PATH  same, for the endoflife.date products/full JSON")
     print("\nHosts contacted: " + ", ".join(buildlib.NETWORK_HOSTS))
     if not args.check:
         print("\n(pass --check to query live sizes)")
@@ -79,7 +82,8 @@ def cmd_sources(args):
 
 def cmd_build(args):
     if not (args.ecosystem or args.nvd or args.mitre or args.kev or args.epss
-            or args.kev_file or args.epss_file or args.cve_list or args.cve_list_file):
+            or args.kev_file or args.epss_file or args.cve_list or args.cve_list_file
+            or args.lifecycle or args.lifecycle_file):
         print("error: choose at least one source (see 'sources')", file=sys.stderr)
         return 2
     try:
@@ -90,6 +94,7 @@ def cmd_build(args):
             mitre=args.mitre, kev=args.kev, epss=args.epss,
             kev_file=args.kev_file, epss_file=args.epss_file,
             cve_list=args.cve_list, cve_list_file=args.cve_list_file,
+            lifecycle=args.lifecycle, lifecycle_file=args.lifecycle_file,
             version=args.version,
             log=lambda m: print(m, file=sys.stderr),
         )
@@ -140,6 +145,13 @@ def main(argv=None):
                         "instead of fetching it")
     b.add_argument("--epss-file", dest="epss_file", default="", metavar="PATH",
                    help="use a downloaded EPSS csv or csv.gz instead of fetching it")
+    b.add_argument("--lifecycle", action="store_true",
+                   help="support lifecycles: when each product release series and "
+                        "OS release stops receiving fixes. One request, about 3 MB")
+    b.add_argument("--lifecycle-file", dest="lifecycle_file", default="",
+                   metavar="PATH",
+                   help="use a downloaded endoflife.date products/full document "
+                        "instead of fetching it")
     b.add_argument("--cve-list", dest="cve_list", action="store_true",
                    help="include the CVE Program catalogue: descriptions and product "
                         "names for the CVE encyclopaedia. About 600 MB to download and "
