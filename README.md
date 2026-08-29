@@ -726,7 +726,7 @@ hosts × packages.
 
 ## Dashboards
 
-Eleven views, in nav order.
+Twelve views, in nav order.
 
 | View | Answers |
 |---|---|
@@ -736,8 +736,9 @@ Eleven views, in nav order.
 | **Remediation** | What was actually fixed, and what merely stopped being reported |
 | **MITRE ATT&CK** | Which adversary techniques the open findings could enable. Context, not evidence |
 | **Exposure** | Which findings the network can reach, and which sit inside containers |
-| **Hosts** | Per-host detail, split by filesystem root |
-| **Coverage** | What the feed *cannot* say anything about |
+| **Hosts** | Every host at a glance, split by filesystem root |
+| **Host detail** | Everything known about one machine: what has been measured on it and what has not, what it is configured to run, its Windows patch level, and what on it is no longer supported |
+| **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
 | **Feed administration** | Build, upload and import bundles |
@@ -854,6 +855,50 @@ many placed and through which source, how many not and why, with unplaced is not
 not-vulnerable in the same frame.
 
 ![ATT&CK matrix and denominator](docs/screenshots/attack-matrix-fuller.png)
+
+### When nobody is going to fix it again
+
+A CVE says a thing is broken. End of support says nobody is going to fix it
+again, and no advisory states that anywhere. The bundle carries product and
+operating system support lifecycles from endoflife.date, 8,389 release series
+across 467 products in one request of a couple of megabytes, so the app can name
+the software on a fleet that has run out of supported releases.
+
+Every marker is one release at the date its support ends, on one axis, with
+today marked. Red is already past, teal is still ahead, and the stems alternate
+above and below so a label never hides another one. Everything already out of
+support is always shown, back to the oldest date on the fleet, because a product
+nobody has fixed for three years is the urgent end of the same timeline rather
+than a different question. Scroll zooms the axis. Clicking a product lists every
+host carrying it, and a row there opens that machine's own page.
+
+![When support ends](docs/screenshots/end-of-support.png)
+
+Whether a copy is *really* unsupported depends on who ships it, and the app
+decides that rather than repeating the upstream date. A package a distribution
+installs and maintains is informational while that distribution still supports
+its release, because vendors backport fixes without changing the upstream
+version, which is the same reason a version comparison alone cannot settle a
+distribution CVE. A package carrying an `esm` or `fips` marker in its own
+version string is being maintained past the ordinary date and says so itself. A
+copy no package manager owns, a private build inside an application or a Windows
+install, is where the upstream date is the whole truth, and only that is
+reported at high confidence.
+
+Each row also states how much evidence there is that the software runs at all:
+listening on a routable address, listening only on loopback, configured to start
+or scheduled to run, or installed with nothing observed running it. That order
+ranks evidence, not danger. The bottom of it means the collector saw no sign
+that it runs, which is not the same as knowing that it does not.
+
+![Where end of support software is installed](docs/screenshots/end-of-support-hosts.png)
+
+Lifecycle data describes applications, runtimes, databases, servers and
+operating system releases rather than every library a distribution ships, so it
+covers a minority of any inventory. Silence here is absence of data, reported on
+Coverage as exactly that, and never as a clean bill of health. Anything accepted
+as a risk in Findings is excluded from these views the same way it is excluded
+from every other count.
 
 ### Known-exploited, mapped to the technique that does it
 
