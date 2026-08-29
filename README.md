@@ -236,7 +236,7 @@ The KV Store must be running on the search head; the feed lives there.
 
 ### The collector version this app needs
 
-**Install the current swinv, 0.8.0.** That is what this app is built against and
+**Install the current swinv, 0.9.7.** That is what this app is built against and
 what every panel here assumes. The minimum it tolerates is 0.7.1, which matters
 only when a fleet is part way through a collector rollout: those hosts keep
 working and say what they are missing rather than going quiet.
@@ -245,7 +245,13 @@ working and say what they are missing rather than going quiet.
 |---|---|
 | 0.7.0 | Link records, so a finding on a shared library can be ranked by whether a listening process actually loads it |
 | 0.7.1 | Heartbeats and the scan manifest. The minimum this app tolerates |
-| 0.8.0 | The configuration surface, which fills the ATT&CK page's persistence and privilege techniques. **Current, and what to install** |
+| 0.8.0 | The configuration surface, which fills the ATT&CK page's persistence and privilege techniques |
+| 0.9.0 | PE import tables, so link records reach Windows rather than ending the fleet at Linux |
+| 0.9.2 | The Windows build number, which is the key the patch level panel joins Microsoft's data on |
+| 0.9.3 | The configuration surface's second slice, including Defender exclusions and Windows services |
+| 0.9.4 | A narrower scan stops being indistinguishable from software having been removed, so a finding is held rather than closed when its own source did not run |
+| 0.9.6 | `source_key` on components, which is what that hold is decided from. Read with a fallback, so 0.9.4 and 0.9.5 still work |
+| 0.9.7 | Local attacker hardening in the collector itself. **Current, and what to install** |
 
 Below 0.7.1 the app still runs but loses the things that make a large fleet
 affordable and honest: the heartbeat that lets an unchanged host report a small
