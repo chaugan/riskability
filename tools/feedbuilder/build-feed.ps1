@@ -43,7 +43,11 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('Linux', 'Windows', 'Everything')]
+    # No ValidateSet here on purpose. It is checked in the body instead, because
+    # validation on a positional parameter runs before any of this script does,
+    # and a reader who copies the shell spelling of an option gets told their
+    # file name is not a valid profile rather than being told the real problem.
+    [Parameter(Position = 0)]
     [string]$FeedProfile = 'Windows',
     [switch]$WithCveList,
     [string]$OutDir = '.',
@@ -58,10 +62,64 @@ param(
     [string]$KevFile = '',
     [string]$EpssFile = '',
     [string]$CveListFile = '',
-    [string]$LifecycleFile = ''
+    [string]$LifecycleFile = '',
+    # Anything else the caller typed, so the shell spellings can be accepted
+    # rather than refused. Feed administration and the Linux wrapper both use
+    # --kev-file, and somebody moving between them should not have to notice
+    # that PowerShell spells its parameters differently.
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$Extra
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Drop empties first. @($null) is an array holding one null, not an empty one,
+# so combining a missing $Extra with anything used to leave a null token that
+# then reported itself as an unrecognised argument with no name.
+$Extra = @($Extra | Where-Object { $_ })
+
+# PowerShell binds the first option it sees to the positional parameter, so a
+# caller who leads with a flag lands it in $FeedProfile. Put it back.
+if ($FeedProfile -like '-*') {
+    $Extra = @($FeedProfile) + $Extra
+    $FeedProfile = 'Windows'
+}
+
+# Translate the shell spellings into the parameters above. Two forms are
+# accepted for each, "--kev-file path" and "--kev-file=path", because both are
+# ordinary things to type.
+$rest = @()
+for ($i = 0; $i -lt $Extra.Count; $i++) {
+    $arg = $Extra[$i]
+    $val = $null
+    if ($arg -match '^(--[a-z-]+)=(.*)$') {
+        $arg = $Matches[1]
+        $val = $Matches[2]
+    }
+    switch ($arg) {
+        '--kev-file'       { if ($null -eq $val) { $i++; $val = $Extra[$i] }; $KevFile = $val }
+        '--epss-file'      { if ($null -eq $val) { $i++; $val = $Extra[$i] }; $EpssFile = $val }
+        '--cve-list-file'  { if ($null -eq $val) { $i++; $val = $Extra[$i] }; $CveListFile = $val }
+        '--lifecycle-file' { if ($null -eq $val) { $i++; $val = $Extra[$i] }; $LifecycleFile = $val }
+        '--with-cve-list'  { $WithCveList = $true }
+        default            { $rest += $Extra[$i] }
+    }
+}
+if ($rest.Count -gt 0) {
+    throw ("unrecognised argument: {0}. Run Get-Help .\build-feed.ps1 -Detailed for the options." -f ($rest -join ' '))
+}
+
+foreach ($n in @($KevFile, $EpssFile, $CveListFile, $LifecycleFile)) {
+    if ($n -and -not (Test-Path -LiteralPath $n)) {
+        throw ("no such file: {0}" -f $n)
+    }
+}
+
+$validProfiles = @('Linux', 'Windows', 'Everything')
+if ($validProfiles -notcontains $FeedProfile) {
+    throw ("{0} is not a feed profile. Choose one of {1}, or leave it out for Windows." -f
+           $FeedProfile, ($validProfiles -join ', '))
+}
 
 function Find-FeedTool {
     param([string]$Explicit)

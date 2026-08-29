@@ -658,7 +658,10 @@
                     note.appendChild(el("code", null, ".\\build-feed.ps1 " + fix.psFlag));
                     note.appendChild(document.createTextNode(
                         " on Windows. The bundle then carries it exactly as if it "
-                        + "had been fetched."));
+                        + "had been fetched. If everything else here is reachable, "
+                        + "there is no need to rebuild offline at all: hand the file "
+                        + "over under \u201ca source this host cannot reach\u201d below "
+                        + "and fetch as normal."));
                     cell.appendChild(note);
                 }
             }
@@ -744,6 +747,83 @@
         extras.appendChild(cveLab);
         wrap.appendChild(extras);
 
+        // A source this host cannot reach can be supplied as a file instead,
+        // and the direct fetch then uses it for that one source and downloads
+        // the rest as normal. Before this, the only advice for a blocked
+        // source was to rebuild the whole bundle offline, which meant
+        // downloading everything again over one file that CISA would not
+        // serve. An import replaces the feed rather than merging into it, so
+        // a KEV only bundle was never an option either.
+        var staged = {};
+        var SUPPLY = [
+            ["kev_file", "CISA KEV", "known_exploited_vulnerabilities.json"],
+            ["epss_file", "EPSS scores", "the EPSS csv or csv.gz"],
+            ["lifecycle_file", "Support lifecycles", "the endoflife.date products/full json"],
+            ["cve_list_file", "CVE Program catalogue", "the cvelistV5 release zip"]
+        ];
+        var supplyWrap = el("div", "rk-supply");
+        supplyWrap.appendChild(el("h4", null, "A source this host cannot reach"));
+        supplyWrap.appendChild(el("p", "rk-dim",
+            "Download it on a machine that can, then hand it over here. The fetch "
+            + "below then uses your file for that source and downloads the rest as "
+            + "usual, so one blocked source does not cost you the whole bundle. "
+            + "This supplements a fetch; it is not an import on its own, because a "
+            + "bundle replaces the feed rather than merging into it."));
+        var pick = el("select", "rk-select");
+        SUPPLY.forEach(function (o) {
+            var opt = el("option", null, o[1] + "  (" + o[2] + ")");
+            opt.value = o[0];
+            pick.appendChild(opt);
+        });
+        var file = el("input"); file.type = "file";
+        var supplyMsg = el("div", "rk-dim", "");
+        // Its own small uploader rather than the bundle one, which imports on
+        // the chunk that completes it. A source file must land in the incoming
+        // directory and stop there: it is an ingredient for the next fetch, not
+        // a bundle to import.
+        function sendSource(f, offset) {
+            var CH = 8 * 1024 * 1024;
+            var end = Math.min(offset + CH, f.size);
+            var last = end >= f.size;
+            return new Promise(function (resolve, reject) {
+                var reader = new FileReader();
+                reader.onload = function () { resolve(String(reader.result).split(",")[1] || ""); };
+                reader.onerror = function () { reject(new Error("could not read that file")); };
+                reader.readAsDataURL(f.slice(offset, end));
+            }).then(function (b64) {
+                return request("POST", {
+                    action: "upload", filename: f.name, data: b64,
+                    offset: offset, final: last, import_now: false
+                });
+            }).then(function () {
+                if (last) { return true; }
+                supplyMsg.textContent = "Sending " + humanBytes(end) + " of "
+                    + humanBytes(f.size) + " \u2026";
+                return sendSource(f, end);
+            });
+        }
+
+        file.addEventListener("change", function () {
+            var f = file.files && file.files[0];
+            if (!f) { return; }
+            var key = pick.value;
+            supplyMsg.textContent = "Sending " + f.name + " \u2026";
+            sendSource(f, 0).then(function () {
+                staged[key] = f.name;
+                supplyMsg.textContent = f.name + " will be used for "
+                    + SUPPLY.filter(function (o) { return o[0] === key; })[0][1]
+                    + ". It is not imported on its own; the fetch below uses it.";
+            }).catch(function (e) {
+                supplyMsg.textContent = "Failed: " + e.message;
+            });
+        });
+        var supplyRow = el("div", "rk-upload");
+        supplyRow.appendChild(pick);
+        supplyRow.appendChild(file);
+        supplyWrap.appendChild(supplyRow);
+        supplyWrap.appendChild(supplyMsg);
+        wrap.appendChild(supplyWrap);
+
         var go = el("button", "rk-btn rk-btn-primary", "Fetch and import now");
         var goMsg = el("div", "rk-dim", "");
         go.addEventListener("click", function () {
@@ -764,7 +844,11 @@
                 kev: overlayCb.checked,
                 epss: overlayCb.checked,
                 lifecycle: eolCb.checked,
-                cve_list: cveCb.checked
+                cve_list: cveCb.checked,
+                kev_file: staged.kev_file || "",
+                epss_file: staged.epss_file || "",
+                lifecycle_file: staged.lifecycle_file || "",
+                cve_list_file: staged.cve_list_file || ""
             }).then(function () { poll(); })
               .catch(function (e) { goMsg.textContent = "Failed: " + e.message; });
         });

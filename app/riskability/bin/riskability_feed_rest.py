@@ -361,8 +361,31 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         except (TypeError, ValueError):
             windows_updates = 0
         windows_updates = max(0, min(windows_updates, 120))
+        lifecycle = bool(body.get("lifecycle"))
+
+        # A source this host cannot reach can be uploaded instead and named
+        # here, so a direct fetch does not have to be abandoned for the sake of
+        # one blocked download. CISA is the case that forces it: it serves KEV
+        # behind a CDN that refuses whole datacentre ranges, and telling the
+        # operator to rebuild the entire bundle offline over one file is a poor
+        # trade when everything else is reachable.
+        #
+        # The name is resolved inside the incoming directory by the same
+        # function the bundle upload uses, so a path cannot escape it.
+        source_files = {}
+        for key in ("kev_file", "epss_file", "cve_list_file", "lifecycle_file"):
+            name = (body.get(key) or "").strip()
+            if not name:
+                continue
+            staged = _safe_incoming_path(name)
+            if not os.path.isfile(staged):
+                raise ValueError(
+                    "%s names %s, which is not in the incoming directory. "
+                    "Upload it first." % (key, name))
+            source_files[key] = staged
+
         if not (ecosystems or nvd or mitre or kev or epss or cve_list
-                or windows_updates):
+                or windows_updates or lifecycle or source_files):
             raise ValueError("select at least one source to fetch")
 
         self._queue(service, {
@@ -373,6 +396,11 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             "kev": kev,
             "epss": epss,
             "cve_list": cve_list,
+            "lifecycle": lifecycle,
+            "kev_file": source_files.get("kev_file", ""),
+            "epss_file": source_files.get("epss_file", ""),
+            "cve_list_file": source_files.get("cve_list_file", ""),
+            "lifecycle_file": source_files.get("lifecycle_file", ""),
             "windows_updates": windows_updates,
             "requested_by": user,
             "requested_at": int(time.time()),

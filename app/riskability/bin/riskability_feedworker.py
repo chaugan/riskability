@@ -270,6 +270,13 @@ class FeedWorker(Script):
                     epss=bool(request.get("epss")),
                     lifecycle=bool(request.get("lifecycle")),
                     cve_list=bool(request.get("cve_list")),
+                    # A source the search head could not reach, uploaded by
+                    # hand and named in the request. The builder treats a file
+                    # exactly as if it had fetched it.
+                    kev_file=request.get("kev_file") or "",
+                    epss_file=request.get("epss_file") or "",
+                    cve_list_file=request.get("cve_list_file") or "",
+                    lifecycle_file=request.get("lifecycle_file") or "",
                     windows_updates=int(request.get("windows_updates") or 0),
                     version=f"online-{stamp}",
                     log=say,
