@@ -176,6 +176,7 @@
              ["Advisories", (feed.advisory_count || 0).toLocaleString()],
              ["Affected ranges", (feed.range_count || 0).toLocaleString()],
              ["Vendor “not affected”", (feed.notaffected_count || 0).toLocaleString()],
+             ["Support lifecycles", (feed.lifecycle_count || 0).toLocaleString()],
              ["CWE → ATT&CK mappings", (feed.attack_count || 0).toLocaleString()],
              ["…with a tactic", (feed.attack_with_tactics || 0).toLocaleString()]
             ].forEach(function (pair) {
@@ -504,7 +505,11 @@
          ["Driving the builder directly",
           "Both wrappers are convenience over one command. For a bundle covering only what you "
           + "run, call it yourself: python3 riskability-feed.pyz build --out feed.tar.gz "
-          + "--ecosystem Ubuntu --ecosystem npm --kev --epss --mitre --nvd 2020-2026"],
+          + "--ecosystem Ubuntu --ecosystem npm --kev --epss --mitre --lifecycle --nvd 2020-2026"],
+         ["Sources fetched by hand",
+          "Any source that a build host cannot reach can be downloaded elsewhere and passed in: "
+          + "--kev-file, --epss-file, --cve-list-file and --lifecycle-file each take a path to a "
+          + "copy you saved yourself."],
          ["Listing the sources", "python3 riskability-feed.pyz sources  (add --check to query live download sizes)"]
         ].forEach(function (o) {
             var li = el("li");
@@ -603,6 +608,11 @@
             text: "download the EPSS csv or csv.gz from first.org on any " +
                   "machine that can reach it, then ",
             flag: "--epss-file <path>",
+        },
+        lifecycle: {
+            text: "save https://endoflife.date/api/v1/products/full on any " +
+                  "machine that can reach it, then ",
+            flag: "--lifecycle-file <path>",
         },
     };
 
@@ -706,6 +716,15 @@
         overlayLab.appendChild(document.createTextNode(" KEV and EPSS"));
         extras.appendChild(overlayLab);
 
+        // One request and a couple of megabytes, and it answers a question no
+        // advisory does, so it is on by default like KEV and EPSS.
+        var eolCb = el("input"); eolCb.type = "checkbox"; eolCb.checked = true;
+        var eolLab = el("label", "rk-pick");
+        eolLab.appendChild(eolCb);
+        eolLab.appendChild(document.createTextNode(
+            " Support lifecycles, for end of support (small)"));
+        extras.appendChild(eolLab);
+
         // Off by default, unlike every other source here. It is about 600 MB to
         // download and roughly 120 MB in the feed, which is a decision worth
         // making deliberately rather than inheriting from a ticked box.
@@ -736,6 +755,7 @@
                 windows_updates: winCb.checked ? 24 : 0,
                 kev: overlayCb.checked,
                 epss: overlayCb.checked,
+                lifecycle: eolCb.checked,
                 cve_list: cveCb.checked
             }).then(function () { poll(); })
               .catch(function (e) { goMsg.textContent = "Failed: " + e.message; });

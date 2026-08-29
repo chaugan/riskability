@@ -380,6 +380,7 @@ def _import_bundle(
         "range_count": counts.get("ranges", 0),
         "notaffected_count": counts.get("notaffected", 0),
         "attack_count": counts.get("attack", 0),
+        "lifecycle_count": counts.get("lifecycle", 0),
         "attack_with_tactics": attack_with_tactics,
         "tactic_count": counts.get("tactics", 0),
         "schema": manifest.get("schema", ""),

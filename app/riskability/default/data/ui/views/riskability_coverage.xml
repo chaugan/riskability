@@ -392,6 +392,16 @@
         </search>
         <option name="riskability.riskability_grid.emptyText">Click a product on the timeline above to list every host carrying it, or leave it unfiltered for all of them. The filter on any column narrows it further.</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
+        <!-- A row names a machine, and this app has a page about one machine
+             which carries its own end of support panel, so that is where a row
+             goes. Without this the grid falls through to Splunk's default and
+             opens a raw SPL search, which is an implementation detail wearing
+             a drilldown's clothes. Confidence is passed too, because the host
+             page renders "waiting for input" on an unset filter, which reads
+             as a broken page rather than an unfiltered one. -->
+        <drilldown>
+          <link target="_blank">/app/riskability/riskability_host?form.hostname=$row.Host|u$&amp;form.conf_tok=high</link>
+        </drilldown>
       </viz>
     </panel>
   </row>
