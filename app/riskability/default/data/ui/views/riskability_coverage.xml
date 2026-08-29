@@ -5,9 +5,9 @@
   <fieldset submitButton="false" autoRun="true">
     <input type="dropdown" token="eol_horizon" searchWhenChanged="true">
       <label>Look ahead</label>
-      <choice value="6">the next 6 months</choice>
-      <choice value="12">the next 12 months</choice>
-      <choice value="24">the next 24 months</choice>
+      <choice value="6">next 6 months</choice>
+      <choice value="12">next 12 months</choice>
+      <choice value="24">next 24 months</choice>
       <default>6</default>
       <initialValue>6</initialValue>
     </input>
@@ -346,8 +346,8 @@
              products and clips at forty. -->
         <option name="height">180</option>
         <drilldown>
-          <set token="eol_pick">$click.value$</set>
-          <set token="eol_note">· $click.value$</set>
+          <set token="eol_pick">$row.product_line$</set>
+          <set token="eol_note">· $row.product_line$</set>
         </drilldown>
       </viz>
       <html>
@@ -390,7 +390,7 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="riskability.riskability_grid.emptyText">Every host carrying a product with a support date, one row each. Narrow it with the filter on any column, or with the product picker above.</option>
+        <option name="riskability.riskability_grid.emptyText">Click a product on the timeline above to list every host carrying it, or leave it unfiltered for all of them. The filter on any column narrows it further.</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
       </viz>
     </panel>
