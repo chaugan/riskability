@@ -114,12 +114,26 @@ var ADVISORY_RE = new RegExp(
 // Built relative to the app root, which is what makes this survive a reverse
 // proxy or a root_endpoint prefix. An absolute /en-US/... path would escape the
 // prefix and 404 for anybody not reaching Splunk on its bare hostname.
+/* The encyclopaedia view lives in this app, so a link has to name the app.
+ * Reading the name out of the current URL instead of hardcoding it is what
+ * lets the app work behind a reverse proxy prefix, such as the portal serving
+ * it under /share/<token>/, and what lets the app directory be renamed at
+ * install time. Both are invisible from in here.
+ *
+ * Anchor on the /app/<app> segment rather than chopping the last segment off.
+ * Chopping assumed the URL always ends in a view name, so a trailing slash
+ * made the view name itself the base and produced a 404. */
 function cveHref(id) {
-    var base = window.location.pathname.replace(/\/[^/]*$/, '');
+    var path = window.location.pathname;
     // Not uppercased. A CVE id is case insensitive but GHSA-537c-gmf6-5ccf is
     // not: the encyclopaedia matches the feed's own key, and upper-casing it
     // turned every non-CVE link into a page with nothing on it.
-    return base + '/riskability_cve?form.cve_tok=' + encodeURIComponent(id);
+    var tail = '/riskability_cve?form.cve_tok=' + encodeURIComponent(id);
+    var m = path.match(/^(.*\/app\/[^/]+)(?:\/|$)/);
+    if (m) { return m[1] + tail; }
+    // No /app/<app> segment, which Splunk Web does not serve a dashboard from.
+    // Keep the whole path rather than guess which part of it was a view name.
+    return path.replace(/\/+$/, '') + tail;
 }
 
 var VALUE_COLOR = {
