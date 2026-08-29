@@ -2,36 +2,6 @@
   <label>Coverage</label>
   <description>What the feed can and cannot say anything about. Read this before trusting a low finding count.</description>
 
-  <fieldset submitButton="false" autoRun="true">
-    <input type="dropdown" token="eol_horizon" searchWhenChanged="true">
-      <label>Look ahead</label>
-      <choice value="6">next 6 months</choice>
-      <choice value="12">next 12 months</choice>
-      <choice value="24">next 24 months</choice>
-      <default>6</default>
-      <initialValue>6</initialValue>
-    </input>
-    <input type="multiselect" token="eol_products" searchWhenChanged="true">
-      <label>Products</label>
-      <search>
-        <query>| inputlookup riskability_eolstate_lookup
-| where coalesce(eol_from, "") != ""
-| eval product_line = coalesce(label, product) . " " . cycle
-| stats count BY product_line
-| sort product_line</query>
-        <earliest>0</earliest>
-        <latest>now</latest>
-      </search>
-      <fieldForLabel>product_line</fieldForLabel>
-      <fieldForValue>product_line</fieldForValue>
-      <valuePrefix>"</valuePrefix>
-      <valueSuffix>"</valueSuffix>
-      <delimiter>,</delimiter>
-      <default>*</default>
-      <initialValue>*</initialValue>
-    </input>
-  </fieldset>
-
   <!-- Drilldown state, set here rather than by <input type="hidden">.
        Splunk 9 has no hidden input. It renders one as an ordinary text box
        labelled with the token's name, so this page used to open with its
@@ -320,6 +290,38 @@
   <row>
     <panel>
       <title>When support ends for the software found on this fleet</title>
+      <!-- Scoped to this panel rather than the dashboard's filter bar. They
+           steer this chart and nothing else on the page, and a filter bar at
+           the top of a dashboard is a promise that it filters the dashboard.
+           Panel inputs sit above the chart they belong to and say so by being
+           there. -->
+      <input type="dropdown" token="eol_horizon" searchWhenChanged="true">
+        <label>Look ahead</label>
+        <choice value="6">next 6 months</choice>
+        <choice value="12">next 12 months</choice>
+        <choice value="24">next 24 months</choice>
+        <default>6</default>
+        <initialValue>6</initialValue>
+      </input>
+      <input type="multiselect" token="eol_products" searchWhenChanged="true">
+        <label>Products</label>
+        <search>
+          <query>| inputlookup riskability_eolstate_lookup
+  | where coalesce(eol_from, "") != ""
+  | eval product_line = coalesce(label, product) . " " . cycle
+  | stats count BY product_line
+  | sort product_line</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <fieldForLabel>product_line</fieldForLabel>
+        <fieldForValue>product_line</fieldForValue>
+        <valuePrefix>"</valuePrefix>
+        <valueSuffix>"</valueSuffix>
+        <delimiter>,</delimiter>
+        <default>*</default>
+        <initialValue>*</initialValue>
+      </input>
       <viz type="riskability.riskability_chart">
         <search>
           <query>| inputlookup riskability_eolstate_lookup
