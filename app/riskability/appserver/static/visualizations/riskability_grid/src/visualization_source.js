@@ -226,9 +226,15 @@ function looksIdentifier(rows, index, distinct) {
  * placeholder states the grammar so it does not have to be guessed.
  *
  *   2026-08-28              that day
- *   >2026-08-01   since ..  on or after
- *   <2026-08-01   before .. strictly before
+ *   since 2026-08-01        on or after, same as >=
+ *   >2026-08-01             strictly after that day, so the day itself is out
+ *   before 2026-08-01       strictly before, same as <
+ *   <=2026-08-01            through the end of that day
  *   2026-08-01..2026-08-28  between, both ends included
+ *   2026-08-01..            open ended, everything from that day on
+
+ * ">" is strict and "since" is inclusive on purpose, the way the operators
+ * read. The tooltip offers "since" so nobody has to guess which one ">" is.
  */
 function dateFilter(term, value) {
     if (term === null || term === undefined) { return true; }
@@ -237,8 +243,14 @@ function dateFilter(term, value) {
     var v = String(value === null || value === undefined ? '' : value).trim();
     if (!v) { return false; }
 
+    // One open end is still a range: "2026-08-01.." and "..2026-08-15". The
+    // guard used to demand both ends, so an open ended range fell through to
+    // the substring test, which no date can contain, and the table went empty
+    // with nothing to explain why.
     var m = term.match(/^(.*?)\s*\.\.\s*(.*)$/);
-    if (m && m[1] && m[2]) { return v >= m[1] && v <= m[2] + '\uffff'; }
+    if (m && (m[1] || m[2])) {
+        return (!m[1] || v >= m[1]) && (!m[2] || v <= m[2] + '\uffff');
+    }
 
     m = term.match(/^(?:since|from|>=)\s*(.+)$/i);
     if (m) { return v >= m[1].trim(); }
@@ -480,7 +492,8 @@ export default SplunkVisualizationBase.extend({
             if (dateish) {
                 col.headerFilterFunc = dateFilter;
                 col.headerTooltip = title +
-                    ' — 2026-08-28, >2026-08-01, before 2026-08-01, 2026-08-01..2026-08-28';
+                    ': 2026-08-28, since 2026-08-01, before 2026-08-01, ' +
+                    '2026-08-01..2026-08-28, 2026-08-01..';
             }
             if (choices) {
                 col.headerFilterParams = { values: choices, clearable: true };
