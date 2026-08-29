@@ -283,3 +283,40 @@ body.rk-help-off .rk-status:not(.rk-bad) {
     .rk-ident { grid-template-columns: 1fr 1fr; }
     .rk-ident-who { grid-column: 1 / -1; grid-row: auto; }
 }
+
+/* Windows patch level, as a card rather than a nine column table with one row.
+   Same reasoning as rk-ident above: one machine, one answer, no column filters
+   or CSV button needed to read it. */
+.rk-win {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.3fr) 1fr 1fr 1fr;
+    gap: 16px 28px;
+    padding: 16px 18px;
+    background: #1a1d21;
+    border: 1px solid #2b3238;
+    border-radius: 3px;
+    align-items: start;
+}
+.rk-win-name { color: #f2f4f5; font-size: 16px; font-weight: 600; }
+/* The badge carries the colour the table's Distance cell used to. Only the two
+   states that map cleanly get one. */
+.rk-win-badge {
+    display: inline-block; margin-top: 8px;
+    padding: 3px 9px; border-radius: 3px;
+    font-size: 12px; font-weight: 600;
+    background: #33383f; color: #f2f4f5;
+}
+.rk-win-ok { background: #3f7d7a; }
+.rk-win-none { background: #6b5a2a; }
+.rk-win-fact span { display: block; color: #9aa2ab; font-size: 11px; margin-bottom: 3px; }
+.rk-win-fact b {
+    display: block; color: #f2f4f5; font-size: 15px;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+}
+/* The provenance line. A build derived from the cumulative update names the
+   servicing branch, so where the number came from changes how to read it. */
+.rk-win-fact i { display: block; color: #9aa2ab; font-size: 11px; font-style: normal; margin-top: 3px; }
+@media (max-width: 900px) {
+    .rk-win { grid-template-columns: 1fr 1fr; }
+    .rk-win-id { grid-column: 1 / -1; }
+}

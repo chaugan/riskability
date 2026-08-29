@@ -72,6 +72,52 @@
     <latest>now</latest>
   </search>
 
+  <!-- Feeds the Windows patch level card. Standalone for the same reason ident
+       is: a base search is never dispatched until a panel consumes its rows, and
+       an html panel reading a token is not a consumer. resultCount rather than a
+       flag in the row, so a host with no Windows state at all leaves w_present
+       unset and the card is absent instead of empty. -->
+  <search id="winlevel">
+    <query>| inputlookup riskability_winstate_lookup where hostname=$hostname|s$
+| eval distance = case(isnull(latest_ubr), "not in the feed",
+                       tonumber(behind_ubr) &lt;= 0, "up to date",
+                       1=1, tostring(behind_ubr, "commas") . " revisions behind")
+| eval dist_class = case(isnull(latest_ubr), "none",
+                         tonumber(behind_ubr) &lt;= 0, "ok", 1=1, "behind")
+| eval prod_line = if(isnull(release) OR release = "" OR like(product, "%" . release . "%"),
+                     coalesce(product, "Windows"),
+                     trim(product . " " . release))
+| eval latest_line = if(isnull(latest_build) OR latest_build = "",
+                        "not in this feed", latest_build)
+| eval update_line = if(isnull(latest_build) OR latest_build = "",
+        "no Windows update stream in the imported bundle",
+        coalesce(latest_kb, "update not named")
+        . if(isnull(latest_released) OR latest_released = "", "",
+             ", released " . latest_released))
+| eval kbs = tostring(coalesce(n_installed_kbs, 0), "commas")
+| eval src_line = coalesce(build_source, "source not stated")
+| fields prod_line, current_build, src_line, latest_line, update_line, distance, dist_class, kbs
+| head 1</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="w_present">1</set>
+        <set token="w_prod">$result.prod_line$</set>
+        <set token="w_build">$result.current_build$</set>
+        <set token="w_source">$result.src_line$</set>
+        <set token="w_latest">$result.latest_line$</set>
+        <set token="w_update">$result.update_line$</set>
+        <set token="w_distance">$result.distance$</set>
+        <set token="w_class">$result.dist_class$</set>
+        <set token="w_kbs">$result.kbs$</set>
+      </condition>
+      <condition>
+        <unset token="w_present"></unset>
+      </condition>
+    </done>
+  </search>
+
   <!-- Shown only once something is filtered. The link reloads the page with the
        two form inputs preserved, which is how the Exposure page clears its own
        drilldowns: Simple XML has no way to unset a token from an anchor. -->
@@ -511,27 +557,30 @@
   <row>
     <panel>
       <title>Windows patch level</title>
-      <table>
-        <search>
-          <query>| inputlookup riskability_winstate_lookup where hostname=$hostname|s$
-| eval distance = case(isnull(latest_ubr), "not in the feed",
-                       tonumber(behind_ubr) &lt;= 0, "up to date",
-                       1=1, tostring(behind_ubr, "commas") . " revisions behind")
-| table product, release, current_build, build_source, latest_build, latest_kb,
-        latest_released, distance, n_installed_kbs
-| rename product AS "Windows release", release AS "Version", current_build AS "Build it is on",
-         build_source AS "Where that came from", latest_build AS "Build the feed knows",
-         latest_kb AS "That update", latest_released AS "Released", distance AS "Distance",
-         n_installed_kbs AS "Standalone KBs"</query>
-        </search>
-        <option name="drilldown">none</option>
-        <option name="count">1</option>
-        <option name="rowNumbers">false</option>
-        <option name="wrap">true</option>
-        <format type="color" field="Distance">
-          <colorPalette type="map">{"up to date":#3f7d7a,"not in the feed":#6b5a2a}</colorPalette>
-        </format>
-      </table>
+      <!-- Nine column headers over a row that can only ever hold one machine's
+           answer, on a page that is already about one machine. Absent rather
+           than empty on Linux; the caption below carries that, as it always did.
+           Only "up to date" and "not in the feed" are coloured, which is what
+           the table's colour map did. Being behind is deliberately not given a
+           severity colour, because how many revisions is too many is a judgement
+           this app does not make for you. -->
+      <html depends="$w_present$">
+        <div class="rk-win">
+          <div class="rk-win-id">
+            <div class="rk-win-name">$w_prod$</div>
+            <div class="rk-win-badge rk-win-$w_class$">$w_distance$</div>
+          </div>
+          <div class="rk-win-fact">
+            <span>Build it is on</span><b>$w_build$</b><i>$w_source$</i>
+          </div>
+          <div class="rk-win-fact">
+            <span>Build the feed knows</span><b>$w_latest$</b><i>$w_update$</i>
+          </div>
+          <div class="rk-win-fact">
+            <span>Standalone KBs</span><b>$w_kbs$</b><i>outside the cumulative update</i>
+          </div>
+        </div>
+      </html>
       <html>
         <div class="rk-status" style="margin:8px 0 0">
           <b>Empty here means not assessed, and that is three different things.</b>
