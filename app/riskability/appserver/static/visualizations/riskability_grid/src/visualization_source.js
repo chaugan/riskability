@@ -91,16 +91,35 @@ function columnFloor(available, count) {
 /* The same semantic colours the charts use, so a "high" is the same red
  * wherever it appears. Keyed on the VALUE, not the column, because the same
  * words carry the same meaning in confidence, severity and status columns. */
-// Deliberately strict. A loose pattern would turn any string that merely
-// contains "CVE" into a link, including the free text of an advisory title.
-var CVE_RE = /^CVE-\d{4}-\d{4,7}$/i;
+/* Advisory identifiers this app can resolve, which is not only CVEs.
+ *
+ * Plenty of real vulnerabilities never get a CVE. OSV keys those on whatever the
+ * publishing source calls them, and the encyclopaedia is keyed the same way, so
+ * GHSA-537c-gmf6-5ccf resolves there exactly as a CVE does. Only CVE-shaped ids
+ * were linked, so 262 open findings on this fleet rendered as dead grey text
+ * beside blue neighbours, looking like a rendering fault rather than a
+ * vulnerability without a CVE number.
+ *
+ * An explicit list of prefixes rather than a shape, and that is deliberate. The
+ * grid linkifies by VALUE rather than by column, so a shape rule has to survive
+ * every other column: CWE-22 in the weakness column would become a dead link,
+ * and a Debian version like 3.0.13-0ubuntu3.4 is hyphenated too. A missing link
+ * is a smaller failure than a confident one that goes nowhere, so anything not
+ * listed here stays plain text. Prefixes taken from the feed itself. */
+var ADVISORY_RE = new RegExp(
+    '^(?:CVE|GHSA|USN|DSA|DLA|DTSA|RUSTSEC|PYSEC|GO|OSV|MAL|DRUPAL' +
+    '|RHSA|RHBA|RHEA|ALSA|ALBA|ALEA|RLSA|SUSE-SU|openSUSE-SU)' +
+    '-[A-Za-z0-9][A-Za-z0-9.:_-]*$');
 
 // Built relative to the app root, which is what makes this survive a reverse
 // proxy or a root_endpoint prefix. An absolute /en-US/... path would escape the
 // prefix and 404 for anybody not reaching Splunk on its bare hostname.
-function cveHref(cve) {
+function cveHref(id) {
     var base = window.location.pathname.replace(/\/[^/]*$/, '');
-    return base + '/riskability_cve?form.cve_tok=' + encodeURIComponent(cve.toUpperCase());
+    // Not uppercased. A CVE id is case insensitive but GHSA-537c-gmf6-5ccf is
+    // not: the encyclopaedia matches the feed's own key, and upper-casing it
+    // turned every non-CVE link into a page with nothing on it.
+    return base + '/riskability_cve?form.cve_tok=' + encodeURIComponent(id);
 }
 
 var VALUE_COLOR = {
@@ -492,13 +511,13 @@ export default SplunkVisualizationBase.extend({
                 col.formatter = function (cell) {
                     var v = cell.getValue();
                     var text = v === null || v === undefined ? '' : String(v);
-                    if (!CVE_RE.test(text)) { return text; }
+                    if (!ADVISORY_RE.test(text)) { return text; }
                     var a = document.createElement('a');
                     a.className = 'rk-grid-cve';
                     a.textContent = text;
                     a.target = '_blank';
                     a.rel = 'noopener';
-                    a.title = 'Open ' + text + ' in the CVE encyclopaedia';
+                    a.title = 'Open ' + text + ' in the advisory encyclopaedia';
                     a.href = cveHref(text);
                     // Selecting a row and opening a reference are different
                     // intentions; clicking the link must not also tick the box.

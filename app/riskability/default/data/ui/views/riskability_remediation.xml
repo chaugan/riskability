@@ -174,6 +174,14 @@
           decommissioned host, and a feed imported without the relevant ecosystem all look like
           this. Hence the separate table.
         </p>
+        <p class="rk-dim" style="margin:0">
+          <b>Not every row here is a CVE.</b> Plenty of real vulnerabilities are never
+          assigned one, and the feed keys those on whatever the publishing source calls them:
+          a GHSA from GitHub, a USN from Ubuntu, a DSA from Debian, a RUSTSEC or a PYSEC. The
+          column is headed CVE because that is what almost all of them are, and an identifier
+          that does not start with CVE is not a mistake or a parsing failure. It clicks
+          through to the encyclopaedia exactly as a CVE does.
+        </p>
       </html>
       <viz type="riskability.riskability_grid">
         <search>
