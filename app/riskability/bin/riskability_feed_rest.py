@@ -118,8 +118,17 @@ def _safe_incoming_path(filename: str) -> str:
     name = os.path.basename(filename or "")
     if not name or not SAFE_NAME.match(name):
         raise ValueError(f"invalid filename: {filename!r}")
-    if not name.endswith(".tar.gz"):
-        raise ValueError("bundle filename must end in .tar.gz")
+    # A bundle is a .tar.gz. A single source fetched by hand, for a host that
+    # cannot reach that one publisher, is whatever shape its publisher serves:
+    # CISA's catalogue is .json, EPSS is .csv or .csv.gz, the CVE Program ships
+    # a .zip. Refusing those was why handing one over on the page failed with
+    # "bundle filename must end in .tar.gz" and the fetch then ran without it.
+    if not (name.endswith(".tar.gz") or name.endswith(".json")
+            or name.endswith(".csv") or name.endswith(".csv.gz")
+            or name.endswith(".zip")):
+        raise ValueError(
+            "filename must be a .tar.gz bundle, or a source file ending in "
+            ".json, .csv, .csv.gz or .zip")
     os.makedirs(INCOMING_DIR, exist_ok=True)
     full = os.path.realpath(os.path.join(INCOMING_DIR, name))
     root = os.path.realpath(INCOMING_DIR)
@@ -470,13 +479,19 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
                                 "filename": os.path.basename(path),
                                 "final": False})
 
+        is_bundle = path.endswith(".tar.gz")
+
         # Validate before publishing the name, so a rejected bundle never
-        # appears in the staged list as if it were importable.
-        try:
-            feedlib.read_manifest(tmp)
-        except Exception:
-            os.unlink(tmp)
-            raise
+        # appears in the staged list as if it were importable. Only a bundle
+        # has a manifest to read: a source file fetched by hand is whatever its
+        # publisher serves, and running the bundle check over it deleted it and
+        # left the fetch to fail on the source it was meant to supply.
+        if is_bundle:
+            try:
+                feedlib.read_manifest(tmp)
+            except Exception:
+                os.unlink(tmp)
+                raise
         os.replace(tmp, path)
 
         # Import from here, in the request that finished the upload, because
@@ -485,6 +500,10 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         # well arrive somewhere else, which is exactly how "no staged bundle
         # named ..." happens on a search head cluster.
         if body.get("import_now"):
+            if not is_bundle:
+                raise ValueError(
+                    "only a .tar.gz bundle can be imported. A source file is "
+                    "used by the next fetch rather than imported on its own.")
             service = self._service(request)
             try:
                 self._refuse_if_busy(service)
