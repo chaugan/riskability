@@ -80,7 +80,7 @@
   <search id="winlevel">
     <query>| inputlookup riskability_winstate_lookup where hostname=$hostname|s$
 | eval distance = case(isnull(latest_ubr), "not in the feed",
-                       tonumber(behind_ubr) &lt;= 0, "up to date",
+                       tonumber(behind_ubr) &lt;= 0, "current with the feed",
                        1=1, tostring(behind_ubr, "commas") . " revisions behind")
 | eval dist_class = case(isnull(latest_ubr), "none",
                          tonumber(behind_ubr) &lt;= 0, "ok", 1=1, "behind")
@@ -596,7 +596,12 @@
             The host reports the build it is running, Microsoft states the build each update
             produces, and the two are compared. <b>Distance</b> counts revisions behind the
             newest build the imported feed knows, not the newest Microsoft has shipped, so a
-            stale feed makes a stale host look current. <b>Where that came from</b> matters:
+            stale feed makes a stale host look current. It is also measured inside this host's
+            own servicing branch and edition: <b>current with the feed</b> means nothing newer
+            has been published for the release it is on, never that the release itself is the
+            newest one or that it is still supported. A Windows release past end of servicing
+            stops receiving updates, and a host sitting on one reads as current here for
+            exactly that reason. <b>Where that came from</b> matters:
             a build derived from the cumulative update component names the servicing branch
             and can name the wrong release while still getting the update right.
           </span>

@@ -130,19 +130,12 @@
        glance, it disarms the channel: an operator who learns this panel goes red
        for machines he knows are deliberately quiet will dismiss the next red by
        reflex, on the same widget, and that next one is the dead collector. -->
-  <row>
-    <panel>
-      <title>Hosts that have gone quiet against their own pattern</title>
-      <!-- The verdict sentence is computed in the search beside the counts it
-           describes rather than selected by tokens in a done handler. Two
-           reasons, and the second is the one that decided it. A token set from
-           $result$ in a done handler does not fire reliably here: the branch
-           silently falls through to its default, so the panel renders a
-           confident sentence about the wrong state. And a sentence built from
-           the same row as the numbers cannot come to disagree with them. -->
-      <table>
-        <search>
-          <query>| inputlookup riskability_hostcadence_lookup
+  <!-- Feeds the fleet contact card. Dashboard level rather than inside the
+       panel, because that is where a done handler fires dependably; the verdict
+       is still built in the search, beside the numbers it describes, so the two
+       cannot come to disagree. -->
+  <search id="fleetstate">
+    <query>| inputlookup riskability_hostcadence_lookup
 | eval is_late = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)
 | eval is_on = if(tonumber(learned) = 1 AND tonumber(late) != 1, 1, 0)
 | eval is_new = if(isnull(learned) OR tonumber(learned) != 1, 1, 0)
@@ -155,22 +148,55 @@
     late &gt; 0, "Some hosts have stopped contacting us for longer than their own observed pattern. Their findings are frozen at what they last reported and nothing is confirming them: a host that stopped reporting looks exactly like a host with nothing new. This is a collector, forwarder or machine fault, not a statement about the risk on those hosts.",
     on_schedule = 0, "Not enough of this fleet's rhythm has been observed to alarm yet. Every host here has contacted us fewer than three times, so there is nothing to compare its silence against. A fleet collected only after a deliberate change will sit here for a while, and that is the correct answer rather than a delayed alarm.",
     1=1, "Every host with a learned rhythm is contacting us on its own schedule. That is a statement about collectors, not about risk: it means these numbers are as fresh as the hosts can make them, and nothing more. A host that last changed its software months ago and has confirmed it unchanged since is behaving normally and is not counted here.")
-| table state, late, on_schedule, unlearned, total, verdict
-| rename state AS "Fleet state", late AS "Gone quiet",
-         on_schedule AS "Contacting on schedule",
-         unlearned AS "No rhythm learned yet", total AS "Hosts known",
-         verdict AS "What that means"</query>
-          <earliest>0</earliest>
-          <latest>now</latest>
-        </search>
-        <option name="drilldown">none</option>
-        <option name="count">1</option>
-        <option name="rowNumbers">false</option>
-        <format type="color" field="Gone quiet">
-          <colorPalette type="list">[#3f7d7a,#dc4e41]</colorPalette>
-          <scale type="threshold">1</scale>
-        </format>
-      </table>
+| fields state, late, on_schedule, unlearned, total, verdict</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition>
+        <set token="f_state">$result.state$</set>
+        <set token="f_late">$result.late$</set>
+        <set token="f_on">$result.on_schedule$</set>
+        <set token="f_new">$result.unlearned$</set>
+        <set token="f_total">$result.total$</set>
+        <set token="f_verdict">$result.verdict$</set>
+      </condition>
+    </done>
+  </search>
+
+  <row>
+    <panel>
+      <title>Hosts that have gone quiet against their own pattern</title>
+      <!-- The verdict sentence is computed in the search beside the counts it
+           describes rather than selected by tokens in a done handler. Two
+           reasons, and the second is the one that decided it. A token set from
+           $result$ in a done handler does not fire reliably here: the branch
+           silently falls through to its default, so the panel renders a
+           confident sentence about the wrong state. And a sentence built from
+           the same row as the numbers cannot come to disagree with them. -->
+      <!-- One row that had to hold four counts and a 300 character paragraph.
+           A table cell is the wrong container for prose, and "What that means"
+           as a column heading over a sentence is a table pretending. The counts
+           keep the colour the table's Gone quiet cell had: green at zero, red
+           at one or more. That is the panel that has to go red when a host
+           stops reporting, so it is the one thing here that must not become
+           plain text. -->
+      <html depends="$f_state$">
+        <div class="rk-fleet">
+          <div class="rk-fleet-count rk-fleet-$f_state$">
+            <span>Gone quiet</span><b>$f_late$</b>
+          </div>
+          <div class="rk-fleet-count">
+            <span>Contacting on schedule</span><b>$f_on$</b>
+          </div>
+          <div class="rk-fleet-count">
+            <span>No rhythm learned yet</span><b>$f_new$</b>
+          </div>
+          <div class="rk-fleet-count">
+            <span>Hosts known</span><b>$f_total$</b>
+          </div>
+          <p class="rk-fleet-verdict">$f_verdict$</p>
+        </div>
+      </html>
       <html>
         <div class="rk-status rk-note">
           <b>Judged against each host, never against one number for the fleet.</b>

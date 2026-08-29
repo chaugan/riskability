@@ -86,3 +86,30 @@
 }
 .rk-glossary dt { color: #f2f4f5; font-size: 12px; font-weight: 600; }
 .rk-glossary dd { color: #9aa4ae; font-size: 12px; line-height: 1.55; margin: 0; }
+
+/* The fleet contact card. Was a one row table whose last column was a 300
+   character paragraph; a table cell is the wrong container for prose. */
+.rk-fleet {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px 24px;
+    padding: 16px 18px;
+    background: #1a1d21;
+    border: 1px solid #2b3238;
+    border-radius: 3px;
+}
+.rk-fleet-count span { display: block; color: #9aa2ab; font-size: 11px; margin-bottom: 3px; }
+.rk-fleet-count b {
+    display: block; color: #f2f4f5; font-size: 22px;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+}
+/* The one signal on this card that must survive being text: green at zero
+   quiet hosts, red at one or more, as the table cell was. */
+.rk-fleet-calm b, .rk-fleet-none b, .rk-fleet-unlearned b { color: #6db56b; }
+.rk-fleet-late b { color: #dc4e41; }
+.rk-fleet-verdict {
+    grid-column: 1 / -1; margin: 0;
+    border-top: 1px solid #2b3238; padding-top: 12px;
+    color: #d5d8dc; font-size: 12px; line-height: 1.5;
+}
+@media (max-width: 900px) { .rk-fleet { grid-template-columns: 1fr 1fr; } }
