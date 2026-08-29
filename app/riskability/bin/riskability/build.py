@@ -369,6 +369,14 @@ def build_bundle(
                     writer.add_winpatch(row)
                 win_rows += len(rows)
             say(f"  {win_rows} Windows update rows over {len(ids)} months")
+            # Declared like every other source. Without this a bundle carrying
+            # Windows build data did not say where it came from, the sources
+            # table on Feed administration had no row for it, and Microsoft's
+            # attribution was recorded nowhere at all.
+            sources.append({"name": "microsoft-msrc", "url": MSRC_UPDATES_URL,
+                            "fetched_at": int(time.time()), "records": win_rows,
+                            "licence": "Microsoft Security Update Guide; "
+                                       "see Microsoft terms of use."})
         except Exception as exc:
             failed("Windows update history", exc)
             say("  WARNING: no Windows build data. The Windows patch panel will "
@@ -397,7 +405,7 @@ def build_bundle(
                 writer.add_lifecycle(row)
             say(f"  {len(rows)} release series over "
                 f"{len({r['product'] for r in rows})} products")
-            sources.append({"name": "lifecycle", "url": origin,
+            sources.append({"name": "endoflife-date", "url": origin,
                             "fetched_at": int(time.time()), "records": len(rows),
                             "licence": "endoflife.date, CC BY-SA 4.0. Community "
                                        "maintained; not a vendor statement."})
