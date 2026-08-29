@@ -118,6 +118,74 @@
     </panel>
   </row>
 
+  <!-- Hosts that have gone quiet against their OWN pattern.
+       Deliberately not a <single>: a single value tile with rangeColors colours
+       a count, so the same situation goes red on a large fleet and stays grey on
+       a small one. And deliberately not a flat threshold, because the fleet that
+       scans hourly and the fleet that scans only after a deliberate change
+       cannot share one number. A host is late past twice its own observed
+       interval; a host with fewer than three observed intervals is never
+       alarmed on at all.
+       The failure to avoid here is crying wolf. A false alarm does not waste a
+       glance, it disarms the channel: an operator who learns this panel goes red
+       for machines he knows are deliberately quiet will dismiss the next red by
+       reflex, on the same widget, and that next one is the dead collector. -->
+  <row>
+    <panel>
+      <title>Hosts that have gone quiet against their own pattern</title>
+      <!-- The verdict sentence is computed in the search beside the counts it
+           describes rather than selected by tokens in a done handler. Two
+           reasons, and the second is the one that decided it. A token set from
+           $result$ in a done handler does not fire reliably here: the branch
+           silently falls through to its default, so the panel renders a
+           confident sentence about the wrong state. And a sentence built from
+           the same row as the numbers cannot come to disagree with them. -->
+      <table>
+        <search>
+          <query>| inputlookup riskability_hostcadence_lookup
+| eval is_late = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)
+| eval is_on = if(tonumber(learned) = 1 AND tonumber(late) != 1, 1, 0)
+| eval is_new = if(isnull(learned) OR tonumber(learned) != 1, 1, 0)
+| stats sum(is_late) AS late, sum(is_on) AS on_schedule,
+        sum(is_new) AS unlearned, count AS total
+| eval state = case(late &gt; 0, "late", total = 0, "none",
+                    on_schedule = 0, "unlearned", 1=1, "calm")
+| eval verdict = case(
+    total = 0, "No host has reported yet, so there is nothing to watch.",
+    late &gt; 0, "Some hosts have stopped contacting us for longer than their own observed pattern. Their findings are frozen at what they last reported and nothing is confirming them: a host that stopped reporting looks exactly like a host with nothing new. This is a collector, forwarder or machine fault, not a statement about the risk on those hosts.",
+    on_schedule = 0, "Not enough of this fleet's rhythm has been observed to alarm yet. Every host here has contacted us fewer than three times, so there is nothing to compare its silence against. A fleet collected only after a deliberate change will sit here for a while, and that is the correct answer rather than a delayed alarm.",
+    1=1, "Every host with a learned rhythm is contacting us on its own schedule. That is a statement about collectors, not about risk: it means these numbers are as fresh as the hosts can make them, and nothing more. A host that last changed its software months ago and has confirmed it unchanged since is behaving normally and is not counted here.")
+| table state, late, on_schedule, unlearned, total, verdict
+| rename state AS "Fleet state", late AS "Gone quiet",
+         on_schedule AS "Contacting on schedule",
+         unlearned AS "No rhythm learned yet", total AS "Hosts known",
+         verdict AS "What that means"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="count">1</option>
+        <option name="rowNumbers">false</option>
+        <format type="color" field="Gone quiet">
+          <colorPalette type="list">[#3f7d7a,#dc4e41]</colorPalette>
+          <scale type="threshold">1</scale>
+        </format>
+      </table>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Judged against each host, never against one number for the fleet.</b>
+          <span>
+            A machine scanned hourly is in trouble after two days; a machine scanned only when
+            somebody changes it is fine after two months. This counts the collector going
+            silent, never the software getting old. If a host here is collected on demand and
+            you want it watched anyway, run swinv's heartbeat on a timer and keep the full
+            collection on change: 309 bytes a scan removes the ambiguity entirely.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
   <row>
     <panel>
       <html>
