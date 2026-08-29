@@ -390,7 +390,7 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="riskability.riskability_grid.emptyText">Click a bar above to list every host carrying that product, or leave it unfiltered to see all of them.</option>
+        <option name="riskability.riskability_grid.emptyText">Every host carrying a product with a support date, one row each. Narrow it with the filter on any column, or with the product picker above.</option>
         <option name="riskability.riskability_grid.wrap">yes</option>
       </viz>
     </panel>

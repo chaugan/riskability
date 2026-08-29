@@ -610,6 +610,48 @@
     </panel>
   </row>
 
+  <!-- P7b. Support lifecycle for this machine. A CVE says a thing is broken;
+       this says nobody is going to fix it again, which no advisory states.
+       Ordered by evidence that it runs rather than by date, because a dead
+       runtime behind an open port is a different problem from the same runtime
+       sitting unused on disk, and the date is the same for both. -->
+  <row>
+    <panel>
+      <title>Software on this host with no supported release</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_eolstate_lookup where hostname=$hostname|s$
+| where past_eol = 1
+| eval Product = coalesce(label, product) . " " . cycle
+| eval Ends = if(coalesce(eol_from, "") == "", "not stated", eol_from)
+| sort 500 rung, Ends
+| table Product, package, version, support, confidence, reach, Ends, ecosystem, path
+| rename package AS "Package", version AS "Version installed", support AS "Supported by",
+         confidence AS "Confidence", reach AS "Evidence it runs", ecosystem AS "Ecosystem",
+         path AS "Path"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing installed here is past the end of its supported release, as far as the lifecycle data in the imported bundle can tell. That data covers a minority of any inventory, so this is not a statement that everything on this host is supported. The Coverage page lists what it cannot speak to.</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Who ships the copy decides whether it is really unsupported.</b>
+          <span>
+            <b>No supported release</b> means nobody upstream is fixing it and nobody else has
+            taken it on. <b>Supported by the distribution</b> means the series is finished
+            upstream but the vendor still backports into its own package, which is the same
+            reason a version comparison cannot settle a distro CVE. A package carrying an
+            <b>esm</b> or <b>fips</b> marker in its version string is being maintained past the
+            ordinary date and says so itself. Anything accepted as a risk in Findings is
+            excluded here too.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
   <!-- P8. The donut, and the one place a ring is honest here: four mutually
        exclusive states that sum to the host's installed instances. -->
   <row>

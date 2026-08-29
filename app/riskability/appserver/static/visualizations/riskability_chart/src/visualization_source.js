@@ -15,7 +15,7 @@
  */
 import * as echarts from 'echarts/core';
 import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
-         PieChart, LineChart, GraphChart, ScatterChart } from 'echarts/charts';
+         PieChart, LineChart, GraphChart, CustomChart } from 'echarts/charts';
 import {
     TooltipComponent,
     GridComponent,
@@ -34,7 +34,7 @@ import SplunkVisualizationBase from 'api/SplunkVisualizationBase';
 import vizUtils from 'api/SplunkVisualizationUtils';
 
 echarts.use([
-    TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart, ScatterChart,
+    TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart, CustomChart,
     PieChart, LineChart, GraphChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
     LegendComponent, MarkLineComponent, DataZoomInsideComponent, CanvasRenderer,
@@ -174,6 +174,7 @@ var CLICK_FIELDS = {
     treemap: ['label'],
     donut: ['label'],
     bar: ['label'],
+    timeline: ['label'],
     stackedbar: ['category', 'series'],
     stackedcolumn: ['category', 'series'],
     heatmap: ['x', 'y'],
@@ -538,18 +539,19 @@ function buildBoxplot(rows, t, config) {
 }
 
 
-/* A timeline of support end dates: one axis, one marker per product release,
- * labels stacked into lanes so none is hidden.
+/* A timeline of support end dates: one axis, one marker per product release at
+ * the date its support ends, with a stem lifting the label clear of the axis.
  *
- * A point, not a bar. An end of support date is an instant, and the earlier
- * bar version encoded a duration from today that is not in the data. A shared
- * axis also shows clustering, which one row per product destroys: a fleet whose
+ * A point, not a bar. An end of support date is an instant, and a bar drawn
+ * from today would encode a duration that is not in the data. A shared axis
+ * also shows clustering, which one row per product destroys: a fleet whose
  * software all expires in the same quarter looks nothing like one that expires
  * steadily, and that is visible here and nowhere else.
  *
- * Labels are never dropped when they collide. The panel grows instead, through
- * rkMinHeight, for the reason the chain graph does: the page scrolls, a missing
- * name does not come back.
+ * Labels alternate above and below the axis, which halves the height for the
+ * same number of products and keeps the stems short enough to trace back to
+ * the date they belong to. None is ever hidden when they collide; the panel
+ * grows through rkMinHeight instead, for the reason the chain graph does.
  *
  * Columns: label, end of support epoch ms, state ("overdue" or not).
  */
@@ -575,41 +577,61 @@ function buildTimeline(rows, t, config) {
     lo -= pad; hi += pad;
     var span = hi - lo || 1;
 
-    // Lane packing, in date order. The pixel width is an estimate because the
-    // builder runs before the panel is measured; it only has to be close
-    // enough that two labels never share a lane when they would overlap. Zoom
-    // only ever spreads them further apart, so the estimate errs safely.
+    // Lane packing, in date order, alternating sides. The pixel width is an
+    // estimate because the builder runs before the panel is measured; it only
+    // has to be close enough that two labels never share a lane when they would
+    // overlap, and zoom only ever spreads them apart, so it errs safely.
+    //
+    // Each label reserves the interval it actually covers. A label hung to the
+    // left of its marker occupies [x - w, x], not [x, x + w], and reserving the
+    // wrong side is what let two names sit on top of one another.
     recs.sort(function (a, b) { return a.d - b.d; });
-    var WIDTH = 1200, CHAR = 6.6, GAP = 18, laneEnd = [], maxLane = 0;
+    var WIDTH = 1200, CHAR = 6.6, GAP = 20, up = [], down = [], maxLane = 1;
     for (i = 0; i < recs.length; i++) {
         var x = ((recs[i].d - lo) / span) * WIDTH;
         var w = recs[i].name.length * CHAR + GAP;
+        // Hang it to the left only when the right would run off the panel.
+        var right = (x + w) <= WIDTH;
+        var a = right ? x : x - w;
+        var b = right ? x + w : x;
+        var side = (i % 2 === 1) ? down : up;
         var lane = 0;
-        while (laneEnd[lane] !== undefined && laneEnd[lane] > x) { lane++; }
-        laneEnd[lane] = x + w;
-        recs[i].lane = lane;
-        if (lane > maxLane) { maxLane = lane; }
+        for (;;) {
+            side[lane] = side[lane] || [];
+            var clash = false;
+            for (var k = 0; k < side[lane].length; k++) {
+                if (!(b <= side[lane][k][0] || a >= side[lane][k][1])) { clash = true; break; }
+            }
+            if (!clash) { side[lane].push([a, b]); break; }
+            lane++;
+        }
+        recs[i].right = right;
+        recs[i].lane = (side === down ? -1 : 1) * (lane + 1);
+        if (Math.abs(recs[i].lane) > maxLane) { maxLane = Math.abs(recs[i].lane); }
     }
 
     var pts = [];
     for (i = 0; i < recs.length; i++) {
         pts.push({
-            value: [recs[i].d, recs[i].lane],
+            // name, so a click reports the product the way every other chart
+            // here reports what was clicked.
             name: recs[i].name,
-            itemStyle: { color: recs[i].overdue ? '#dc4e41' : '#3f7d7a' },
+            value: [recs[i].d, recs[i].lane, recs[i].name,
+                    recs[i].overdue ? 1 : 0, recs[i].right ? 1 : 0],
         });
     }
 
     return {
         animation: false,
-        rkMinHeight: 96 + (maxLane + 1) * 26,
-        grid: { left: 8, right: 28, top: 16, bottom: 30, containLabel: true },
+        rkMinHeight: 90 + (maxLane * 2 + 1) * 27,
+        grid: { left: 10, right: 26, top: 16, bottom: 30, containLabel: true },
         tooltip: {
             backgroundColor: t.tooltipBg, borderColor: t.axis,
             textStyle: { color: t.text },
             formatter: function (p) {
-                return escapeHtml(p.data.name) + '<br/>support ends '
-                    + new Date(p.value[0]).toISOString().slice(0, 10);
+                var when = new Date(p.value[0]).toISOString().slice(0, 10);
+                return escapeHtml(String(p.value[2])) + '<br/>'
+                    + (p.value[3] ? 'support ended ' : 'support ends ') + when;
             },
         },
         // Scroll to zoom in time, drag to pan. filterMode none so a marker
@@ -619,20 +641,37 @@ function buildTimeline(rows, t, config) {
             type: 'time', min: lo, max: hi,
             axisLine: { lineStyle: { color: t.axis } },
             axisLabel: { color: t.muted },
-            splitLine: { show: false },
+            splitLine: { show: true, lineStyle: { color: t.axis, opacity: 0.35 } },
         },
         yAxis: {
-            type: 'value', min: -0.6, max: maxLane + 0.4,
-            inverse: true, show: false,
+            type: 'value', min: -(maxLane + 0.9), max: maxLane + 0.9, show: false,
         },
         series: [{
-            type: 'scatter', symbolSize: 11, data: pts,
-            label: {
-                show: true, position: 'right', distance: 8,
-                color: t.text, fontSize: 11,
-                // The text is a click target too. An 11px dot is a poor one.
-                triggerEvent: true,
-                formatter: function (p) { return p.data.name; },
+            type: 'custom',
+            encode: { x: 0, y: 1 },
+            data: pts,
+            renderItem: function (params, api) {
+                var d = api.value(0), lane = api.value(1), name = String(api.value(2));
+                var colour = api.value(3) ? '#dc4e41' : '#3f7d7a';
+                var right = !!api.value(4);
+                var base = api.coord([d, 0]);
+                var tip = api.coord([d, lane]);
+                return {
+                    type: 'group',
+                    children: [
+                        { type: 'line',
+                          shape: { x1: base[0], y1: base[1], x2: tip[0], y2: tip[1] },
+                          style: { stroke: colour, lineWidth: 1, opacity: 0.5 } },
+                        { type: 'circle', shape: { cx: base[0], cy: base[1], r: 3 },
+                          style: { fill: colour } },
+                        { type: 'circle', shape: { cx: tip[0], cy: tip[1], r: 5 },
+                          style: { fill: colour } },
+                        { type: 'text',
+                          style: { text: name, x: tip[0] + (right ? 10 : -10),
+                                   y: tip[1] - 6, fill: t.text, fontSize: 11,
+                                   textAlign: right ? 'left' : 'right' } },
+                    ],
+                };
             },
             markLine: {
                 silent: true, symbol: 'none',
