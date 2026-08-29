@@ -15,7 +15,9 @@
  */
 import * as echarts from 'echarts/core';
 import { TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart,
-         PieChart, LineChart, GraphChart, CustomChart } from 'echarts/charts';
+         PieChart, LineChart, GraphChart, CustomChart,
+         // The schedule dial plots its jobs as points on a polar grid.
+         ScatterChart } from 'echarts/charts';
 import {
     TooltipComponent,
     GridComponent,
@@ -24,6 +26,11 @@ import {
     // tree shaken build throws rather than ignoring a missing one.
     MarkLineComponent,
     DataZoomInsideComponent,
+    // The schedule dial draws on a polar grid, and its centre text is a
+    // graphic. Both are components: a tree shaken build without them throws
+    // or silently drops the part that answers the question.
+    PolarComponent,
+    GraphicComponent,
     VisualMapComponent,
     TitleComponent,
     LegendComponent,
@@ -35,9 +42,12 @@ import vizUtils from 'api/SplunkVisualizationUtils';
 
 echarts.use([
     TreemapChart, SankeyChart, HeatmapChart, BoxplotChart, BarChart, CustomChart,
+    ScatterChart,
     PieChart, LineChart, GraphChart,
     TooltipComponent, GridComponent, VisualMapComponent, TitleComponent,
-    LegendComponent, MarkLineComponent, DataZoomInsideComponent, CanvasRenderer,
+    LegendComponent, MarkLineComponent, DataZoomInsideComponent, PolarComponent,
+    GraphicComponent,
+    CanvasRenderer,
 ]);
 
 /*
@@ -175,6 +185,7 @@ var CLICK_FIELDS = {
     donut: ['label'],
     bar: ['label'],
     timeline: ['label'],
+    schedule: ['label'],
     stackedbar: ['category', 'series'],
     stackedcolumn: ['category', 'series'],
     heatmap: ['x', 'y'],
@@ -195,6 +206,9 @@ var CONTRACTS = {
     // label, the date support ends as epoch milliseconds, and whether that date
     // has already passed. A point in time, not a span.
     timeline: ['label', 'ends_ms', 'state'],
+    // One scheduled job per row: its name, the minute of the hour it runs at,
+    // how it last finished, and how long that took.
+    schedule: ['label', 'minute', 'state', 'seconds'],
     stackedbar: ['category', 'series', 'value'],
     stackedcolumn: ['category', 'series', 'value'],
     line: ['x', 'value'],
@@ -555,6 +569,124 @@ function buildBoxplot(rows, t, config) {
  *
  * Columns: label, end of support epoch ms, state ("overdue" or not).
  */
+/* The hour as a dial, because that is what this pipeline is: almost every
+ * schedule in the app runs hourly, so one turn is one cycle.
+ *
+ * The centre carries the answer to the only question a reader actually has,
+ * which is when the next thing happens and what it is. The ring is context: a
+ * mark per job at its minute, coloured by how it last finished, and a lit arc
+ * over the stretch of the hour the pipeline is working. The marks are texture
+ * rather than a list, because which of thirty six is next matters far less
+ * than whether the cycle is turning, and thirty six labels on a dial is a
+ * smear rather than a legend.
+ *
+ * The hand marks the ring rather than sweeping from the middle. A hand from
+ * the centre would cross the text that answers the question.
+ *
+ * Columns: label, minute of the hour, state, seconds the last run took.
+ */
+function buildSchedule(rows, t, config) {
+    var jobs = [], i;
+    for (i = 0; i < rows.length; i++) {
+        var minute = num(rows[i][1]);
+        if (minute === null || minute < 0 || minute > 59) { continue; }
+        jobs.push({
+            name: String(rows[i][0]),
+            minute: minute,
+            state: String(rows[i][2] === undefined ? '' : rows[i][2]).toLowerCase(),
+            secs: num(rows[i][3]),
+        });
+    }
+    if (!jobs.length) { return null; }
+    jobs.sort(function (a, b) { return a.minute - b.minute; });
+
+    var now = new Date();
+    var nowMin = now.getMinutes() + now.getSeconds() / 60;
+    var lo = jobs[0].minute, hi = jobs[jobs.length - 1].minute;
+
+    // The next one due, wrapping into the next hour when the cycle is done for
+    // this one. Without the wrap the panel reads "next in 0 min" for the five
+    // idle minutes at the top of every hour.
+    var next = null;
+    for (i = 0; i < jobs.length; i++) {
+        if (jobs[i].minute > nowMin) { next = jobs[i]; break; }
+    }
+    var mins;
+    if (next) {
+        mins = next.minute - nowMin;
+    } else {
+        next = jobs[0];
+        mins = (60 - nowMin) + next.minute;
+    }
+    var countdown = mins < 1 ? (Math.round(mins * 60) + ' s')
+                             : (Math.round(mins) + ' min');
+
+    function colour(state) {
+        if (state === 'success' || state === 'completed') { return '#3f7d7a'; }
+        if (!state || state === 'unknown') { return '#6b5a2a'; }
+        return '#dc4e41';
+    }
+
+    var arc = [];
+    for (var m = lo; m <= hi; m += 0.5) { arc.push([25, m]); }
+
+    return {
+        animation: false,
+        polar: { radius: ['62%', '88%'] },
+        angleAxis: {
+            type: 'value', min: 0, max: 60, startAngle: 90, clockwise: true,
+            interval: 5,
+            axisLine: { lineStyle: { color: t.axis } },
+            axisTick: { show: false },
+            axisLabel: {
+                color: t.muted, fontSize: 10, margin: 6,
+                formatter: function (v) {
+                    return v === 60 ? '' : ':' + (v < 10 ? '0' : '') + v;
+                },
+            },
+            splitLine: { lineStyle: { color: t.axis, opacity: 0.3 } },
+        },
+        radiusAxis: { type: 'value', min: 0, max: 30, show: false },
+        tooltip: {
+            backgroundColor: t.tooltipBg, borderColor: t.axis,
+            textStyle: { color: t.text },
+            formatter: function (p) {
+                var d = p.data || {};
+                var took = (d.secs === null || d.secs === undefined)
+                    ? 'no run recorded'
+                    : ('last took ' + d.secs + ' s');
+                return escapeHtml(String(d.name || '')) + '<br/>runs at :'
+                    + (p.value[1] < 10 ? '0' : '') + p.value[1] + '<br/>' + took;
+            },
+        },
+        series: [
+            { type: 'line', coordinateSystem: 'polar', showSymbol: false,
+              silent: true, data: arc,
+              lineStyle: { color: '#3f7d7a', width: 9, opacity: 0.22 } },
+            { type: 'scatter', coordinateSystem: 'polar', symbolSize: 6,
+              data: jobs.map(function (j) {
+                  return { value: [25, j.minute], name: j.name, secs: j.secs,
+                           itemStyle: { color: colour(j.state), opacity: 0.9 } };
+              }) },
+            { type: 'line', coordinateSystem: 'polar', showSymbol: false,
+              silent: true, data: [[0, nowMin], [29, nowMin]],
+              lineStyle: { color: t.text, width: 2 } },
+        ],
+        graphic: [
+            { type: 'text', left: 'center', top: '40%',
+              style: { text: 'next in ' + countdown, fill: t.text,
+                       fontSize: 19, fontWeight: 600, textAlign: 'center' } },
+            { type: 'text', left: 'center', top: '49%',
+              style: { text: shorten(next.name, 34), fill: '#d5d8dc',
+                       fontSize: 11, textAlign: 'center' } },
+            { type: 'text', left: 'center', top: '56%',
+              style: { text: 'at :' + (next.minute < 10 ? '0' : '') + next.minute
+                             + '  \u00b7  ' + jobs.length + ' hourly jobs',
+                       fill: t.muted, fontSize: 10, textAlign: 'center' } },
+        ],
+    };
+}
+
 function buildTimeline(rows, t, config) {
     var recs = [], lo = null, hi = null, i;
     for (i = 0; i < rows.length; i++) {
@@ -1435,6 +1567,7 @@ var BUILDERS = {
     boxplot: buildBoxplot,
     bar: buildBar,
     timeline: buildTimeline,
+    schedule: buildSchedule,
     prioritymatrix: buildPriorityMatrix,
     kevbridge: buildKevBridge,
     chaingraph: buildChainGraph,

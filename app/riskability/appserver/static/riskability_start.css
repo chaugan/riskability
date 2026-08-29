@@ -113,3 +113,16 @@
     color: #d5d8dc; font-size: 12px; line-height: 1.5;
 }
 @media (max-width: 900px) { .rk-fleet { grid-template-columns: 1fr 1fr; } }
+
+/* The line under the schedule dial, for the schedules an hour dial cannot
+   show. Same weight as the fleet card's footer, since it is the same kind of
+   thing: a fact that did not fit the picture above it. */
+.rk-offhour {
+    border-top: 1px solid #2b3238;
+    margin-top: 6px;
+    padding-top: 9px;
+    color: #9aa2ab;
+    font-size: 11px;
+    line-height: 1.6;
+}
+.rk-offhour b { color: #f2f4f5; font-weight: 600; }

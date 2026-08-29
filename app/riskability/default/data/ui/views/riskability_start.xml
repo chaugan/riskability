@@ -163,6 +163,36 @@
     </done>
   </search>
 
+  <!-- The two schedules an hour dial cannot show. Built as one sentence in the
+       search rather than as a table, because the panel needs a line of prose
+       and the number of them is not fixed. Standalone, so its done handler
+       fires: a base search is not dispatched until a panel consumes its rows,
+       and an html panel reading a token is not a consumer. -->
+  <search id="offhour">
+    <query>| rest /servicesNS/nobody/riskability/saved/searches splunk_server=local
+| search eai:acl.app=riskability cron_schedule=* is_scheduled=1
+| rex field=cron_schedule "^(?&lt;sched_min&gt;\d+)\s+(?&lt;sched_hour&gt;\S+)"
+| where sched_hour!="*"
+| eval label = replace(title, "^Riskability - ", "")
+| eval nxt = strptime(replace(next_scheduled_time, " UTC$", ""), "%Y-%m-%d %H:%M:%S")
+| eval away = nxt - now()
+| eval in_txt = case(isnull(away), "not scheduled",
+                     away &lt; 3600, tostring(round(away/60)) . " min",
+                     away &lt; 172800, tostring(round(away/3600)) . " h",
+                     1=1, tostring(round(away/86400)) . " d")
+| eval one = label . ", next " . strftime(nxt, "%a %H:%M") . " (in " . in_txt . ")"
+| stats values(one) AS parts
+| eval line = mvjoin(parts, "   ·   ")
+| fields line</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition>
+        <set token="offhour_line">$result.line$</set>
+      </condition>
+    </done>
+  </search>
+
   <row>
     <panel>
       <title>Hosts that have gone quiet against their own pattern</title>
@@ -208,6 +238,43 @@
             collection on change: 309 bytes a scan removes the ambiguity entirely.
           </span>
         </div>
+      </html>
+    </panel>
+    <panel>
+      <title>Where the hour is</title>
+      <!-- Almost every schedule in this app is hourly, so one turn of the dial
+           is one full cycle of the pipeline. Drilldown is switched off on
+           purpose: there is nothing useful to drill to from a scheduled job,
+           and left on, Splunk supplies its own default and a click opens a raw
+           SPL search. -->
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| rest /servicesNS/nobody/riskability/saved/searches splunk_server=local
+| search eai:acl.app=riskability cron_schedule=* is_scheduled=1
+| rex field=cron_schedule "^(?&lt;sched_min&gt;\d+)\s+(?&lt;sched_hour&gt;\S+)"
+| where sched_hour=="*"
+| eval savedsearch_name = title
+| join type=left savedsearch_name
+    [ search index=_internal sourcetype=scheduler app=riskability status=* earliest=-3h latest=now
+    | stats latest(status) AS run_status latest(run_time) AS run_secs BY savedsearch_name ]
+| eval label = replace(title, "^Riskability - ", "")
+| eval minute = tonumber(sched_min)
+| eval state = coalesce(run_status, "unknown")
+| eval seconds = round(tonumber(coalesce(run_secs, 0)), 2)
+| table label, minute, state, seconds
+| sort minute</query>
+          <earliest>-3h</earliest>
+          <latest>now</latest>
+          <refresh>60</refresh>
+          <refreshType>delay</refreshType>
+        </search>
+        <option name="riskability.riskability_chart.chartType">schedule</option>
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <option name="riskability.riskability_chart.emptyText">No scheduled searches were readable. This panel reads the app's own schedules, so an account without access to them sees nothing here rather than an empty pipeline.</option>
+        <option name="height">330</option>
+      </viz>
+      <html depends="$offhour_line$">
+        <div class="rk-offhour"><b>Not on the hour:</b> $offhour_line$</div>
       </html>
     </panel>
   </row>
