@@ -146,6 +146,96 @@ function looksNumeric(rows, index) {
 /* A select filter is far quicker to use than free text, but only while the
  * list is short enough to scan. Above that it becomes a scrolling menu that is
  * worse than typing. */
+/* Dates read as text and sort as text, which is exactly why they must not become
+ * a select. A dropdown of timestamps is a list of every distinct instant in the
+ * result: useless to scan, and it silently answers "show me one moment" when
+ * what anybody wants from a date column is a range.
+ *
+ * Recognised on the shapes this app actually emits, which is ISO first because
+ * every date written here comes from strftime with %Y-%m-%d. */
+var DATE_RE = /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2})?)?$/;
+
+function looksDateLike(rows, index) {
+    var seen = 0, hits = 0;
+    for (var i = 0; i < rows.length && seen < 40; i++) {
+        var v = rows[i][index];
+        if (v === null || v === undefined || v === '') { continue; }
+        seen++;
+        if (DATE_RE.test(String(v).trim())) { hits++; }
+    }
+    return seen > 0 && hits === seen;
+}
+
+/* A path, a version, or a value that is mostly unique down the column is an
+ * identifier rather than an enumeration, and an identifier belongs in a text
+ * box. The old rule offered a select for anything under 25 distinct values,
+ * which meant the same column was a dropdown on a small result and a text box
+ * on a large one: the control changed shape with the data rather than with the
+ * kind of thing in it. */
+/* Some columns are identities whatever their shape. A fleet of four hosts has
+ * four hostnames, which looks exactly like an enumeration and is not one: the
+ * same column on a real fleet has thousands, so the control would change from a
+ * picker to a text box purely because the fleet grew. A name, a package, a path
+ * or a version is something you type part of, never something you choose from a
+ * list that happens to be short today. */
+var IDENT_TITLE_RE =
+    /(^|\b)(host|hostname|machine|package|name|path|file|found at|installed|fixed in|cve|key|id|image|container|executable|process|version|digest|build)(\b|$)/i;
+
+function titleIsIdentity(title) {
+    return IDENT_TITLE_RE.test(String(title || ''));
+}
+
+function looksIdentifier(rows, index, distinct) {
+    var seen = 0, longish = 0, pathy = 0, versiony = 0;
+    for (var i = 0; i < rows.length && seen < 40; i++) {
+        var v = rows[i][index];
+        if (v === null || v === undefined || v === '') { continue; }
+        v = String(v); seen++;
+        if (v.length > 28) { longish++; }
+        if (v.indexOf('/') >= 0 || v.indexOf('\\') >= 0) { pathy++; }
+        if (/^\d+(\.\d+)+/.test(v)) { versiony++; }
+    }
+    if (!seen) { return false; }
+    if (pathy === seen || versiony === seen || longish > seen / 2) { return true; }
+    // Mostly distinct down the column: a name, not a category.
+    return distinct && rows.length >= 8 && distinct.length > rows.length * 0.5;
+}
+
+/* Free text on a date column, with the comparisons a date column is actually
+ * asked for. No calendar popup: this app ships no date widget and cannot fetch
+ * one, and two inputs for a range in a header cell is worse than typing. The
+ * placeholder states the grammar so it does not have to be guessed.
+ *
+ *   2026-08-28              that day
+ *   >2026-08-01   since ..  on or after
+ *   <2026-08-01   before .. strictly before
+ *   2026-08-01..2026-08-28  between, both ends included
+ */
+function dateFilter(term, value) {
+    if (term === null || term === undefined) { return true; }
+    term = String(term).trim();
+    if (!term) { return true; }
+    var v = String(value === null || value === undefined ? '' : value).trim();
+    if (!v) { return false; }
+
+    var m = term.match(/^(.*?)\s*\.\.\s*(.*)$/);
+    if (m && m[1] && m[2]) { return v >= m[1] && v <= m[2] + '\uffff'; }
+
+    m = term.match(/^(?:since|from|>=)\s*(.+)$/i);
+    if (m) { return v >= m[1].trim(); }
+    m = term.match(/^>\s*(.+)$/);
+    if (m) { return v > m[1].trim() + '\uffff'; }
+
+    // <= before <, or the < branch eats the equals sign and compares against
+    // "=2026-08-15", which every digit sorts below, so everything matches.
+    m = term.match(/^<=\s*(.+)$/);
+    if (m) { return v <= m[1].trim() + '\uffff'; }
+    m = term.match(/^(?:before|until|<)\s*(.+)$/i);
+    if (m) { return v < m[1].trim(); }
+
+    return v.indexOf(term) === 0 || v.indexOf(term) >= 0;
+}
+
 function distinctValues(rows, index, limit) {
     var seen = {}, out = [];
     for (var i = 0; i < rows.length; i++) {
@@ -332,13 +422,19 @@ export default SplunkVisualizationBase.extend({
         var columns = fields.map(function (f, i) {
             var title = f.name;
             var numeric = looksNumeric(rows, i);
-            var choices = numeric ? null : distinctValues(rows, i, 25);
+            var dateish = !numeric && looksDateLike(rows, i);
+            var choices = (numeric || dateish) ? null : distinctValues(rows, i, 12);
+            if (choices && (titleIsIdentity(title) || looksIdentifier(rows, i, choices))) {
+                choices = null;
+            }
 
             var col = {
                 title: title,
                 field: 'c' + i,
                 headerFilter: choices ? 'list' : 'input',
-                headerFilterPlaceholder: 'filter…',
+                headerFilterPlaceholder: dateish
+                    ? 'date, >, <, a..b'
+                    : 'filter…',
                 resizable: true,
                 headerTooltip: title,
                 // The full value on hover. Cells are ellipsised, and a Windows
@@ -362,6 +458,11 @@ export default SplunkVisualizationBase.extend({
                     action: function (e, column) { column.hide(); },
                 }],
             };
+            if (dateish) {
+                col.headerFilterFunc = dateFilter;
+                col.headerTooltip = title +
+                    ' — 2026-08-28, >2026-08-01, before 2026-08-01, 2026-08-01..2026-08-28';
+            }
             if (choices) {
                 col.headerFilterParams = { values: choices, clearable: true };
                 col.headerFilterFunc = '=';

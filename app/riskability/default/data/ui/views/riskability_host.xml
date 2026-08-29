@@ -38,6 +38,9 @@
     <set token="cell_exploit">*</set>
     <set token="cell_reach">*</set>
     <set token="cell_note"></set>
+    <set token="cfg_label_tok">*</set>
+    <set token="cfg_series_tok">*</set>
+    <set token="cfg_note"></set>
   </init>
 
   <!-- Sets host_late, which gates the out-of-contact banner. Its own search
@@ -68,6 +71,23 @@
     <earliest>0</earliest>
     <latest>now</latest>
   </search>
+
+  <!-- Shown only once something is filtered. The link reloads the page with the
+       two form inputs preserved, which is how the Exposure page clears its own
+       drilldowns: Simple XML has no way to unset a token from an anchor. -->
+  <row depends="$any_filter$">
+    <panel>
+      <html>
+        <div class="rk-drill-bar">
+          <span class="rk-drill-hint">Something on this page is filtered. The charts stay whole
+            so you can pick something else.</span>
+          <span class="rk-drill-state">Findings $cell_note$ · Mechanisms $cfg_note$</span>
+          <a class="rk-drill-clear"
+             href="riskability_host?form.hostname=$hostname|u$&amp;form.conf_tok=$conf_tok|u$">Clear</a>
+        </div>
+      </html>
+    </panel>
+  </row>
 
   <!-- P1. Identity, then the four clocks.
        Deliberately not one Tabulator grid: a single row of facts wrapped in
@@ -319,6 +339,7 @@
           <set token="cell_exploit">$row.exploit_class$</set>
           <set token="cell_reach">$row.reach_class$</set>
           <set token="cell_note">· $row.exploit_class$, $row.reach_class$</set>
+          <set token="any_filter">1</set>
         </drilldown>
       </viz>
       <html>
@@ -392,7 +413,12 @@
         <option name="riskability.riskability_chart.chartType">stackedbar</option>
         <option name="riskability.riskability_chart.colorScale">category</option>
         <option name="riskability.riskability_chart.valueLabel">mechanisms</option>
-        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <drilldown>
+          <set token="cfg_label_tok">$row.label$</set>
+          <set token="cfg_series_tok">$row.series$</set>
+          <set token="cfg_note">· $row.label$, $row.series$</set>
+          <set token="any_filter">1</set>
+        </drilldown>
         <option name="riskability.riskability_chart.emptyText">No configuration records for this host. Either the collector ran without the config flag, or it predates swinv 0.8.0. Absence here is missing data, not a hardened host.</option>
         <option name="height">360</option>
       </viz>
@@ -400,9 +426,12 @@
   </row>
   <row>
     <panel>
+      <title>The mechanisms themselves $cfg_note$</title>
       <viz type="riskability.riskability_grid">
         <search base="cfg_base">
-          <query>| eval writable = case(world_writable="true" OR world_writable=1, "anyone can write it",
+          <query>| eval series = if(tonumber(n_evidence) &gt; 0, "flagged by swinv", "surface, no weakness flagged")
+| search label=$cfg_label_tok|s$ series=$cfg_series_tok|s$
+| eval writable = case(world_writable="true" OR world_writable=1, "anyone can write it",
                        isnull(world_writable) OR world_writable="", "", 1=1, "no")
 | eval flagged = if(tonumber(n_evidence) &gt; 0, n_evidence, "none")
 | eval owner = if(isnull(purl) OR purl="", "no package owns this",
@@ -426,8 +455,9 @@
             <b>Weaknesses flagged</b> is swinv's own count, carried through and never
             re-derived here, because it knows a context an outside join does not. A kind with
             no rows means nothing was found inside this scan's configuration scope; on a
-            collector below 0.8.0 it means the probe never ran. Filter the Kind column for
-            Defender exclusions, cron or Scheduled Tasks.
+            collector below 0.8.0 it means the probe never ran. Click a bar above to narrow
+            this table to one mechanism, or filter the Kind column for Defender exclusions,
+            cron or Scheduled Tasks.
           </span>
         </div>
       </html>
