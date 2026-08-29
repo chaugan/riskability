@@ -242,3 +242,44 @@ body.rk-help-off .rk-status:not(.rk-bad) {
     .rk-hostcard { grid-template-columns: 1fr; gap: 14px; }
     .rk-hostcard-clocks { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
 }
+
+/* The host page identity card. One panel where there used to be a one row
+   table and four <single> tiles: eight facts about the same machine, five
+   panel borders between them. Its values arrive as tokens set by the ident
+   search's <done>, which is why the panel declares depends. */
+.rk-ident {
+    display: grid;
+    grid-template-columns: minmax(200px, 1.2fr) 1fr 1fr;
+    gap: 16px 28px;
+    padding: 16px 18px;
+    background: #1a1d21;
+    border: 1px solid #2b3238;
+    border-radius: 3px;
+}
+/* Spans both clock rows so the name sits against all four of them rather than
+   against the first one, which left the machine id orphaned under a gap. */
+.rk-ident-who { grid-column: 1; grid-row: 1 / span 2; }
+.rk-ident-name {
+    color: #f2f4f5; font-size: 19px; font-weight: 600;
+    line-height: 1.2; word-break: break-all;
+}
+.rk-ident-os { color: #d5d8dc; font-size: 12px; margin-top: 5px; }
+.rk-ident-machine { color: #9aa2ab; font-size: 11px; margin-top: 3px; }
+/* Label above value, not beside it: the values are short and the labels are
+   not, so a row layout ragged the numbers into four different columns. */
+.rk-ident-clock span {
+    display: block; color: #9aa2ab; font-size: 11px; margin-bottom: 3px;
+}
+.rk-ident-clock b { color: #f2f4f5; font-size: 15px; font-weight: 600; }
+.rk-ident-foot {
+    grid-column: 1 / -1;
+    border-top: 1px solid #2b3238;
+    padding-top: 10px;
+    color: #9aa2ab; font-size: 11px;
+}
+/* One column once the panel is too narrow to keep three, which is what a
+   half width dashboard column or a laptop in a split does to it. */
+@media (max-width: 900px) {
+    .rk-ident { grid-template-columns: 1fr 1fr; }
+    .rk-ident-who { grid-column: 1 / -1; grid-row: auto; }
+}

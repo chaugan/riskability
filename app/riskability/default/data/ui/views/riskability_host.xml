@@ -89,14 +89,23 @@
     </panel>
   </row>
 
-  <!-- P1. Identity, then the four clocks.
-       Deliberately not one Tabulator grid: a single row of facts wrapped in
-       column filters and a CSV button is 400px spent on one machine's name, and
-       it is how a page comes to look assembled rather than designed. A compact
-       Simple XML table has no 340px floor, and the clocks are the same <single>
-       tiles the landing page uses for the same three questions.
-       The base search is shared, so all five panels here cost one dispatch. -->
-  <search id="clocks">
+  <!-- P1. Identity and the four clocks, as one card.
+       Deliberately not a Tabulator grid: a single row of facts wrapped in
+       column filters and a CSV button is 400px spent on one machine's name.
+       It is not a one row table plus four tiles either, which is five panels
+       and four borders around eight facts about the same machine.
+
+       Standalone rather than a shared base search, and that is the whole
+       trick. A base search is lazy: Splunk never dispatches one until a panel
+       consumes its results, and an <html> panel reading a token is not a
+       consumer, so the <done> below never fired and every $t_...$ rendered as
+       its own literal text. A search with no base= consumers dispatches on
+       load, exactly as latecheck above does. One dispatch, as before.
+
+       The ages are rendered here rather than as <single> tiles because a tile
+       shows a bare number and needs its unit in an underLabel. Still not
+       coloured, for the reason the caption below gives. -->
+  <search id="ident">
     <query>| inputlookup riskability_hoststate_lookup where _key=$hostname|s$
 | lookup riskability_scanstate_lookup hostname
     OUTPUT swinv_version, os_build, os_display_version, os_edition, scan_profile, full_scan, scanned_at
@@ -120,14 +129,52 @@
 | eval collector = coalesce(swinv_version, "version not reported")
       . if(isnull(scan_profile) OR scan_profile="", ", scan profile not declared",
            if(full_scan="True" OR full_scan="true", ", full scan", ", partial scan"))
-| eval h_contact = if(isnull(host_last_scan), null(), round((now() - host_last_scan)/3600, 1))
-| eval d_soft = case(isnotnull(digest_changed_at), round((now() - digest_changed_at)/86400, 1),
-                     isnotnull(scanned_at), round((now() - scanned_at)/86400, 1), 1=1, null())
-| eval h_match = if(isnull(matched_at), null(), round((now() - matched_at)/3600, 1))
-| eval d_feed = if(isnull(feed_at), null(), round((now() - feed_at)/86400, 1))
-| eval late_flag = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)</query>
+| eval soft_at = coalesce(digest_changed_at, scanned_at)
+| eval a_contact = if(isnull(host_last_scan), null(), now() - host_last_scan),
+       a_soft = if(isnull(soft_at), null(), now() - soft_at),
+       a_match = if(isnull(matched_at), null(), now() - matched_at),
+       a_feed = if(isnull(feed_at), null(), now() - feed_at)
+| eval c_contact = case(isnull(a_contact), "never",
+        a_contact >= 172800, tostring(round(a_contact/86400)) . " d ago",
+        a_contact >= 5400, tostring(round(a_contact/3600, 1)) . " h ago",
+        1=1, tostring(round(a_contact/60)) . " min ago")
+| eval c_soft = case(isnull(a_soft), "never",
+        a_soft >= 172800, tostring(round(a_soft/86400)) . " d ago",
+        a_soft >= 5400, tostring(round(a_soft/3600, 1)) . " h ago",
+        1=1, tostring(round(a_soft/60)) . " min ago")
+| eval c_match = case(isnull(a_match), "never",
+        a_match >= 172800, tostring(round(a_match/86400)) . " d ago",
+        a_match >= 5400, tostring(round(a_match/3600, 1)) . " h ago",
+        1=1, tostring(round(a_match/60)) . " min ago")
+| eval c_feed = case(isnull(a_feed), "never",
+        a_feed >= 172800, tostring(round(a_feed/86400)) . " d ago",
+        a_feed >= 5400, tostring(round(a_feed/3600, 1)) . " h ago",
+        1=1, tostring(round(a_feed/60)) . " min ago")
+| appendpipe
+    [| stats count | where count = 0
+     | eval os_line = "not reported yet", machine_line = "",
+            rhythm = "this host has never reported", collector = "",
+            c_contact = "never", c_soft = "never", c_match = "never", c_feed = "never"]
+| fields os_line, machine_line, rhythm, collector, c_contact, c_soft, c_match, c_feed
+| head 1</query>
     <earliest>0</earliest>
     <latest>now</latest>
+    <!-- Every set sits inside a condition. A bare <set> alongside a <condition>
+         in the same <done> is silently ignored, which looks identical to a
+         search that returned nothing. The appendpipe above guarantees a row, so
+         the catch all condition always has values to hand over. -->
+    <done>
+      <condition>
+        <set token="t_os">$result.os_line$</set>
+        <set token="t_machine">$result.machine_line$</set>
+        <set token="t_rhythm">$result.rhythm$</set>
+        <set token="t_collector">$result.collector$</set>
+        <set token="t_contact">$result.c_contact$</set>
+        <set token="t_soft">$result.c_soft$</set>
+        <set token="t_match">$result.c_match$</set>
+        <set token="t_feed">$result.c_feed$</set>
+      </condition>
+    </done>
   </search>
 
   <!-- Only fires when the host is late against its own learned pattern, never
@@ -146,68 +193,31 @@
           </span>
         </div>
       </html>
-      <table>
-        <search base="clocks">
-          <query>| table os_line, machine_line, rhythm, collector
-| rename os_line AS "Operating system", machine_line AS "Architecture, build, machine id",
-         rhythm AS "Reporting rhythm", collector AS "Collector"</query>
-        </search>
-        <option name="drilldown">none</option>
-        <option name="count">1</option>
-        <option name="rowNumbers">false</option>
-        <option name="wrap">true</option>
-      </table>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Last contact</title>
-      <single>
-        <search base="clocks">
-          <query>| fields h_contact</query>
-        </search>
-        <option name="field">h_contact</option>
-        <option name="underLabel">hours since the collector last ran here, heartbeat included</option>
-        <option name="drilldown">none</option>
-        <option name="numberPrecision">0.0</option>
-      </single>
-    </panel>
-    <panel>
-      <title>Software last changed</title>
-      <single>
-        <search base="clocks">
-          <query>| fields d_soft</query>
-        </search>
-        <option name="field">d_soft</option>
-        <option name="underLabel">days since this host's inventory digest changed</option>
-        <option name="drilldown">none</option>
-        <option name="numberPrecision">0.0</option>
-      </single>
-    </panel>
-    <panel>
-      <title>Last compared to the feed</title>
-      <single>
-        <search base="clocks">
-          <query>| fields h_match</query>
-        </search>
-        <option name="field">h_match</option>
-        <option name="underLabel">hours since this host was matched</option>
-        <option name="drilldown">none</option>
-        <option name="numberPrecision">0.0</option>
-      </single>
-    </panel>
-    <panel>
-      <title>Feed imported</title>
-      <single>
-        <search base="clocks">
-          <query>| fields d_feed</query>
-        </search>
-        <option name="field">d_feed</option>
-        <option name="underLabel">days since the vulnerability data was built</option>
-        <option name="drilldown">none</option>
-        <option name="numberPrecision">0.0</option>
-      </single>
+      <!-- depends, so the card is absent until ident has answered. An unset
+           token in Simple XML renders as its own name, so without this the
+           first paint of the page is a card reading $t_os$. -->
+      <html depends="$t_os$">
+        <div class="rk-ident">
+          <div class="rk-ident-who">
+            <div class="rk-ident-name">$hostname$</div>
+            <div class="rk-ident-os">$t_os$</div>
+            <div class="rk-ident-machine">$t_machine$</div>
+          </div>
+          <div class="rk-ident-clock">
+            <span>Last contact</span><b>$t_contact$</b>
+          </div>
+          <div class="rk-ident-clock">
+            <span>Software last changed</span><b>$t_soft$</b>
+          </div>
+          <div class="rk-ident-clock">
+            <span>Last compared to the feed</span><b>$t_match$</b>
+          </div>
+          <div class="rk-ident-clock">
+            <span>Feed imported</span><b>$t_feed$</b>
+          </div>
+          <div class="rk-ident-foot">$t_rhythm$ · $t_collector$</div>
+        </div>
+      </html>
     </panel>
   </row>
 
