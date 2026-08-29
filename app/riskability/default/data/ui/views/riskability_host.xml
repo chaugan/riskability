@@ -318,7 +318,7 @@
         <drilldown>
           <set token="cell_exploit">$row.exploit_class$</set>
           <set token="cell_reach">$row.reach_class$</set>
-          <set token="cell_note">$row.exploit_class$, $row.reach_class$</set>
+          <set token="cell_note">· $row.exploit_class$, $row.reach_class$</set>
         </drilldown>
       </viz>
       <html>
