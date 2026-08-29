@@ -50,7 +50,15 @@ param(
     [string]$FeedTool = '',
     [string]$NvdApiKey = '',
     [ValidateSet('Auto', 'Mirror', 'Api')]
-    [string]$NvdSource = 'Auto'
+    [string]$NvdSource = 'Auto',
+    # Sources fetched by hand. A build host that cannot reach CISA, FIRST,
+    # the CVE Program or endoflife.date can still carry them: download the file
+    # on a machine that can, and name it here. Feed administration tells you to
+    # do this whenever its connectivity check finds a source unreachable.
+    [string]$KevFile = '',
+    [string]$EpssFile = '',
+    [string]$CveListFile = '',
+    [string]$LifecycleFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -129,6 +137,24 @@ switch ($FeedProfile) {
 # have it without taking every ecosystem as well.
 if ($WithCveList) { $buildArgs += @('--cve-list') }
 $buildArgs += @('--nvd-source', $NvdSource.ToLower())
+
+# A hand downloaded source is resolved to a full path before it is handed over,
+# so a relative path still works after the builder changes directory. Written as
+# four plain calls rather than a loop over pairs, because a nested array is one
+# of the things PowerShell is happy to flatten when you least want it to.
+function Add-SourceFile {
+    param([string]$Flag, [string]$Path)
+    if (-not $Path) { return }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw ("{0}: no such file: {1}" -f $Flag, $Path)
+    }
+    $script:buildArgs += $Flag
+    $script:buildArgs += (Resolve-Path -LiteralPath $Path).Path
+}
+Add-SourceFile '--kev-file'       $KevFile
+Add-SourceFile '--epss-file'      $EpssFile
+Add-SourceFile '--cve-list-file'  $CveListFile
+Add-SourceFile '--lifecycle-file' $LifecycleFile
 
 # The builder reads NVD_API_KEY from the environment. Accepting it as a
 # parameter as well is friendlier on Windows, where setting an environment

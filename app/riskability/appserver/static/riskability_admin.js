@@ -603,16 +603,19 @@
             text: "download known_exploited_vulnerabilities.json from cisa.gov " +
                   "on any machine that can reach it, then ",
             flag: "--kev-file <path>",
+            psFlag: "-KevFile <path>",
         },
         epss: {
             text: "download the EPSS csv or csv.gz from first.org on any " +
                   "machine that can reach it, then ",
             flag: "--epss-file <path>",
+            psFlag: "-EpssFile <path>",
         },
         lifecycle: {
             text: "save https://endoflife.date/api/v1/products/full on any " +
                   "machine that can reach it, then ",
             flag: "--lifecycle-file <path>",
+            psFlag: "-LifecycleFile <path>",
         },
     };
 
@@ -645,11 +648,16 @@
                 var fix = REMEDY[k];
                 if (fix) {
                     var note = el("div", "rk-remedy");
+                    // Both wrapper spellings, because naming only the option
+                    // sent people to the wrong place: PowerShell reads a bare
+                    // --kev-file as the profile argument and refuses it.
                     note.appendChild(el("b", null, "Workaround: "));
-                    note.appendChild(document.createTextNode(fix.text + "pass "));
-                    note.appendChild(el("code", null, fix.flag));
+                    note.appendChild(document.createTextNode(fix.text + "pass it to the builder: "));
+                    note.appendChild(el("code", null, "./build-feed.sh " + fix.flag));
+                    note.appendChild(document.createTextNode(" on Linux, or "));
+                    note.appendChild(el("code", null, ".\\build-feed.ps1 " + fix.psFlag));
                     note.appendChild(document.createTextNode(
-                        " to the feed builder. The bundle then carries it exactly as if it "
+                        " on Windows. The bundle then carries it exactly as if it "
                         + "had been fetched."));
                     cell.appendChild(note);
                 }

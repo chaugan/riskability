@@ -99,6 +99,15 @@ while [ $# -gt 0 ]; do
       shift
       ARGS+=(--nvd-source "${1:?--nvd-source needs auto, mirror or api}")
       ;;
+    --kev-file|--epss-file|--cve-list-file|--lifecycle-file)
+      # Sources fetched by hand, for a build host that cannot reach one of
+      # them. Feed administration names this whenever its connectivity check
+      # finds a source unreachable.
+      flag=$1
+      shift
+      [ -f "${1:-}" ] || { echo "error: $flag needs a path to an existing file" >&2; exit 2; }
+      ARGS+=("$flag" "$1")
+      ;;
     --help|-h)
       awk 'NR>1 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "${BASH_SOURCE[0]}"
       exit 0
