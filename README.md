@@ -264,6 +264,52 @@ floor is checked against the fleet rather than assumed. A panel that needs a
 record type the collector did not send says so and names the flag, because an
 empty panel and an unconfigured collector are different facts.
 
+### How often it has to run, and the smallest useful flag set
+
+There is no minimum frequency. Run swinv as often as you want the answers to be
+current, and no more. A host that has not reported for a year keeps every row it
+last produced, and every page says how old that is rather than pretending
+otherwise. This is deliberate: an appliance estate or an OT network that changes
+only when somebody changes it is a first class case here, not an edge case.
+
+One number decides when a host is finally dropped, and it is not hidden in a
+search. The `riskability_host_retire_days` macro defaults to **30**. Raise it if
+your fleet reports less often than that and you want those hosts kept:
+
+```
+[riskability_host_retire_days]
+definition = 400
+```
+
+**The smallest flag set the app can use at all:**
+
+```sh
+swinv --out <dir> --format ndjson --heartbeat --ndjson-include all
+```
+
+| Flag | What it is for |
+|---|---|
+| `--format ndjson` | Required. The app reads NDJSON and nothing else |
+| `--heartbeat` | Gives the scan manifest, which is what lets Coverage compare what the collector found against what arrived. Also makes an unchanged host cheap |
+| `--ndjson-include all` | Required for the exposure, loaded library and configuration surface pages. Without it those pages are empty and say so |
+
+Everything else is depth rather than correctness. `--config-scope all` and
+`--elf-scope all` widen what is read, `--hash` lets an in place binary swap be
+noticed, and `--offline` makes the absence of network calls a guarantee rather
+than a default.
+
+**One thing to know about `--heartbeat`.** When the inventory digest is
+unchanged, swinv suppresses the component and link records and sends only the
+digest. Exposure, container and configuration records are always sent. The
+component list is forced through anyway every `--full-interval`, which defaults
+to 24 hours, so in an ordinary setup this is invisible.
+
+It stops being invisible if you set `--full-interval 0`, which means never
+force. A machine whose software genuinely never changes will then heartbeat
+forever while its component data ages indefinitely. The app will keep showing
+that data and telling you how old it is, which is the honest behaviour, but if
+you want the freshness to mean anything, leave `--full-interval` alone.
+
 ### Running the collector
 
 Riskability correlates what [`swinv`](https://github.com/chaugan/swinv)
