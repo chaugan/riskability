@@ -83,9 +83,14 @@
 | fields hours</query>
         </search>
         <option name="underLabel">hours since any host last reported</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
-        <option name="rangeValues">[6,48]</option>
-        <option name="useColors">1</option>
+        <!-- Deliberately not coloured. This went amber at six hours and red at
+             forty eight, which says a fleet collected twice a week is failing
+             when it is doing exactly what it was set up to do. Whether a gap is
+             too long depends on the host's own rhythm, and the panel below
+             judges precisely that, against each host rather than against one
+             number for everybody. A number that is red on a correctly running
+             fleet teaches people to ignore red. -->
+        <option name="useColors">0</option>
         <option name="drilldown">none</option>
       </single>
     </panel>
@@ -99,9 +104,13 @@
 | fields hours</query>
         </search>
         <option name="underLabel">hours since inventory was compared to the feed</option>
-        <option name="rangeColors">["0x53a051","0xf8be34","0xdc4e41"]</option>
-        <option name="rangeValues">[2,26]</option>
-        <option name="useColors">1</option>
+        <!-- Not coloured either, for the same reason as the one beside it.
+             Nothing is compared when nothing new has arrived, so on a fleet
+             that is behaving exactly as intended this climbs for ever and goes
+             red for having nothing to do. Whether the pipeline is actually
+             running is a different question, and the cycle panel below answers
+             it directly rather than by inference from an age. -->
+        <option name="useColors">0</option>
         <option name="drilldown">none</option>
       </single>
     </panel>
@@ -373,9 +382,12 @@
           <query>| inputlookup riskability_openstate_host_lookup | stats sum(findings) AS n</query>
         </search>
         <option name="underLabel">excluding accepted risks</option>
-        <option name="rangeColors">["0x708794","0xf8be34","0xdc4e41"]</option>
-        <option name="rangeValues">[1,100]</option>
-        <option name="useColors">1</option>
+        <!-- Also not coloured. Amber above one finding and red above a
+             hundred means every real fleet is permanently red, which is not a
+             signal, it is wallpaper. What to do about the count is the whole
+             point of the pages this one links to; the size of it is not a
+             verdict on its own. -->
+        <option name="useColors">0</option>
         <option name="drilldown">none</option>
       </single>
     </panel>

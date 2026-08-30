@@ -273,13 +273,21 @@ otherwise. This is deliberate: an appliance estate or an OT network that changes
 only when somebody changes it is a first class case here, not an edge case.
 
 One number decides when a host is finally dropped, and it is not hidden in a
-search. The `riskability_host_retire_days` macro defaults to **30**. Raise it if
-your fleet reports less often than that and you want those hosts kept:
+search. The `riskability_host_retire_days` macro defaults to **180 days**, which
+keeps a quarterly cadence with real margin, because three months is never
+exactly ninety days once a maintenance window slips. Lower it if your fleet
+reports nightly and you want departed hosts to leave sooner, raise it for an
+annual audit cycle:
 
 ```
+# <app>/local/macros.conf
 [riskability_host_retire_days]
 definition = 400
 ```
+
+It was 30 until version 1.2.3, which was quietly hostile to exactly the estates
+described above: every host was dropped a month after its last scan and then
+rediscovered later as a brand new machine with no history.
 
 **The smallest flag set the app can use at all:**
 
