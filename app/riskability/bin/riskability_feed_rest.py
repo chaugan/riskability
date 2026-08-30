@@ -116,7 +116,16 @@ def _safe_incoming_path(filename: str) -> str:
     including via a symlink planted in the incoming directory.
     """
     name = os.path.basename(filename or "")
-    if not name or not SAFE_NAME.match(name):
+    if not name:
+        raise ValueError(f"invalid filename: {filename!r}")
+    # Sanitise rather than refuse. A browser that already holds a copy names the
+    # next one "known_exploited_vulnerabilities (1).json", and a space and two
+    # brackets were enough to have the upload rejected, leave the file unstaged
+    # and send the fetch off without it. The mapping is deterministic, so a
+    # later lookup of the same name finds the same file.
+    if not SAFE_NAME.match(name):
+        name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_")
+    if not name or name in (".", ".."):
         raise ValueError(f"invalid filename: {filename!r}")
     # A bundle is a .tar.gz. A single source fetched by hand, for a host that
     # cannot reach that one publisher, is whatever shape its publisher serves:
