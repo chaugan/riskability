@@ -59,7 +59,7 @@ organisation.
 
 **Where it goes** &nbsp; [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [Escalation rules](#escalation-rules) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
+**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [Escalation rules](#escalation-rules) · [Observed permitted traffic evidence](#observed-permitted-traffic-evidence-optional) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
 
 **At fleet scale** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
@@ -109,7 +109,11 @@ publishes a port; findings in a stopped container are counted as unreachable,
 because a stopped container answers nothing. Those figures are a live-instance snapshot rather than something
 `audit_claims.py` can recompute. It is a re-ordering, never a filter: an unreachable vulnerability is still a
 vulnerability, and a host running a collector too old to report ports is shown as
-*not assessed* rather than counted as safe.
+*not assessed* rather than counted as safe. All of that is measured on the host, so it
+cannot see the network layers in front of it; a site with firewall logs can
+attach evidence about those too, and one without is told so rather than told it
+is quiet. See
+[Observed permitted traffic evidence](#observed-permitted-traffic-evidence-optional).
 
 **It says how strong the evidence is, and separates that from severity.**
 Every finding carries a confidence band, and only one of them should drive
@@ -1183,6 +1187,61 @@ design one, and it is written here rather than left to be discovered.
 The design, the measurements behind it, and the replay, rule-set guard and
 mutation test a rule should face before anyone lives with it are in
 [docs/AI-ESCALATION.md](docs/AI-ESCALATION.md).
+
+---
+
+## Observed permitted traffic evidence (optional)
+
+**How exposure is determined today, and the one layer the collector cannot
+see.** Every exposure label on every page comes from how a process bound its
+socket: a wildcard bind reads as *answers any address*, a specific bind as
+*answers one address*, and so on. That is measured on the host, by a collector
+running on the host, which means it cannot see NAT, firewalls, security groups,
+reverse proxies or load balancers. Exposure in a real estate is several security
+layers stacked on each other, and the socket is the innermost one.
+
+**A site that has firewall logs in this Splunk instance can attach evidence
+about an outer layer to a finding.** Reduce the firewall index to unique
+permitted edges, point the `riskability_fw_edges` macro at the result, and
+declare in `riskability_fw_entry_points` what counts as coming from outside.
+The app then records, per host and port, whether a permitted flow to that
+address and port has actually been observed, from where, how recently and how
+often, and grades it `confirmed observed`, `historically observed`, `unknown` or
+`not observed`. Which host held an address at the moment a flow was logged is
+the hard part, and the app refuses to answer rather than guess: an address the
+inventory cannot tie to exactly one machine at that moment is graded `unknown`
+with the reason recorded.
+
+**A site without firewall logs loses nothing.** Every finding grades `unknown`,
+carrying a reason that says nothing is known about permitted traffic to that
+host and that this is not evidence nothing can reach it, and every priority,
+tier, score and count is exactly what it was. That direction is deliberate: a fleet must
+never be reported as unexposed because nobody sent the data.
+
+**What it is not.** The term is *observed permitted traffic evidence*, never
+"reachability". A permitted edge proves that one flow was allowed once by one
+device that logs here. It does not prove the rule still exists, that the path
+works both ways, that a service answered, or that the host still holds that
+address. It builds no attack paths, because permitted network edges are not
+exploitability edges: the hop after a compromise needs privilege or credentials
+that no firewall log records. Nothing on this path involves a model, and this
+change set moves no scoring weight.
+
+**Two things to read before relying on it.** The error direction flips: the
+socket label over-claims, while an observed-edge graph under-claims, because a
+permitted-but-unused rule generates no log line and therefore no edge, and a
+path that reads as quiet may simply be untried. And the join of a firewall's
+`dest_ip` to a host's address can manufacture a false identity, because an
+address can move between machines by DHCP, NAT, failover or a container runtime
+between the moment the firewall logged it and the moment the collector reported
+it. Both, along with what a site configures and why the artefact is a ledger
+rather than a path graph, are in
+[docs/ROUTE-EVIDENCE.md](docs/ROUTE-EVIDENCE.md).
+
+The edge contract is the same reduction used by
+[FW Route Explorer](https://github.com/chaugan/Find-Route), a separate app by
+the same author. Riskability consumes the contract; it does not require that app
+to be installed.
 
 ---
 
