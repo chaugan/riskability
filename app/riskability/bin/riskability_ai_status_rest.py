@@ -90,26 +90,34 @@ def _overview_from_kv(service) -> dict:
         out["analyzed_cves"] = len({v.get("cve_id") for v in verdicts})
         out["failed_analyses"] = sum(1 for v in verdicts
                                      if v.get("analysis_source") == "fallback")
+        # P0/P1 counts come from the verdicts themselves, not the expansion
+        # summary row (which hasn't been written on a fresh install).
+        out["p0"] = sum(1 for v in verdicts if _first(v.get("priority_tier")) == "P0")
+        out["p1"] = sum(1 for v in verdicts if _first(v.get("priority_tier")) == "P1")
 
-        # top rows: sort verdicts by score, take the best 10 — these are
-        # per-CVE verdicts (not per-finding), which is the right grain for
-        # "what should I look at first" — the per-finding expansion lives
-        # in the index for the detail drill-down.
+        # All verdicts sorted by score — the page's tier filter works
+        # client-side, so every result is available without another call.
         scored = []
+        tier_counts = {"P0": 0, "P1": 0, "P2": 0, "P3": 0, "P4": 0}
         for v in verdicts:
             try:
                 score = int(_first(v.get("priority_score")) or 0)
             except (ValueError, TypeError):
                 score = 0
             scored.append((score, v))
+            tier = _first(v.get("priority_tier"))
+            if tier in tier_counts:
+                tier_counts[tier] += 1
+        out["tier_counts"] = tier_counts
         scored.sort(key=lambda pair: -pair[0])
-        out["top"] = [
+        out["results"] = [
             {k: _first(v.get(k)) for k in (
                 "cve_id", "priority_tier", "priority_score", "confidence",
                 "rationale", "recommended_action", "recommended_mitigations",
                 "attck_techniques", "exploitability_signal", "analysis_source",
-                "analysed_at")}
-            for _, v in scored[:10]
+                "analysed_at", "title", "package", "severity", "epss", "kev",
+                "exposure_zone", "cwe_id")}
+            for _, v in scored
         ]
     except Exception:
         out["analyzed_cves"] = 0

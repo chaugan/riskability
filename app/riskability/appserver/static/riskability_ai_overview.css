@@ -52,3 +52,90 @@
     padding: 0;
     color: #b9c2cc;
 }
+
+/* Column breathing room — the default table is too cramped for rationales */
+.rk-ai-table th,
+.rk-ai-table td {
+    padding: 8px 14px 8px 0;
+    border-bottom: 1px solid #2a343d;
+}
+
+.rk-ai-table th {
+    padding-bottom: 10px;
+    color: #8d99a6;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.rk-ai-table td:first-child,
+.rk-ai-table th:first-child {
+    padding-right: 10px;
+}
+
+/* CVE id column: monospace + clickable link */
+.rk-ai-cve a {
+    color: #5b9bd5;
+    text-decoration: none;
+    font-family: Monaco, Consolas, monospace;
+    font-size: 13px;
+}
+
+.rk-ai-cve a:hover {
+    text-decoration: underline;
+}
+
+/* Advisory title (the human-readable description under the CVE id) */
+.rk-ai-title {
+    font-size: 12px;
+    color: #b9c2cc;
+    margin-top: 2px;
+    max-width: 320px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Signal badges (severity · KEV · EPSS · exposure) */
+.rk-ai-signals {
+    font-size: 11px;
+    color: #7a8794;
+    margin-top: 2px;
+}
+
+/* Tier filter bar */
+.rk-ai-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 12px 0;
+}
+
+.rk-ai-filter-btn {
+    background: #1e262e;
+    border: 1px solid #3c4a57;
+    color: #b9c2cc;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.rk-ai-filter-btn:hover {
+    border-color: #5b9bd5;
+    color: #d0d9e2;
+}
+
+.rk-ai-filter-btn.rk-ai-filter-active {
+    background: #2a3a4a;
+    border-color: #5b9bd5;
+    color: #fff;
+}
+
+.rk-ai-filter-btn.rk-ai-p0.rk-ai-filter-active { background: #b3121f; border-color: #ff4444; }
+.rk-ai-filter-btn.rk-ai-p1.rk-ai-filter-active { background: #d2641f; border-color: #ff8800; }
+.rk-ai-filter-btn.rk-ai-p2.rk-ai-filter-active { background: #b08c1a; border-color: #ffcc00; }
+.rk-ai-filter-btn.rk-ai-p3.rk-ai-filter-active { background: #3f6e8c; border-color: #66aaff; }
+.rk-ai-filter-btn.rk-ai-p4.rk-ai-filter-active { background: #4a5560; border-color: #8899aa; }

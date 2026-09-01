@@ -78,6 +78,31 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
         for rec in records:
             rec.setdefault("rk_sig", ai_config.verdict_sig(rec))
 
+        # Backfill finding context from the findings state KV — the queue
+        # index's stash rows can carry stale context, so the command reads
+        # the authoritative source directly. One indexed KV lookup per CVE.
+        cve_ids_needing_context = [r.get("cve_id") for r in records
+                                   if r.get("cve_id") and not r.get("cve_description")]
+        if cve_ids_needing_context:
+            try:
+                fs = self.service.kvstore["riskability_findings_state"].data
+                q = json.dumps({"cve_id": {"$in": cve_ids_needing_context}})
+                finding_map = {}
+                for row in fs.query(**{"query": q}):
+                    cid = row.get("cve_id")
+                    if cid and cid not in finding_map:
+                        finding_map[cid] = row
+                for rec in records:
+                    f = finding_map.get(rec.get("cve_id"))
+                    if f:
+                        rec.setdefault("cve_description", f.get("title", ""))
+                        rec.setdefault("affected_product", f.get("package", ""))
+                        rec.setdefault("severity", f.get("severity", ""))
+                        rec.setdefault("epss", f.get("epss", ""))
+                        rec.setdefault("kev", "true" if f.get("kev_added") else "false")
+            except Exception:
+                pass  # context is display-only; analysis proceeds without it
+
         # ---- cache pass ------------------------------------------------
         # One query for every input CVE; signature matches are served
         # instantly and never reach the model. This is what makes the
@@ -110,6 +135,24 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 row["analysis_source"] = hit.get("analysis_source", "cache")
                 row["analysed_at"] = hit.get("analysed_at")
                 out.append(row)
+                # Backfill context on cache hits: old verdicts predate the
+                # context fields, so the dashboard had nothing to show. One
+                # KV upsert per hit, bounded by the budget, fills them in
+                # without calling the model again.
+                if not hit.get("title"):
+                    hit.update({
+                        "title": rec.get("cve_description", ""),
+                        "package": rec.get("affected_product", ""),
+                        "severity": rec.get("severity", ""),
+                        "epss": rec.get("epss", ""),
+                        "kev": rec.get("kev", "false"),
+                        "exposure_zone": rec.get("exposure_zone", ""),
+                        "cwe_id": rec.get("cwe_id", "")})
+                    try:
+                        kv.delete(json.dumps({"_key": hit.get("_key")}))
+                        kv.insert(json.dumps(hit))
+                    except Exception:
+                        pass
             else:
                 to_analyse.append(rec)
 
@@ -153,7 +196,17 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 doc = {"_key": "cve:" + str(rec.get("cve_id")),
                        "cve_id": rec.get("cve_id"), "sig": rec.get("rk_sig"),
                        "analysed_at": now_row, "analysis_source": source,
-                       "latency_ms": analysis.get("latency_ms", 0)}
+                       "latency_ms": analysis.get("latency_ms", 0),
+                       # Finding context, stored so the dashboard can show
+                       # what the model actually looked at without needing
+                       # to join back to the findings lookup.
+                       "title": rec.get("cve_description", ""),
+                       "package": rec.get("affected_product", ""),
+                       "severity": rec.get("severity", ""),
+                       "epss": rec.get("epss", ""),
+                       "kev": rec.get("kev", "false"),
+                       "exposure_zone": rec.get("exposure_zone", ""),
+                       "cwe_id": rec.get("cwe_id", "")}
                 doc.update({f: result.get(f) for f in VERDICT_FIELDS})
                 verdict_docs.append(doc)
             if verdict_docs:
