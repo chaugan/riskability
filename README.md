@@ -59,7 +59,7 @@ organisation.
 
 **Where it goes** &nbsp; [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
+**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [Escalation rules](#escalation-rules) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
 
 **At fleet scale** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
@@ -1119,6 +1119,70 @@ kept for five years. That is deliberate: a register that can be rewritten by
 whoever can write the register is not an audit trail. Expiries are reconciled by a
 scheduled search, so a lapsed exception puts its findings back into the open counts
 without anyone remembering to do it.
+
+---
+
+## Escalation rules
+
+**A site can now express a risk its own fleet has that the scoring signals
+cannot see.** A finding's priority is computed from five measured signals:
+whether CISA lists the CVE as known-exploited, its EPSS band, its CVSS band, the
+exposure the app measured, and how strong the version match is. The app measures
+a great deal more than that. It knows which listening process loads which
+library, what cron, systemd and scheduled tasks run and as whom, which products
+have no supported release left. None of it could move a priority, because no
+rule combined any of it with the flaw.
+
+An escalation rule is that rule. It is a boolean expression over measured
+fields, written into `local/riskability_escalations.conf`, whose only power is
+to raise one finding by one tier:
+
+```
+[listener_loads_the_library]
+when = rk_esc_load_rank = 3 AND rk_esc_reach_rank < 1
+bump = 1
+enabled = 0
+```
+
+That one says a listening process actually loads this library while the
+library's own package looks unexposed. Exposure is keyed on the finding's
+package, so a flaw in `libssl3t64` is given the reach of `libssl3t64`, which
+owns no port and reads as *no listening port*; the process holding the port is a
+different package, and the loader-accurate link data joining the two is measured
+every hour and read by no scoring signal. Four such rules ship as worked
+examples with the reasoning attached.
+
+**Switching one on is deliberate, reviewable and reversible.** Every shipped
+rule arrives `enabled = 0`, because an escalation that turns itself on during an
+upgrade is an ordering change nobody asked for, on a Tuesday, with no ticket to
+point at. A rule that names a field the app does not measure is refused, by
+name, with the reason, rather than shipped to evaluate null for ever, which is
+what an unknown field quietly does in SPL. A rule raises by exactly one tier and
+can never produce P0, and two rules matching the same finding still move it one
+tier, though the finding names both so neither reason is lost. An escalated
+finding keeps the tier the five signals gave it beside the one it now carries,
+and its rationale says which rule moved it. Turning a rule on
+is setting `enabled = 1`, turning it off is setting it back, and nothing is
+written into the finding that has to be unwound.
+
+**What it is not.** There is no model anywhere on this path and no outbound
+call: a rule is a predicate the search head evaluates itself, in SPL, against
+values it already computed. It cannot lower a priority, cannot hide a finding,
+and cannot reach past **Risk exceptions**, because an accepted finding never
+enters the pipeline that escalates. Two of the ten fields a rule may name are
+not measured yet: the two shipped rules that need them are refused at load
+rather than running to no effect, and the file says so beside each one.
+
+**One limit worth knowing before you write a rule.** Today the only search that
+applies a bump is the one that expands AI verdicts onto findings, and that
+search ships disabled and stays disabled until an administrator switches AI
+analysis on. So a site with AI off has the rules, the validation and the review
+path, and nothing yet that moves a tier. That is a wiring gap rather than a
+design one, and it is written here rather than left to be discovered.
+
+The design, the measurements behind it, and the replay, rule-set guard and
+mutation test a rule should face before anyone lives with it are in
+[docs/AI-ESCALATION.md](docs/AI-ESCALATION.md).
 
 ---
 
