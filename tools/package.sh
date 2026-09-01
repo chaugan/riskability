@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIST="$ROOT/dist"
 VERSION=$(awk -F'= *' '/^version/{print $2; exit}' "$ROOT/app/riskability/default/app.conf")
-APPS=(riskability TA-riskability TA-riskability-indexes)
+APPS=(riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai)
 
 # Rebuild the downloadable feed builder first, so the archive in the package is
 # always built from the tree being packaged. It shipped stale once already --
@@ -211,13 +211,35 @@ need riskability "riskability/bin/riskability/build.py"            "feed fetchin
 need riskability "riskability/bin/riskability/vercmp.py"           "version comparators"
 need riskability "riskability/bin/splunklib/binding.py"            "vendored SDK"
 need riskability "riskability/bin/splunk_sdk-3.0.0.dist-info/METADATA" "vendored SDK version lookup"
-need riskability "riskability/appserver/static/riskability_admin.js"  "admin page"
+need riskability "riskability/appserver/static/riskability_ai_overview.js"  "the AI prioritization page, and the gate that hides it when AI is off"
+need riskability "riskability/default/data/ui/views/riskability_setup.xml"  "points the first-run setup gate at the configuration app"
+need riskability "riskability/default/data/ui/views/riskability_ai.xml"     "the AI prioritization overview"
+need riskability "riskability/bin/riskability_ai_rest.py"                   "the AI config endpoint"
+need riskability "riskability/bin/riskability_ai_status_rest.py"            "the one-bit status endpoint (separate file: splunkd allows one handler class per script)"
+need riskability "riskability/bin/riskability_ai_trigger.py"                "the dispatch alert action (must share the alert_actions.conf stanza name)"
+need riskability "riskability/bin/riskability/ai_config.py"                 "settings schema and probes, shared by the endpoint and the action"
+need riskability "riskability/default/riskability_ai.conf"                  "AI connection settings spec"
+need riskability "riskability/README/riskability_ai.conf.spec"              "conf spec, required for the setting to be recognised"
+need riskability "riskability/default/alert_actions.conf"                   "the dispatch alert action"
 need riskability "riskability/appserver/static/riskability_exceptions.js" "the accept-risk dialog"
 need riskability "riskability/appserver/static/riskability_exceptions.css" "styles the dialog"
 need riskability "riskability/bin/riskability_exceptions_rest.py"    "the only writer of the exception register"
-need riskability "riskability/default/authorize.conf"                "defines riskability_accept_risk"
+need riskability "riskability/default/authorize.conf"                "defines riskability_accept_risk and riskability_ai_admin"
 need riskability "riskability/appserver/static/scripts/riskability-feedbuilder.zip" \
      "the self-contained feed builder the admin page offers"
+
+need riskability-config "riskability-config/default/app.conf"                        "app identity"
+need riskability-config "riskability-config/metadata/default.meta"                   "the app-level admin-only grant"
+need riskability-config "riskability-config/default/data/ui/nav/default.xml"         "nav with the two configuration pages"
+need riskability-config "riskability-config/default/data/ui/views/riskability_admin.xml" "feed administration (moved from the main app)"
+need riskability-config "riskability-config/default/data/ui/views/riskability_ai.xml"    "the AI analysis settings page"
+need riskability-config "riskability-config/appserver/static/riskability_admin.js"   "the feed page script (cross-references the main app's builder zip)"
+need riskability-config "riskability-config/appserver/static/riskability_admin.css"  "shared admin styles"
+need riskability-config "riskability-config/appserver/static/riskability_ai.js"      "the AI settings script"
+need riskability-config "riskability-config/appserver/static/riskability_ai.css"     "AI page styles"
+need riskability-config "riskability-config/appserver/static/riskability_help.js"    "the help toggle the admin views reference"
+need riskability-config "riskability-config/static/appIcon.png"                      "app icon"
+need riskability-config "riskability-config/README.txt"                              "install note"
 need riskability "riskability/default/visualizations.conf"                "declares the custom visualization"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/visualization.js" \
      "the built ECharts bundle; without it every chart panel is blank"
@@ -250,6 +272,10 @@ need TA-riskability "TA-riskability/default/props.conf"   "index-time parsing"
 forbid TA-riskability "indexes.conf" "a forwarder must not receive index definitions"
 
 need TA-riskability-indexes "TA-riskability-indexes/default/indexes.conf" "index definitions"
+
+need TA-riskability-ai "TA-riskability-ai/default/indexes.conf"  "the three AI pipeline indexes"
+need TA-riskability-ai "TA-riskability-ai/default/props.conf"    "sourcetype parsing for queue and HEC results"
+need TA-riskability-ai "TA-riskability-ai/metadata/default.meta" "export to system so searchers get the parsing"
 
 for app in "${APPS[@]}"; do
   forbid "$app" "/local/"     "local/ is the user's layer and must not be shipped"

@@ -12,7 +12,11 @@ source "$ROOT/docker/.env"
 "$ROOT/tools/make-feedbuilder.sh"
 "$ROOT/tools/build-viz.sh"
 
-for app in riskability TA-riskability TA-riskability-indexes; do
+# All five packages the repository ships. riskability-config and
+# TA-riskability-ai joined in 1.3.0; missing one from this list is how a
+# developer ends up debugging a configuration app that exists in git but has
+# never been installed anywhere.
+for app in riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai; do
   [ -d "$ROOT/app/$app" ] || continue
   # Replace default/ and bin/ but never local/ or metadata/local.meta: Splunk
   # writes runtime state there (the is_configured flag, any UI edits), and an
@@ -93,7 +97,7 @@ docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "adm
   # pipeline test can pass or fail against a version of the search that is no
   # longer on disk. Cost an afternoon: a field added to a snapshot job kept
   # coming back empty because the job being run was the previous one.
-  for app in riskability TA-riskability TA-riskability-indexes; do
+  for app in riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai; do
     for endpoint in data/ui/views saved/searches admin/macros admin/transforms-lookup admin/collections-conf; do
       docker exec -u splunk "$CONTAINER" curl -sk -u "admin:$SPLUNK_PASSWORD" -X POST \
         "https://localhost:8089/servicesNS/nobody/$app/$endpoint/_reload" \

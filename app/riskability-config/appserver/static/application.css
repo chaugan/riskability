@@ -1,0 +1,322 @@
+/*
+ * Styles Splunk loads on every page of this app.
+ *
+ * These were living in riskability_admin.css, which is attached to the admin
+ * dashboard alone -- so the callouts on Overview, Findings, MITRE, Coverage and
+ * Remediation rendered as unstyled paragraphs. Every one of those blocks exists
+ * to stop a number being misread ("an empty panel is not a clean fleet"), and a
+ * caveat that does not look like a caveat is one people skim past. Shared
+ * styling belongs in application.css, which Splunk includes app-wide.
+ */
+
+/* Callouts. The colour carries the same meaning everywhere: grey explains,
+   amber cautions, red is a problem. */
+.rk-status {
+    border-left: 3px solid #708794;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    background: #1a1d21;
+    line-height: 1.5;
+    font-size: 12px;
+    color: #d5d8dc;
+}
+/* Only the callout's opening b is its heading. Every other b in a callout is
+   emphasis inside a sentence, and blocking all of them threw a word like
+   "Findings" onto a line of its own mid-paragraph on every page in the app. */
+.rk-status b { color: #f2f4f5; }
+.rk-status > b:first-child { display: block; margin-bottom: 2px; }
+/* A callout's spans are paragraphs. Left inline they run together into one
+   block of prose, which is how a caution written as two separate points ends
+   up read as one. */
+.rk-status > span { display: block; }
+.rk-status > span + span { margin-top: 7px; }
+.rk-status code {
+    background: #23272e; color: #d5d8dc; padding: 1px 5px;
+    border-radius: 2px; font-size: 11px;
+}
+.rk-good { border-left-color: #53a051; }
+.rk-good > b:first-child { color: #6db56b; }
+.rk-warn { border-left-color: #f8be34; }
+.rk-warn > b:first-child { color: #f8be34; }
+.rk-bad  { border-left-color: #dc4e41; }
+.rk-bad > b:first-child { color: #e26d63; }
+.rk-bad-text { color: #e26d63; }
+.rk-dim { color: #9aa4ae; font-size: 12px; line-height: 1.5; }
+
+/* Drilldown toolbar: what a click filtered, and how to undo it. A dashboard
+   that quietly stays filtered is worse than one that never filters, because
+   the next number read is wrong and looks right. */
+.rk-drill-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 6px 2px; font-size: 12px; color: #9aa4ae;
+}
+.rk-drill-hint { max-width: 620px; }
+.rk-drill-state {
+    margin-left: auto; color: #f8be34;
+    border: 1px solid #4a4326; background: #2c2f34;
+    padding: 3px 10px; border-radius: 12px;
+}
+.rk-drill-clear {
+    color: #d5d8dc; border: 1px solid #46474a; background: #2c2f34;
+    padding: 3px 12px; border-radius: 3px; text-decoration: none;
+}
+.rk-drill-clear:hover { border-color: #6b6f76; color: #f2f4f5; text-decoration: none; }
+
+/* The per-panel explanation, and the control that shows or hides it.
+
+   The captions are the default, because a reader who takes a calm number at
+   face value is the failure this app guards against. The control exists because
+   someone who has read them once should not read them on every panel forever.
+
+   A labelled switch in the filter band, not a text button above it. The first
+   attempt was a ghost button in muted grey at the top of the page and was
+   effectively invisible: it named an action without saying what it acted on, so
+   there was nothing to recognise unless you already knew it was there.
+
+   Colours are the app's own, and the track when set uses #708794, which is
+   already the colour of a callout's left edge. The control is the same colour
+   as the thing it controls. */
+.rk-help-bar {
+  display: flex;
+  justify-content: flex-end;
+  /* Sits under the dashboard's description and above the filters, so it needs
+     air on both sides rather than being tucked against the row below it. */
+  margin: 4px 0 10px;
+}
+
+.rk-help-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #2c2f34;
+  border: 1px solid #46474a;
+  color: #d5d8dc;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  padding: 6px 11px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease;
+}
+
+.rk-help-toggle:hover {
+  color: #f2f4f5;
+  border-color: #708794;
+}
+
+.rk-help-toggle:focus-visible {
+  outline: 2px solid #708794;
+  outline-offset: 2px;
+}
+
+.rk-help-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  opacity: .85;
+}
+
+.rk-help-label {
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+
+/* The track states which way the switch is set, so neither position needs its
+   own wording and the label can simply name what is being switched. */
+.rk-help-switch {
+  position: relative;
+  width: 26px;
+  height: 14px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #46474a;
+  transition: background-color .12s ease;
+}
+
+.rk-help-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1a1d21;
+  transition: transform .12s ease;
+}
+
+.rk-help-toggle.is-on { color: #f2f4f5; }
+.rk-help-toggle.is-on .rk-help-switch { background: #708794; }
+.rk-help-toggle.is-on .rk-help-knob { transform: translateX(12px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rk-help-toggle,
+  .rk-help-switch,
+  .rk-help-knob { transition: none; }
+}
+
+/* Hiding a note leaves the panel it belonged to untouched.
+
+   Never a red one. This app's callouts mean one thing each: grey explains,
+   amber cautions, red is a problem. The first two are the app talking about
+   itself and are what the toggle is for. A red one only appears because
+   something is wrong right now, and it is generally inside a row that renders
+   only while that is true, so it is state rather than explanation. Hiding
+   "Some hosts are matched but not folded in" would suppress a warning that open
+   counts are currently over-reported, which is precisely the thing a reader
+   turning off the notes would not expect to lose. */
+body.rk-help-off .rk-status:not(.rk-bad) {
+  display: none;
+}
+
+/* ---- Host detail: the dossier header -------------------------------------
+ *
+ * A host page is not a smaller fleet page. Fleet asks which one, host asks what
+ * about this one, so the dominant element here is typographic rather than a
+ * grid. A single row of facts rendered as a Tabulator table is 400px of column
+ * filters and a CSV button wrapped around one machine's name, which is how a
+ * page comes to look assembled rather than designed.
+ *
+ * Three surfaces and three text tones, no fourth of either. Monospace is used
+ * only for strings a machine wrote: the build number, the machine id. On a
+ * security page "monospace means a machine said this, not a person" carries
+ * more than any colour would. */
+.rk-hostcard {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(420px, 1.6fr);
+    gap: 4px 32px;
+    padding: 16px 18px 14px;
+    background: #23272e;
+    border: 1px solid #33383f;
+    border-radius: 3px;
+    font-variant-numeric: tabular-nums;
+}
+.rk-hostcard-id { min-width: 0; }
+.rk-hostname {
+    font-size: 20px; font-weight: 600; color: #f2f4f5;
+    line-height: 1.2; word-break: break-all;
+}
+.rk-hostos { font-size: 13px; color: #d5d8dc; margin-top: 3px; }
+.rk-hostmachine {
+    font-family: Menlo, Consolas, monospace;
+    font-size: 11px; color: #9aa4ae; margin-top: 5px;
+    word-break: break-all; line-height: 1.5;
+}
+
+/* Two columns of clocks rather than four across: four abreast collapses to one
+ * on a narrow window and the labels wrap mid-phrase. */
+.rk-hostcard-clocks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    gap: 8px 24px;
+    align-content: start;
+}
+.rk-clock { display: flex; flex-direction: column; min-width: 0; }
+.rk-clock-k {
+    font-size: 11px; color: #9aa4ae; text-transform: none;
+    letter-spacing: 0.01em;
+}
+.rk-clock-v { font-size: 14px; font-weight: 600; color: #f2f4f5; margin-top: 1px; }
+.rk-hostcard-foot {
+    grid-column: 1 / -1;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid #33383f;
+    font-size: 12px; color: #9aa4ae;
+}
+
+/* A caption that reads as a footnote rather than as a second panel. The house
+ * rule that every panel explains itself is right, and on an eight panel page it
+ * is also the biggest visual threat: eight four-line grey blocks is a wall of
+ * prose nobody reads, at which point the honesty captions have failed at the
+ * one job they exist for. */
+.rk-status.rk-note {
+    background: transparent;
+    border-left: 2px solid #33383f;
+    padding: 6px 0 6px 10px;
+    font-size: 11px;
+    margin: 8px 0 0;
+}
+.rk-status.rk-note b { font-weight: 600; }
+
+@media (max-width: 1100px) {
+    .rk-hostcard { grid-template-columns: 1fr; gap: 14px; }
+    .rk-hostcard-clocks { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+}
+
+/* The host page identity card. One panel where there used to be a one row
+   table and four <single> tiles: eight facts about the same machine, five
+   panel borders between them. Its values arrive as tokens set by the ident
+   search's <done>, which is why the panel declares depends. */
+.rk-ident {
+    display: grid;
+    grid-template-columns: minmax(200px, 1.2fr) 1fr 1fr;
+    gap: 16px 28px;
+    padding: 16px 18px;
+    background: #1a1d21;
+    border: 1px solid #2b3238;
+    border-radius: 3px;
+}
+/* Spans both clock rows so the name sits against all four of them rather than
+   against the first one, which left the machine id orphaned under a gap. */
+.rk-ident-who { grid-column: 1; grid-row: 1 / span 2; }
+.rk-ident-name {
+    color: #f2f4f5; font-size: 19px; font-weight: 600;
+    line-height: 1.2; word-break: break-all;
+}
+.rk-ident-os { color: #d5d8dc; font-size: 12px; margin-top: 5px; }
+.rk-ident-machine { color: #9aa2ab; font-size: 11px; margin-top: 3px; }
+/* Label above value, not beside it: the values are short and the labels are
+   not, so a row layout ragged the numbers into four different columns. */
+.rk-ident-clock span {
+    display: block; color: #9aa2ab; font-size: 11px; margin-bottom: 3px;
+}
+.rk-ident-clock b { color: #f2f4f5; font-size: 15px; font-weight: 600; }
+.rk-ident-foot {
+    grid-column: 1 / -1;
+    border-top: 1px solid #2b3238;
+    padding-top: 10px;
+    color: #9aa2ab; font-size: 11px;
+}
+/* One column once the panel is too narrow to keep three, which is what a
+   half width dashboard column or a laptop in a split does to it. */
+@media (max-width: 900px) {
+    .rk-ident { grid-template-columns: 1fr 1fr; }
+    .rk-ident-who { grid-column: 1 / -1; grid-row: auto; }
+}
+
+/* Windows patch level, as a card rather than a nine column table with one row.
+   Same reasoning as rk-ident above: one machine, one answer, no column filters
+   or CSV button needed to read it. */
+.rk-win {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.3fr) 1fr 1fr 1fr;
+    gap: 16px 28px;
+    padding: 16px 18px;
+    background: #1a1d21;
+    border: 1px solid #2b3238;
+    border-radius: 3px;
+    align-items: start;
+}
+.rk-win-name { color: #f2f4f5; font-size: 16px; font-weight: 600; }
+/* The badge carries the colour the table's Distance cell used to. Only the two
+   states that map cleanly get one. */
+.rk-win-badge {
+    display: inline-block; margin-top: 8px;
+    padding: 3px 9px; border-radius: 3px;
+    font-size: 12px; font-weight: 600;
+    background: #33383f; color: #f2f4f5;
+}
+.rk-win-ok { background: #3f7d7a; }
+.rk-win-none { background: #6b5a2a; }
+.rk-win-fact span { display: block; color: #9aa2ab; font-size: 11px; margin-bottom: 3px; }
+.rk-win-fact b {
+    display: block; color: #f2f4f5; font-size: 15px;
+    font-weight: 600; font-variant-numeric: tabular-nums;
+}
+/* The provenance line. A build derived from the cumulative update names the
+   servicing branch, so where the number came from changes how to read it. */
+.rk-win-fact i { display: block; color: #9aa2ab; font-size: 11px; font-style: normal; margin-top: 3px; }
+@media (max-width: 900px) {
+    .rk-win { grid-template-columns: 1fr 1fr; }
+    .rk-win-id { grid-column: 1 / -1; }
+}

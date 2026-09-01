@@ -1,4 +1,4 @@
-<dashboard version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_adminlink.js" stylesheet="application.css">
   <!-- The same test the "pipeline did not complete" alert makes, deliberately.
        This used to ask the checkpoint whether folded_run was set, which is a
        different question: a host that has simply not been re-matched lately has
@@ -120,7 +120,7 @@
             Open counts are stale-high for the hosts below and closing is withheld until the
             fold completes: risk is over-reported, never under-reported. Usually clears within
             the hour; if not, the pipeline has stopped and
-            <a href="riskability_admin">Admin</a> shows which job.
+            <a href="../riskability-config/riskability_admin">Admin</a> shows which job.
           </span>
         </div>
       </html>

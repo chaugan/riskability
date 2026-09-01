@@ -1,0 +1,8 @@
+[]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system
+
+# Searchers need the sourcetypes visible for parsing to apply.
+[props]
+access = read : [ * ], write : [ admin, sc_admin ]
+export = system

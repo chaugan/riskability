@@ -1,0 +1,14 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_ai.js" stylesheet="application.css,riskability_admin.css,riskability_ai.css">
+  <label>AI analysis</label>
+  <description>Connection, hardware profile and dispatch for the GPU CVE prioritization pipeline.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div id="riskability-ai-admin">
+          <div class="rk-loading">Loading AI configuration…</div>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

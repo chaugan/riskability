@@ -1,0 +1,28 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+  <label>Setup</label>
+  <description>Where the configuration lives now.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-card">
+          <h3>Configuration has moved</h3>
+          <p>
+            Riskability is configured from the <b>Riskability Configuration</b> app,
+            which only administrators can open. It holds the feed administration
+            page and the AI analysis settings.
+          </p>
+          <p>
+            <a href="../riskability-config/riskability_admin">Open Feed administration</a>
+            &#160;·&#160;
+            <a href="../riskability-config/riskability_ai">Open AI analysis settings</a>
+          </p>
+          <p class="rk-dim">
+            If those links do not resolve, the riskability-config package has not been
+            installed on this search head. Install it from the same release as this app.
+          </p>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

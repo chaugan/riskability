@@ -1,0 +1,54 @@
+/* Styles for the AI prioritization overview (see riskability_ai_overview.js).
+   Shared visual language with the configuration app's AI page. */
+
+.rk-ai-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 10px;
+}
+
+.rk-ai-tile {
+    flex: 1 1 150px;
+    border: 1px solid #3c4a57;
+    border-radius: 6px;
+    padding: 12px 14px;
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.rk-ai-num {
+    font-size: 26px;
+    font-weight: 700;
+}
+
+.rk-ai-label {
+    font-size: 12px;
+    color: #b9c2cc;
+    margin-top: 2px;
+}
+
+.rk-ai-tier {
+    display: inline-block;
+    min-width: 34px;
+    text-align: center;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #fff;
+}
+
+.rk-ai-p0 { background: #b3121f; }
+.rk-ai-p1 { background: #d2641f; }
+.rk-ai-p2 { background: #b08c1a; }
+.rk-ai-p3 { background: #3f6e8c; }
+.rk-ai-p4 { background: #4a5560; }
+
+.rk-ai-table td { vertical-align: top; }
+
+.rk-ai-why { max-width: 460px; }
+
+.rk-ai-mit {
+    margin: 6px 0 0 16px;
+    padding: 0;
+    color: #b9c2cc;
+}

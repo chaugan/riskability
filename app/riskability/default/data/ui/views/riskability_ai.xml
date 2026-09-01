@@ -1,0 +1,20 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_ai_overview.js" stylesheet="application.css,riskability_ai_overview.css">
+  <label>AI prioritization</label>
+  <description>Risk prioritization produced by the AI analysis pipeline.</description>
+
+  <row>
+    <panel>
+      <html>
+        <!-- Deliberately empty. Everything on this page is drawn by
+             riskability_ai_overview.js, which first asks the app whether AI
+             analysis is switched on at all. When it is not, the script draws
+             nothing and removes this page from the navigation bar: an
+             instance whose admin never configured AI shows its users no AI
+             surface, no empty panels, and no message saying anything is
+             missing, because nothing is missing. This page simply does not
+             exist for them. -->
+        <div id="riskability-ai-overview"></div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

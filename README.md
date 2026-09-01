@@ -48,7 +48,7 @@ reachability first and reports plainly when there is none.
 
 **Where it goes** &nbsp; [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did)
+**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
 
 **At fleet scale** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
@@ -786,7 +786,7 @@ hosts × packages.
 
 ## Dashboards
 
-Twelve views, in nav order.
+Twelve views, in nav order — thirteen when AI analysis is switched on.
 
 | View | Answers |
 |---|---|
@@ -801,7 +801,33 @@ Twelve views, in nav order.
 | **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
-| **Feed administration** | Build, upload and import bundles |
+| **AI prioritization** | Only present when an administrator has switched the AI analysis pipeline on. The tiers, scores, rationales and mitigations the GPU pipeline produced, newest per CVE per asset |
+| **Feed administration** | Build, upload and import bundles — now in the separate **Riskability Configuration** app, together with the AI settings, where only administrators can reach it |
+
+## AI analysis (optional)
+
+Riskability's core promise is that the search head never calls out. The AI
+pipeline does not break that promise; it adds a second one: **until an
+administrator deliberately switches it on, AI does not exist for a normal
+user** — no page, no empty panels, no message about anything missing, no
+schedule in the job system, no endpoint answering anything but one silent
+`false`.
+
+When an admin does switch it on, an AI model running on a GPU box on your own
+network (a single RTX 3060 12 GB is the reference build; anything larger only
+makes it faster) reads what Riskability has already measured — open findings
+carrying reach class, version-match evidence, EPSS and KEV — and returns a
+priority per CVE per asset: a P0–P4 tier, a score, a rationale in prose,
+concrete mitigations and the ATT&CK techniques that apply. The decision of
+what to analyse, in what order and when stays in Splunk; the model is the
+only non-deterministic component in the pipeline, and its answers are
+schema-validated before anything reads them.
+
+Everything about it — the endpoint, the secret (Splunk's encrypted password
+store, never a browser), the hardware profile, the dispatch — is configured in
+the **Riskability Configuration** app, which only `admin` and `sc_admin` can
+open. Full documentation, including how to test against hosted model hubs
+before the hardware exists, is in [docs/AI-MOD.md](AI-MOD.md).
 
 ### The CVE encyclopaedia, and why it needs a source of its own
 

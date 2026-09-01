@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Tests for the AI mod, runnable on a laptop with no Splunk and no GPU.
+
+  python3 tools/test_ai_mod.py
+
+Covers the two things that must not silently rot:
+
+1. The settings and output contract in bin/riskability/ai_config.py — the
+   validation both the admin endpoint and the alert action depend on, and the
+   result schema the whole pipeline hangs off.
+2. The HTTP probes end to end against tools/ai_mock_server.py: the same
+   functions the admin page's Test buttons call, over real sockets.
+3. The conf files the mod adds parse the strict way the Splunk Packaging
+   Toolkit parses them (borrowing tools/conf_lint.py), because a continuation
+   line that lost its backslash is invisible until an app submission fails.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, os.path.join(ROOT, "app", "riskability", "bin"))
+
+from riskability import ai_config  # noqa: E402
+
+FAILURES = []
+
+
+def check(name, condition, detail=""):
+    if condition:
+        print("  ok   %s" % name)
+    else:
+        FAILURES.append(name)
+        print("  FAIL %s %s" % (name, detail))
+
+
+def raises(fn, *args, **kwargs):
+    try:
+        fn(*args, **kwargs)
+        return None
+    except ValueError as exc:
+        return str(exc)
+    except Exception as exc:
+        return "wrong exception: %r" % exc
+
+
+# ---------------------------------------------------------------------------
+# Settings validation
+# ---------------------------------------------------------------------------
+
+def test_settings():
+    print("validate_settings:")
+    base = {"endpoint_url": "http://127.0.0.1:8000", "enabled": "0"}
+    merged = ai_config.validate_settings(base, {})
+    check("defaults fill in", merged["model"] == "foundation-sec-8b"
+          and merged["t2_concurrency"] == "8")
+    check("url keeps scheme, loses trailing slash",
+          ai_config.validate_settings({"endpoint_url": "http://x:8000/"}, {})["endpoint_url"]
+          == "http://x:8000")
+
+    err = raises(ai_config.validate_settings, {"endpoint_url": "ftp://x"}, {})
+    check("non-http scheme rejected", err and "http" in err, err)
+    err = raises(ai_config.validate_settings, {"endpoint_url": "https://user:pw@host"}, {})
+    check("credentials in URL rejected", err and "username" in err, err)
+    err = raises(ai_config.validate_settings, {"nope": 1}, {})
+    check("unknown key rejected", err and "nope" in err, err)
+    err = raises(ai_config.validate_settings, {"t2_concurrency": "1000"}, {})
+    check("concurrency bound enforced", err and "between" in err, err)
+    err = raises(ai_config.validate_settings, {"t2_concurrency": "abc"}, {})
+    check("non-number rejected", err, err)
+    err = raises(ai_config.validate_settings, {"enabled": "1"}, {})
+    check("enable without URL refused", err and "URL" in err, err)
+    err = raises(ai_config.validate_settings,
+                 {"auth_type": "basic", "username": "", "endpoint_url": "http://x",
+                  "enabled": "1"}, {})
+    check("basic auth without username refused", err and "username" in err, err)
+    ok = ai_config.validate_settings(
+        {"enabled": "true", "endpoint_url": "http://x:8000", "auth_type": "bearer"}, {})
+    check("bool coercion", ok["enabled"] == "1")
+    check("merge keeps current values",
+          ai_config.validate_settings({}, {"model": "qwen-7b"})["model"] == "qwen-7b")
+
+
+# ---------------------------------------------------------------------------
+# LLM answer contract
+# ---------------------------------------------------------------------------
+
+GOOD = {
+    "priority_tier": "P0", "priority_score": 92, "confidence": 0.8,
+    "rationale": "Known exploited, internet facing, version confirmed vulnerable.",
+    "exploitability_signal": "active-exploit", "exposure_signal": "internet-facing",
+    "process_match_confidence": "confirmed", "recommended_action": "patch-now",
+    "recommended_mitigations": ["patch"], "attck_techniques": ["T1195.001", "bogus"],
+}
+
+
+def test_result():
+    print("validate_result / parse_llm_json:")
+    clean, err = ai_config.validate_result(GOOD)
+    check("valid result accepted", err is None and clean["priority_tier"] == "P0")
+    check("invalid technique dropped, valid kept",
+          clean and clean["attck_techniques"] == ["T1195.001"])
+    for key, bad in (("priority_tier", "P9"), ("recommended_action", "yolo"),
+                     ("exposure_signal", "the-moon")):
+        broken = dict(GOOD); broken[key] = bad
+        _, err = ai_config.validate_result(broken)
+        check("bad %s rejected" % key, err is not None and key in err, str(err))
+    broken = dict(GOOD); broken["priority_score"] = 101
+    _, err = ai_config.validate_result(broken)
+    check("score bound enforced", err is not None)
+    broken = dict(GOOD); broken["rationale"] = ""
+    _, err = ai_config.validate_result(broken)
+    check("empty rationale rejected", err is not None)
+
+    check("bare json parses",
+          ai_config.parse_llm_json(json.dumps(GOOD))["priority_tier"] == "P0")
+    check("fenced json parses",
+          ai_config.parse_llm_json("```json\n" + json.dumps(GOOD) + "\n```") is not None)
+    check("prose-wrapped json parses",
+          ai_config.parse_llm_json("Here you are:\n" + json.dumps(GOOD)) is not None)
+    err = raises(ai_config.parse_llm_json, "no json at all")
+    check("prose without json rejected", err is not None, err)
+
+
+def test_auth_header():
+    print("auth_header:")
+    check("bearer",
+          ai_config.auth_header("bearer", "", "sekrit")["Authorization"] == "Bearer sekrit")
+    import base64
+    expected = "Basic " + base64.b64encode(b"svc:pw").decode()
+    check("basic",
+          ai_config.auth_header("basic", "svc", "pw")["Authorization"] == expected)
+    check("none", ai_config.auth_header("none", "", "") == {})
+
+
+# ---------------------------------------------------------------------------
+# Probes against the mock server
+# ---------------------------------------------------------------------------
+
+def test_probes(port, invalid=False):
+    url = "http://127.0.0.1:%d" % port
+    print("probes against %s:" % url)
+
+    r = ai_config.probe_models(url, "none", "", "", True, 10)
+    check("models probe", r["ok"] and r["models"] == ["foundation-sec-8b"],
+          json.dumps(r))
+
+    r = ai_config.probe_completion(url, "none", "", "irrelevant",
+                                   "foundation-sec-8b", True, 30)
+    if invalid:
+        check("invalid answer reported not-ok", r["ok"] is False
+              and r.get("validation_error"), json.dumps(r))
+    else:
+        check("completion probe ok", r["ok"] is True, json.dumps(r)[:400])
+        check("completion validated to tier",
+              r["ok"] and r["result"]["priority_tier"] == "P0")
+        check("latency measured", r.get("latency_ms", 0) >= 0)
+
+    r = ai_config.probe_bert(url, True, 10)
+    check("bert probe", r["ok"] and r["tactics"] == ["TA0001", "TA0008"],
+          json.dumps(r))
+
+    # A dead endpoint must fail with prose a human can act on, not a traceback.
+    err = raises(ai_config.probe_models, "http://127.0.0.1:9", "none", "", "", True, 2)
+    check("unreachable endpoint fails in prose", err and "reach" in err, err)
+
+
+# ---------------------------------------------------------------------------
+# Conf lint
+# ---------------------------------------------------------------------------
+
+def test_conf_files():
+    print("conf parsing (packaging-toolkit rules):")
+    sys.path.insert(0, HERE)
+    import conf_lint
+    targets = [os.path.join(ROOT, "app", "riskability", "default", n)
+               for n in ("riskability_ai.conf", "restmap.conf", "web.conf",
+                         "authorize.conf", "alert_actions.conf", "macros.conf",
+                         "savedsearches.conf", "app.conf")]
+    targets.append(os.path.join(ROOT, "app", "riskability-config", "default", "app.conf"))
+    targets += [os.path.join(ROOT, "app", "TA-riskability-ai", "default", n)
+                for n in ("indexes.conf", "props.conf", "app.conf")]
+    for path in targets:
+        problems = conf_lint.lint(path)
+        check(os.path.relpath(path, ROOT), not problems, str(problems))
+
+
+# ---------------------------------------------------------------------------
+
+class MockServer:
+    """Runs tools/ai_mock_server.py as a subprocess, like the real thing."""
+
+    def __init__(self, port, extra=()):
+        self.proc = subprocess.Popen(
+            [sys.executable, os.path.join(HERE, "ai_mock_server.py"),
+             "--port", str(port)] + list(extra),
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.port = port
+
+    def wait(self):
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            try:
+                urllib.request.urlopen(
+                    "http://127.0.0.1:%d/v1/models" % self.port, timeout=1).read()
+                return True
+            except Exception:
+                time.sleep(0.1)
+        return False
+
+    def stop(self):
+        self.proc.terminate()
+        self.proc.wait(timeout=5)
+
+
+def test_t0_and_analyze(port):
+    print("T0 rules and single-finding analysis:")
+    kev_row = {"kev": "true", "cvss_base_score": 9.4, "epss": 0.5,
+               "exposure_zone": "internet-facing", "version_match": "yes"}
+    r = ai_config.t0_rules(kev_row)
+    check("T0 auto-P0 on KEV+exposed+confirmed", r and r["priority_tier"] == "P0")
+    boring = {"kev": "false", "cvss_base_score": 3.1, "epss": 0.01,
+              "exposure_zone": "isolated", "version_match": "no"}
+    r = ai_config.t0_rules(boring)
+    check("T0 auto-P4 on the provably boring", r and r["priority_tier"] == "P4")
+    mid = {"kev": "false", "cvss_base_score": "", "epss": 0.3,
+           "exposure_zone": "internal", "version_match": "unknown"}
+    check("T0 defers the undecided middle", ai_config.t0_rules(mid) is None)
+
+    url = "http://127.0.0.1:%d" % port
+    r = ai_config.analyze_finding(url, "bearer", "", "k", "foundation-sec-8b",
+                                  True, 60, mid, 300)
+    check("analyze_finding ok", r["ok"] and r["result"]["priority_tier"] == "P0",
+          json.dumps(r)[:200])
+
+
+def test_verdict_sig():
+    print("verdict_sig:")
+    base = {"cve_id": "CVE-1", "severity": "High", "kev": "false",
+            "epss": "0.12345", "cvss_score": "7.5", "title": "Some flaw"}
+    a, b = ai_config.verdict_sig(base), ai_config.verdict_sig(dict(base))
+    check("deterministic", a == b)
+    changed = dict(base); changed["epss"] = "0.13"
+    check("epss excluded from sig (float-format drift)",
+          ai_config.verdict_sig(changed) == a)
+    changed2 = dict(base); changed2["title"] = "Different advisory text"
+    check("title change -> new sig", ai_config.verdict_sig(changed2) != a)
+    case = dict(base); case["severity"] = "high"
+    check("severity case-insensitive", ai_config.verdict_sig(case) == a)
+    check("kev string/false split",
+          ai_config.verdict_sig(dict(base, kev="true")) != a)
+
+
+def main():
+    test_settings()
+    test_result()
+    test_auth_header()
+    test_verdict_sig()
+    test_conf_files()
+
+    server = MockServer(8931)
+    try:
+        if not server.wait():
+            check("mock server started", False)
+        else:
+            test_t0_and_analyze(8931)
+            test_probes(8931, invalid=False)
+    finally:
+        server.stop()
+
+    bad = MockServer(8932, extra=["--invalid"])
+    try:
+        if bad.wait():
+            test_probes(8932, invalid=True)
+        else:
+            check("invalid mock server started", False)
+    finally:
+        bad.stop()
+
+    print()
+    if FAILURES:
+        print("FAILED (%d): %s" % (len(FAILURES), ", ".join(FAILURES)))
+        return 1
+    print("All checks passed.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

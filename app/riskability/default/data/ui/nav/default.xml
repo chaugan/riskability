@@ -10,6 +10,6 @@
   <view name="riskability_coverage"/>
   <view name="riskability_exceptions"/>
   <view name="riskability_cve"/>
-  <view name="riskability_admin"/>
+  <view name="riskability_ai"/>
   <view name="search"/>
 </nav>

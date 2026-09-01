@@ -5,6 +5,20 @@ export = none
 [views]
 access = read : [ * ], write : [ admin, sc_admin ]
 
+# The AI prioritization page ships ADMIN-ONLY, and the master switch widens it
+# to everyone when AI is switched on (the admin endpoint rewrites this view's
+# ACL; the local layer it writes wins over this default).
+#
+# Nav entries are filtered server-side by view read permission, so this is
+# what keeps the page out of every user's navigation while AI is off -- not
+# the JavaScript, which is only belt and braces. Doing it in meta rather than
+# script means there is no first-paint flash of a nav item that is about to be
+# removed, and nothing at all renders for a user who types the URL directly:
+# Splunk itself answers 404, exactly as it would for a page that does not
+# exist.
+[views/riskability_ai]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
 [collections/riskability_ranges]
 access = read : [ * ], write : [ admin, sc_admin ]
 
@@ -17,6 +31,12 @@ access = read : [ * ], write : [ admin, sc_admin ]
 [collections/riskability_feedstate]
 access = read : [ * ], write : [ admin, sc_admin ]
 
+# The single AI-enabled bit every user's AI page reads (see collections.conf
+# for why this is a collection and not the conf file). Write stays admin-only:
+# the capability-guarded REST endpoint is the only writer.
+[collections/riskability_aistate]
+access = read : [ * ], write : [ admin, sc_admin ]
+
 [collections/riskability_suppressions]
 access = read : [ * ], write : [ admin, power, sc_admin ]
 
@@ -24,4 +44,10 @@ access = read : [ * ], write : [ admin, power, sc_admin ]
 access = read : [ * ], write : [ admin, sc_admin ]
 
 [commands]
+access = read : [ * ], write : [ admin, sc_admin ]
+
+# The verdict cache is readable by every search (the expansion join needs
+# it); writes happen only through the queue consumer command under the
+# master switch.
+[collections/riskability_aiverdicts]
 access = read : [ * ], write : [ admin, sc_admin ]

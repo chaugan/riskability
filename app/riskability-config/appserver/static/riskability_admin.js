@@ -27,6 +27,10 @@
     // other URL here it must be built relative to the Splunk root endpoint so
     // it survives being served under a reverse-proxy path prefix.
     function staticUrl(rel) {
+        // The feed builder zip ships with the main riskability app, and this
+        // page now lives in the configuration app, so the path names the app
+        // it belongs to rather than assuming its own. Splunk serves static
+        // files per app under /static/app/<app>/, across app boundaries.
         return splunkRoot() + "/static/app/riskability/" + rel;
     }
 
