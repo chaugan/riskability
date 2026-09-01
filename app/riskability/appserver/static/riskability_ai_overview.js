@@ -101,13 +101,51 @@
         render();
     }).catch(function () { hideNavItem(); });
 
+    var cveFilter = null;   // set by clicking a stem in the sea chart
+
     function render() {
         root.textContent = "";
         var ov = state.overview || {};
         buildSummary(ov);
         buildCoverage(ov);
+        buildSea(ov);
         buildTierFilter(ov);
         buildTable(ov);
+    }
+
+    // The sea, and what rises out of it. Drawn above the table and never
+    // instead of it: the picture answers "how much is there and how little
+    // matters", the table answers "and what exactly do I do". Clicking a stem
+    // filters the table rather than replacing it, so the two stay one page.
+    function buildSea(ov) {
+        if (typeof window.RiskabilityAIChart === "undefined") return;
+        var bands = {};
+        ["0", "1", "2", "3", "4"].forEach(function (b) {
+            bands[b] = Number(ov["sea_" + b] || 0);
+        });
+        var card = el("div", "rk-card");
+        card.appendChild(el("h3", null, "The sea, and what rises out of it"));
+        card.appendChild(el("p", "rk-dim",
+            "Every open CVE in the fleet, banded by exploit likelihood. The few "
+            + "the pipeline lifted above the waterline are drawn as stems. Hover "
+            + "one for the reasoning, click it to filter the table below."));
+        var host = el("div", "rk-ai-sea");
+        card.appendChild(host);
+        root.appendChild(card);
+        try {
+            var chart = window.RiskabilityAIChart.render(
+                host, {seaBands: bands, results: ov.results || []},
+                function (cveId) {
+                    cveFilter = (cveFilter === cveId) ? null : cveId;
+                    render();
+                });
+            window.addEventListener("resize", function () {
+                try { chart.resize(); } catch (e) {}
+            });
+        } catch (e) {
+            host.parentNode.removeChild(host);
+            card.appendChild(el("p", "rk-dim", "The overview chart could not be drawn."));
+        }
     }
 
     function tile(value, label, cls) {
@@ -176,6 +214,13 @@
         var filtered = tierFilter === "all" ? rows : rows.filter(function (r) {
             return r.priority_tier === tierFilter;
         });
+        if (cveFilter) {
+            filtered = filtered.filter(function (r) { return r.cve_id === cveFilter; });
+            var clear = el("button", "rk-ai-filter-btn", "showing " + cveFilter + ", clear");
+            clear.type = "button";
+            clear.addEventListener("click", function () { cveFilter = null; render(); });
+            card.appendChild(clear);
+        }
 
         if (!filtered.length) {
             card.appendChild(el("p", "rk-dim",

@@ -75,7 +75,14 @@ def _overview_from_kv(service) -> dict:
             **{"query": json.dumps({"_key": "overview"})}))
         if rows:
             row = rows[0]
-            for key in ("findings", "p0", "p1", "assets", "cves", "latest_at"):
+            # sea_0..sea_4 are distinct OPEN CVEs per exploit-likelihood band
+            # across the whole catalogue, counted by the expansion search
+            # before it filters to CVEs that have a verdict. They are what the
+            # overview chart draws as the sea; without them it would only ever
+            # show what has already been analysed, which is a picture of the
+            # pipeline rather than of the fleet.
+            for key in ("findings", "p0", "p1", "assets", "cves", "latest_at",
+                        "sea_0", "sea_1", "sea_2", "sea_3", "sea_4"):
                 val = _first(row.get(key))
                 out[key] = int(val) if val not in ("", None) else 0
             out["last_run_id"] = _first(row.get("run_id")) or ""

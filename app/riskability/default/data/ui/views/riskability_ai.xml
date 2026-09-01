@@ -1,4 +1,4 @@
-<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_ai_overview.js" stylesheet="application.css,riskability_ai_overview.css">
+<dashboard version="1.1" theme="dark" script="riskability_help.js,visualizations/riskability_chart/ai_overview_chart.js,riskability_ai_overview.js" stylesheet="application.css,riskability_ai_overview.css">
   <label>AI prioritization</label>
   <description>Risk prioritization produced by the AI analysis pipeline.</description>
 

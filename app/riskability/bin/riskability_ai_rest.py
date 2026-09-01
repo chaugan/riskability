@@ -187,7 +187,8 @@ class AIAdminHandler(PersistentServerConnectionApplication):
         """
         try:
             ai_settings.sync_budget_macro(service, merged["candidate_cap"])
-            ai_settings.sync_sig_salt_macro(service, merged["model"])
+            ai_settings.sync_sig_salt_macro(service, merged["model"],
+                                            merged.get("endpoint_fingerprint", ""))
         except Exception as exc:
             return (
                 "The settings are saved, but the macros the scheduled "
@@ -337,6 +338,23 @@ class AIAdminHandler(PersistentServerConnectionApplication):
         elif body.get("clear_password"):
             self._delete_secret(service)
             password_message = "Stored secret removed."
+
+        # Derived, never accepted from the caller: whatever arrived in the
+        # request body for this field is overwritten with what the endpoint
+        # itself reports, so it cannot be spoofed into pinning a stale cache.
+        # A probe failure leaves the previous value alone rather than blanking
+        # it, because "we could not reach the server just now" is not evidence
+        # that the server changed.
+        try:
+            probed = ai_config.endpoint_fingerprint(
+                merged["endpoint_url"], merged["auth_type"], merged["username"],
+                self._secret_for_test(request, body), merged["model"],
+                merged["verify_tls"] == "1", int(merged["request_timeout"]))
+            if probed:
+                merged["endpoint_fingerprint"] = probed
+                self._write_config(service, merged)
+        except Exception:
+            pass
 
         enabled = merged["enabled"] == "1"
         schedule_error = self._set_searches(service, disabled=not enabled)

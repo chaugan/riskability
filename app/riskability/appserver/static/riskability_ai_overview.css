@@ -184,3 +184,10 @@
     color: #c8d2db;
     line-height: 1.5;
 }
+
+/* The sea chart. Fixed height so the page does not reflow while the chart
+   initialises, and wide enough that five bands and their stems are legible. */
+.rk-ai-sea {
+    width: 100%;
+    height: 260px;
+}

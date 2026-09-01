@@ -11,7 +11,13 @@
 // and the vizapi modules must remain external, resolved by Splunk at runtime.
 const path = require('path');
 
-module.exports = {
+// Two bundles from one ECharts install. The Splunk visualisation is an AMD
+// module Splunk instantiates for a dashboard panel; the AI overview page is
+// plain JavaScript in a div that deliberately runs no searches, so it cannot
+// use the AMD one and gets a self-contained global instead. Same dependency,
+// same tree shaking, different delivery, and neither can break the other's
+// output because webpack emits them as separate entries.
+const viz = {
     entry: './src/visualization_source.js',
     output: {
         path: __dirname,
@@ -42,3 +48,20 @@ module.exports = {
     },
     performance: { hints: false },
 };
+
+const page = {
+    entry: './src/ai_overview_chart.js',
+    output: {
+        path: __dirname,
+        filename: 'ai_overview_chart.js',
+        // A plain browser global, NOT amd. The AI page is loaded by Splunk Web
+        // as an ordinary static script with no RequireJS around it, so an AMD
+        // wrapper would define a module nobody asks for and the page would see
+        // nothing at all.
+        library: { name: 'RiskabilityAIChart', type: 'window', export: 'default' },
+    },
+    optimization: { minimize: true },
+    performance: { hints: false },
+};
+
+module.exports = [viz, page];

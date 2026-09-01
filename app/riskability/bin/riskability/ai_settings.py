@@ -98,17 +98,33 @@ def sync_budget_macro(service, candidate_cap) -> None:
         definition=str(int(candidate_cap)))
 
 
-def sig_salt(model: str) -> str:
-    """The verdict cache salt for a given model name.
+def sig_salt(model: str, fingerprint: str = "") -> str:
+    """The verdict cache salt: schema version, model name, server fingerprint.
 
     Returned bare, without the quotes the macro carries: SPL needs a string
     literal and Python needs the string, so the quoting belongs to the
     stamper below and nowhere else.
+
+    The fingerprint is in here because the model NAME is not the model
+    CONFIGURATION. On the reference build the server's own template appended
+    the entire answer schema to every prompt, so one file on the GPU box
+    decided what every prompt actually said while the name, and therefore the
+    salt, never moved. It is stamped when an admin saves or tests, never
+    refreshed automatically: some servers report a value in that field that
+    changes on restart, and a salt that moves on a service restart would
+    re-analyse a whole fleet for nothing. Drift from the stamped value is
+    reported at run time instead, and a human decides.
+
+    An empty fingerprint is a legitimate answer (an endpoint that reports
+    nothing useful) and simply leaves the salt as it was before.
     """
-    return "%s:%s" % (SIG_SCHEMA_VERSION, (model or "").strip())
+    parts = [SIG_SCHEMA_VERSION, (model or "").strip()]
+    if (fingerprint or "").strip():
+        parts.append(fingerprint.strip())
+    return ":".join(parts)
 
 
-def sync_sig_salt_macro(service, model) -> None:
+def sync_sig_salt_macro(service, model, fingerprint="") -> None:
     """Re-stamp the salt macro from the settings field, the same bridge
     sync_budget_macro is and for the same reason: the signature is computed
     on the SPL side by the queue search and in Python by the analysis
@@ -121,4 +137,4 @@ def sync_sig_salt_macro(service, model) -> None:
     and validate_settings has already run on everything the endpoint saves.
     """
     service.confs["macros"]["riskability_ai_sig_salt"].update(
-        definition='"%s"' % sig_salt(model))
+        definition='"%s"' % sig_salt(model, fingerprint))

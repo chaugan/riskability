@@ -219,6 +219,36 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
         bert_url = (cfg.get("bert_url") or "").strip()
 
         salt = self._sig_salt()
+
+        # Has the model server changed under us since an admin last saved?
+        #
+        # The salt covers the model NAME and the fingerprint stamped at save
+        # time. It cannot cover what the server does to a prompt after it
+        # arrives, and on the reference build that was not hypothetical: the
+        # server's template appended the entire answer schema to every prompt,
+        # so editing one file on the GPU box changed what every prompt said
+        # while every cached verdict stayed valid.
+        #
+        # Reported, never acted on. Some servers put a restart-varying value
+        # in the field this is derived from, and a cache that invalidated
+        # itself on a service restart would re-analyse the whole fleet for
+        # nothing. So the run says so, loudly, in the job and in the log, and
+        # a human decides whether the change was material enough to bump
+        # SIG_SCHEMA_VERSION. One extra request per run, not per CVE.
+        stamped = (cfg.get("endpoint_fingerprint") or "").strip()
+        if stamped:
+            live = ai_config.endpoint_fingerprint(
+                url, auth_type, username, secret, model, verify, timeout)
+            if live and live != stamped:
+                self._report(
+                    "the model server's configuration has changed since these "
+                    "settings were saved (fingerprint %s, was %s). Cached "
+                    "verdicts were produced under the previous configuration "
+                    "and are still being served. If the change altered the "
+                    "prompt or the model, bump SIG_SCHEMA_VERSION in "
+                    "riskability/ai_settings.py to re-earn them once, or save "
+                    "the AI settings again to accept the new fingerprint."
+                    % (live, stamped))
         # _bert_url is stripped on the way in and re-attached from the
         # configuration at call time. analyze_finding takes the classifier URL
         # off the record it is handed, so a record that keeps its own value
