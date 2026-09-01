@@ -118,13 +118,6 @@ FIELD_SPECS: Dict[str, dict] = {
     "t2_max_tokens": {
         "kind": "int", "min": 64, "max": 4000, "default": 400,
     },
-    "t3_max_tokens": {
-        "kind": "int", "min": 256, "max": 8000, "default": 1200,
-    },
-    # A T2 score at or above this goes back to the model for deep reasoning.
-    "t3_deep_threshold": {
-        "kind": "int", "min": 0, "max": 100, "default": 70,
-    },
     # Largest candidate queue one run will hand the GPU box. The small-card
     # presets lower this; the queue is ordered by EPSS so the head of the
     # queue is always the most worth analysing.
@@ -150,24 +143,24 @@ PRESETS = {
             # queued and bought nothing but latency. Setting OLLAMA_NUM_PARALLEL=2
             # on the box is what made 2 worth asking for. Raising this past the
             # server's slot count is not a speed-up, it is a queue.
-            "t2_concurrency": 2, "t2_max_tokens": 400, "t3_max_tokens": 1200,
-            "t3_deep_threshold": 70, "request_timeout": 150,
+            "t2_concurrency": 2, "t2_max_tokens": 400,
+            "request_timeout": 150,
             "candidate_cap": 1000,
         },
     },
     "rtx4090": {
         "label": "RTX 4090 / 24 GB (single card)",
         "values": {
-            "t2_concurrency": 32, "t2_max_tokens": 400, "t3_max_tokens": 1200,
-            "t3_deep_threshold": 70, "request_timeout": 90,
+            "t2_concurrency": 32, "t2_max_tokens": 400,
+            "request_timeout": 90,
             "candidate_cap": 5000,
         },
     },
     "a100": {
         "label": "A100 / H100 40 GB+",
         "values": {
-            "t2_concurrency": 64, "t2_max_tokens": 400, "t3_max_tokens": 1200,
-            "t3_deep_threshold": 70, "request_timeout": 60,
+            "t2_concurrency": 64, "t2_max_tokens": 400,
+            "request_timeout": 60,
             "candidate_cap": 20000,
         },
     },
@@ -463,6 +456,13 @@ into one priority decision.
 Strict rules:
 - Respond with a single JSON object and nothing else. No prose, no markdown,
   no code fences.
+- The object must contain exactly these keys, in this order: "rationale"
+  (string), "priority_tier", "priority_score", "confidence",
+  "exploitability_signal", "exposure_signal", "process_match_confidence",
+  "recommended_action", "recommended_mitigations" (array of strings),
+  "attck_techniques" (array of strings).
+- rationale: one or two sentences saying why, written first so the reasoning
+  precedes the score rather than justifying it afterwards.
 - priority_tier: "P0", "P1", "P2", "P3" or "P4".
 - priority_score: integer 0-100. confidence: float 0.0-1.0.
 - exploitability_signal: "active-exploit", "proof-of-concept", "theoretical"
@@ -1017,6 +1017,61 @@ def _epss_band(value) -> str:
     if epss < 0.50:
         return "3"
     return "4"
+
+
+def explain_finding(url: str, auth_type: str, username: str, secret: str,
+                    model: str, verify_tls: bool, timeout: int, verdict: dict,
+                    system_prompt: str, max_tokens: int) -> dict:
+    """One prose explanation of an already-analysed CVE, for a person.
+
+    Deliberately NOT schema-validated, because it deliberately has no schema:
+    the answer is read by a human and rendered as text, never parsed into a
+    tier or a score. That is the whole reason this is safe to expose more
+    widely than the pipeline. It is bounded and stripped like every other
+    piece of model output, because it still ends up in a KV row and a browser.
+
+    Returns {"ok", "latency_ms", "text"} or {"ok": False, "error"}.
+    """
+    evidence = "\n".join(
+        "%s: %s" % (label, verdict.get(key) or "not recorded")
+        for label, key in (
+            ("CVE", "cve_id"), ("Advisory title", "title"),
+            ("Severity", "severity"), ("EPSS", "epss"), ("KEV listed", "kev"),
+            ("Software", "package"), ("Vendor", "vendor"),
+            ("Installed version", "installed_version"),
+            ("Measured exposure", "exposure_zone"),
+            ("Current tier", "priority_tier"),
+            ("Current rationale", "rationale")))
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": "Evidence:\n" + evidence},
+    ]
+    started = time.time()
+    try:
+        status, raw = _http(
+            url.rstrip("/") + "/v1/chat/completions", method="POST",
+            headers=auth_header(auth_type, username, secret),
+            body={"model": model, "messages": messages,
+                  "temperature": 0.2, "max_tokens": int(max_tokens)},
+            timeout=max(10, min(int(timeout), 300)), verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"ok": False, "latency_ms": int((time.time() - started) * 1000),
+                "error": str(exc)}
+    latency = int((time.time() - started) * 1000)
+    if status != 200:
+        return {"ok": False, "latency_ms": latency,
+                "error": "the endpoint answered HTTP %s" % status}
+    try:
+        content = json.loads(raw.decode("utf-8", "replace"))
+        text = content["choices"][0]["message"]["content"]
+    except Exception:
+        return {"ok": False, "latency_ms": latency,
+                "error": "completion unreadable (not OpenAI-compatible?)"}
+    text = _clean_text(text, 6000)
+    if not text:
+        return {"ok": False, "latency_ms": latency,
+                "error": "the model returned an empty answer"}
+    return {"ok": True, "latency_ms": latency, "text": text}
 
 
 def verdict_sig(cve: dict, salt: str) -> str:

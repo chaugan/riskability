@@ -7,8 +7,10 @@
  * Features:
  * - Tier filter buttons with live counts (All / P0 / P1 / P2 / P3 / P4)
  * - CVE links to the encyclopedia
- * - Advisory title, package, severity, EPSS, KEV, exposure context
- * - Coverage tiles (analysed / awaiting / failed)
+ * - Advisory title in full, software with vendor and installed version,
+ *   severity, EPSS, KEV, exposure context
+ * - On-demand deep explanation per row, cached with the verdict
+ * - Coverage tiles (analysed / awaiting)
  * - Self-hiding when AI is switched off
  */
 (function () {
@@ -29,6 +31,22 @@
         var i = path.indexOf("/app/");
         if (i < 0) return "";
         return path.slice(0, i);
+    }
+
+    function explainCve(cveId) {
+        return fetch(splunkRoot() + "/splunkd/__raw/services/riskability/ai_explain",
+                     {method: "POST",
+                      headers: {"Content-Type": "application/json",
+                                "X-Splunk-Form-Key": csrfToken(),
+                                "X-Requested-With": "XMLHttpRequest"},
+                      credentials: "same-origin",
+                      body: JSON.stringify({cve_id: cveId})})
+            .then(function (r) {
+                return r.json().then(function (j) {
+                    if (!r.ok) { throw new Error(j.error || ("HTTP " + r.status)); }
+                    return j;
+                });
+            });
     }
 
     function statusEndpoint() {
@@ -102,13 +120,13 @@
     function buildSummary(ov) {
         var tc = ov.tier_counts || {};
         var strip = el("div", "rk-ai-summary");
-        strip.appendChild(tile(tc.P0 || 0, "P0 — patch now", "rk-ai-p0"));
-        strip.appendChild(tile(tc.P1 || 0, "P1 — urgent", "rk-ai-p1"));
+        strip.appendChild(tile(tc.P0 || 0, "P0, patch now", "rk-ai-p0"));
+        strip.appendChild(tile(tc.P1 || 0, "P1, urgent", "rk-ai-p1"));
         strip.appendChild(tile(ov.analyzed_cves || 0, "CVEs analysed"));
         strip.appendChild(tile(humanAge(ov.latest_at), "last analysis"));
         root.appendChild(strip);
         root.appendChild(el("p", "rk-dim",
-            "Priorities combine Riskability's own measurements — reach, version evidence, EPSS and KEV — " +
+            "Priorities combine Riskability's own measurements (reach, version evidence, EPSS and KEV) " +
             "with model reasoning about exploitability. A tier is advice about order of work, not a measurement."));
     }
 
@@ -161,7 +179,7 @@
 
         if (!filtered.length) {
             card.appendChild(el("p", "rk-dim",
-                rows.length ? "No " + tierFilter + " findings — try another tier."
+                rows.length ? "No " + tierFilter + " findings. Try another tier."
                 : "No analysis results yet. The first run happens after the queue " +
                   "search completes and the GPU server works through it."));
             return;
@@ -244,6 +262,29 @@
             }
             why.appendChild(el("div", "rk-dim",
                 (row.analysis_source || "") + " · " + humanAge(row.analysed_at)));
+
+            // Explain in depth, on demand, for the one row somebody stopped on.
+            // The scheduled pass answers a closed schema in 400 tokens because
+            // it is ranking thousands; this asks the same model to write for a
+            // person, and only when a person asked. The answer is cached with
+            // the verdict, so the second reader pays nothing.
+            var explain = el("button", "rk-ai-explain", "Explain in depth");
+            explain.type = "button";
+            var out = el("div", "rk-ai-explanation");
+            explain.addEventListener("click", function () {
+                explain.disabled = true;
+                explain.textContent = "Asking the model…";
+                explainCve(row.cve_id).then(function (res) {
+                    out.textContent = res.explanation || "";
+                    explain.parentNode.removeChild(explain);
+                }).catch(function (e) {
+                    out.textContent = "Could not explain: " + e.message;
+                    explain.disabled = false;
+                    explain.textContent = "Try again";
+                });
+            });
+            why.appendChild(explain);
+            why.appendChild(out);
             tr.appendChild(why);
             tbl.appendChild(tr);
         });

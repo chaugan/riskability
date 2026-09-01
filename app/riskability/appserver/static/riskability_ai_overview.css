@@ -161,3 +161,26 @@
 }
 
 .rk-ai-cve { max-width: 440px; }
+
+/* On-demand explanation. The button sits in the Why cell and is replaced by
+   the answer, so a row that has been explained stops offering to explain it. */
+.rk-ai-explain {
+    margin-top: 8px;
+    background: none;
+    border: 1px solid #3a4650;
+    color: #8fb8dd;
+    border-radius: 3px;
+    padding: 3px 9px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.rk-ai-explain:hover { border-color: #5b9bd5; }
+.rk-ai-explain[disabled] { color: #6b7681; cursor: default; }
+
+.rk-ai-explanation {
+    margin-top: 8px;
+    white-space: pre-wrap;
+    color: #c8d2db;
+    line-height: 1.5;
+}

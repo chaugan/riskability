@@ -91,8 +91,6 @@
         ["request_timeout", "Request timeout (seconds)", "120"],
         ["t2_concurrency", "Concurrent bulk analyses (T2)", "8"],
         ["t2_max_tokens", "Bulk answer length, max tokens (T2)", "400"],
-        ["t3_max_tokens", "Deep-reasoning answer length, max tokens (T3)", "1200"],
-        ["t3_deep_threshold", "Deep-reasoning threshold (T2 score at or above)", "70"],
         ["candidate_cap", "Largest queue sent per run (findings)", "5000"]
     ];
     var ALL_FIELDS = CONNECTION_FIELDS.concat(PIPELINE_FIELDS);

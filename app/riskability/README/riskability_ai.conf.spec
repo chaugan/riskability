@@ -36,9 +36,6 @@ t2_concurrency = <integer>
 # was 23,419 ms for the same aggregate throughput, because the threads
 # simply queued. Raising it past the server's own parallelism buys nothing.
 t2_max_tokens = <integer>
-t3_max_tokens = <integer>
-t3_deep_threshold = <integer>
-# A bulk score at or above this is re-analysed with deep reasoning.
 candidate_cap = <integer>
 # Largest candidate queue one run hands to the GPU box.
 last_test = <string>
