@@ -65,6 +65,10 @@ var BANDS = [
     { key: '4', label: '>50%' },
 ];
 
+// Beyond this many stems the picture stops being readable and the count
+// carries more meaning than the strokes would.
+var MAX_STEMS = 30;
+
 var TIER_COLOUR = {
     P0: '#e05c5c',
     P1: '#e0a33c',
@@ -115,11 +119,32 @@ function render(el, payload, onPick) {
     var sea = BANDS.map(function (b) { return Number(seaBands[b.key] || 0); });
     var seaTotal = sea.reduce(function (a, b) { return a + b; }, 0);
 
-    // Only the lifted rows get a stem. Drawing every analysed CVE would
-    // rebuild the sea on top of the sea.
-    var lifted = results.filter(function (r) {
+    // Only the lifted rows get a stem, and only the strongest MAX_STEMS of
+    // them. This was learned the hard way: the first version drew every lifted
+    // CVE and, on a fleet where the model put 837 of 1020 above the waterline,
+    // produced a solid wall of colour that hid both the sea and the point.
+    //
+    // The overflow count is not a rendering detail, it is the most important
+    // number on the page. A pipeline whose job is to lift the important few
+    // out of a sea, and which lifts four fifths of everything, has not
+    // prioritised anything, and the chart should say so in the one place
+    // somebody is looking rather than leave it to be inferred from a table.
+    var allLifted = results.filter(function (r) {
         return lift.indexOf(r.priority_tier) >= 0;
+    }).sort(function (x, y) {
+        // Score first, then exploit likelihood, then KEV. The tie-break is not
+        // cosmetic: the model's scores are coarse (one real fleet had 139
+        // verdicts sharing the single value 95), so without it "the strongest
+        // thirty" is an arbitrary thirty of a hundred and thirty-nine, and the
+        // chart quietly picks favourites by insertion order.
+        var byScore = Number(y.priority_score || 0) - Number(x.priority_score || 0);
+        if (byScore) return byScore;
+        var byEpss = Number(y.epss || 0) - Number(x.epss || 0);
+        if (byEpss) return byEpss;
+        return (y.kev === 'true' ? 1 : 0) - (x.kev === 'true' ? 1 : 0);
     });
+    var lifted = allLifted.slice(0, MAX_STEMS);
+    var overflow = allLifted.length - lifted.length;
 
     // Spread stems within their band so labels do not stack. Ordering by score
     // inside a band keeps the tallest nearest the band centre, which reads as
@@ -134,7 +159,7 @@ function render(el, payload, onPick) {
         var group = byBand[b].sort(function (x, y) {
             return Number(y.priority_score || 0) - Number(x.priority_score || 0);
         });
-        var span = 0.72;
+        var span = 0.62;
         group.forEach(function (r, i) {
             var offset = group.length === 1
                 ? 0
@@ -146,12 +171,20 @@ function render(el, payload, onPick) {
         });
     });
 
-    var maxSea = Math.max.apply(null, sea.concat([1]));
+    // Log scale, because the sea spans orders of magnitude: a real fleet had
+    // 4049 CVEs in the bottom band and 32 in the top, and a linear scale drew
+    // the first bar and four invisible ones. The sea is a backdrop, so it is
+    // compressed into the bottom fifth of the plot whatever its size.
+    var logMax = Math.log10(Math.max.apply(null, sea.concat([10])));
+    function seaHeight(count) {
+        if (!count) return 0;
+        return (Math.log10(count) / logMax) * 20;
+    }
 
     var option = {
         animation: false,
         backgroundColor: 'transparent',
-        grid: { left: 54, right: 22, top: 34, bottom: 46 },
+        grid: { left: 54, right: 22, top: 46, bottom: 46 },
         xAxis: {
             type: 'value',
             min: -0.6,
@@ -175,10 +208,14 @@ function render(el, payload, onPick) {
             type: 'value',
             min: 0,
             max: 100,
-            name: 'priority',
-            nameTextStyle: { color: '#8d99a6', fontSize: 11 },
             axisLabel: { color: '#8d99a6' },
-            axisLine: { lineStyle: { color: '#3a4650' } },
+            // onZero false, and this is not a style preference. ECharts draws
+            // an axis line at the other axis's ZERO by default, and this x
+            // axis starts at -0.6 so that the first band is not clipped. The
+            // y axis line therefore floated in the middle of the plot, at the
+            // centre of the "<1%" band, reading exactly like a full height
+            // stem with no head on it. Spotted only by looking at a render.
+            axisLine: { onZero: false, lineStyle: { color: '#3a4650' } },
             splitLine: { lineStyle: { color: '#232c34' } },
         },
         tooltip: {
@@ -203,7 +240,7 @@ function render(el, payload, onPick) {
         z: 1,
         itemStyle: { color: '#20303c' },
         data: sea.map(function (count, i) {
-            return { value: [i, (count / maxSea) * 22], count: count };
+            return { value: [i, seaHeight(count)], count: count };
         }),
         tooltip: {
             formatter: function (p) {
@@ -236,7 +273,7 @@ function render(el, payload, onPick) {
                     {
                         type: 'line',
                         shape: { x1: top[0], y1: top[1], x2: base[0], y2: base[1] },
-                        style: { stroke: colour, lineWidth: 1, opacity: 0.55 },
+                        style: { stroke: colour, lineWidth: 1, opacity: 0.45 },
                     },
                     {
                         type: 'circle',
@@ -292,6 +329,33 @@ function render(el, payload, onPick) {
             },
         }];
     }
+
+    // The caption. Deliberately plain arithmetic rather than a judgement: the
+    // operator is told how many were analysed, how many were lifted and what
+    // share that is, and draws their own conclusion about whether a pipeline
+    // that lifts most of what it sees is helping.
+    var analysed = results.length;
+    var pct = analysed ? Math.round((allLifted.length / analysed) * 100) : 0;
+    var caption = seaTotal.toLocaleString() + ' open CVEs in the fleet · '
+        + analysed.toLocaleString() + ' analysed · '
+        + allLifted.length.toLocaleString() + ' above the waterline (' + pct + '%)'
+        + (overflow > 0 ? ' · showing the strongest ' + lifted.length : '');
+    // The second line is a caveat, not decoration. These are CVE-level
+    // verdicts: the fleet's worst case for each vulnerability, before the
+    // expansion search steps each finding DOWN for the host it is actually on.
+    // A reader who takes the percentage as "82% of my findings are urgent"
+    // has read it wrong, and the chart should not let them.
+    var caveat = 'fleet worst case per CVE, before the per-host adjustment';
+    option.graphic = (option.graphic || []).concat([
+        {
+            type: 'text', left: 10, top: 4,
+            style: { text: caption, fill: pct >= 50 ? '#e0a33c' : '#8d99a6', fontSize: 11 },
+        },
+        {
+            type: 'text', left: 10, top: 20,
+            style: { text: caveat, fill: '#6b7681', fontSize: 10 },
+        },
+    ]);
 
     chart.setOption(option);
 
