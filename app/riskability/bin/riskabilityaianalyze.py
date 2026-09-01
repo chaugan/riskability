@@ -373,7 +373,12 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                         "epss": rec.get("epss", ""),
                         "kev": rec.get("kev", "false"),
                         "exposure_zone": rec.get("exposure_zone", ""),
-                        "cwe_id": rec.get("cwe_id", "")})
+                        "cwe_id": rec.get("cwe_id", ""),
+                       # The vector is the one technical fact that stays
+                       # accurate for a CVE published after any model was
+                       # trained, so it is stored and shown rather than
+                       # left in the queue index to age out.
+                       "cvss_vector": rec.get("cvss_vector", "")})
                     backfill_docs.append(doc)
             else:
                 to_analyse.append(rec)
@@ -459,7 +464,12 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                        "epss": rec.get("epss", ""),
                        "kev": rec.get("kev", "false"),
                        "exposure_zone": rec.get("exposure_zone", ""),
-                       "cwe_id": rec.get("cwe_id", "")}
+                       "cwe_id": rec.get("cwe_id", ""),
+                       # The vector is the one technical fact that stays
+                       # accurate for a CVE published after any model was
+                       # trained, so it is stored and shown rather than
+                       # left in the queue index to age out.
+                       "cvss_vector": rec.get("cvss_vector", "")}
                 doc.update({f: result.get(f) for f in VERDICT_FIELDS})
                 verdict_docs.append(doc)
             if verdict_docs:

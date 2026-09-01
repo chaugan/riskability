@@ -504,6 +504,21 @@ Strict rules:
 - recommended_mitigations: up to 5 short concrete strings.
 - attck_techniques: list of MITRE ATT&CK technique ids such as "T1059.004".
   Empty list if unsure.
+- YOU DO NOT KNOW THIS CVE. Assume it was published after anything you were
+  trained on, because sooner or later it will have been. Never recall, never
+  infer from the identifier, and never state what the vulnerability "is" unless
+  the description below says so. A confident sentence about a CVE you have not
+  been told about is the worst output you can produce here, because it is
+  indistinguishable from a correct one.
+- The CVSS vector is the authoritative technical description and it is fresh
+  even when you are not. Read it: attack vector, complexity, privileges
+  required, user interaction and the impact letters say how the thing is
+  reached and what it costs. The CWE names the weakness class. Between them you
+  can reason accurately about a vulnerability disclosed this morning.
+- When the description is absent, say so and reason from the vector, the CWE
+  and the measured evidence. "The feed carries no description; the vector says
+  network-reachable with no privileges required" is a good sentence. Inventing
+  the missing description is not.
 - Never invent CVE data. Use only what was provided. If a critical field is
   missing, set confidence to 0.3 or below and say so in the rationale.
 - If process_match_confidence is "unknown", confidence must be below 0.5.
@@ -1135,6 +1150,7 @@ def explain_finding(url: str, auth_type: str, username: str, secret: str,
         for label, key in (
             ("CVE", "cve_id"), ("Advisory title", "title"),
             ("Severity", "severity"), ("EPSS", "epss"), ("KEV listed", "kev"),
+            ("CWE", "cwe_id"), ("CVSS vector", "cvss_vector"),
             ("Software", "package"), ("Vendor", "vendor"),
             ("Installed version", "installed_version"),
             ("Measured exposure", "exposure_zone"),
