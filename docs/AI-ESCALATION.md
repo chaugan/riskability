@@ -90,6 +90,42 @@ catch: a model handed the evidence block cites it perfectly by construction, so
 it passes nearly everything. The only check that binds is deterministic
 re-evaluation of the claim itself.
 
+## What happened when this was actually tried
+
+One shot, the Instruct variant, the rule grammar above, and a hand-built
+evidence block describing the DNS example: a CVSS 5.3 availability-only flaw in
+bind9, scored P4, in the sole process listening on the only port 53 in the
+fleet, with exposure_zone measured as "internal".
+
+It answered in 14.9 seconds with a well-formed, machine-checkable rule. The
+mechanism works: the model can emit a predicate over named fields rather than
+prose. And then:
+
+```json
+{"field": "exposure_zone", "op": "eq", "value": "external"}
+```
+
+The evidence block says exposure_zone is "internal", and "external" is not even
+a member of that field's enum. Its stated reason was "indicating it may be
+exposed to the internet", which contradicts the measurement it had been given.
+It also set already_covered_by to null while proposing a predicate over
+exposure_zone, one of the five signals the scorer already weighs.
+
+So in a single attempt it produced valid field names, invalid composition, and
+a restatement of an existing weight dressed as a discovery. Every one of those
+is a failure the reviewers named in advance, and citation checking would have
+passed all of them: every field it cited was real.
+
+What caught it was the host evaluating the predicate. The rule is false against
+the measured facts, so the escalation is void and the finding keeps its
+deterministic score. That is the design working exactly as intended, on the
+first real example, and it is the reason the honour path must be evaluation
+rather than inspection.
+
+Worth noting what it missed: the actual insight in that evidence, the sole
+listener on the only resolver port in the fleet, was sitting in two fields it
+did not use.
+
 ## A reasoning model does not change this
 
 Cisco ships Foundation-Sec-8B-Reasoning, advertised for exactly this work:
