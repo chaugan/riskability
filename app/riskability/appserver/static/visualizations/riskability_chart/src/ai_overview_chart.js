@@ -344,11 +344,17 @@ function render(el, payload, onPick) {
     // extremes before the model saw anything, so the model was never choosing
     // from the sea at all: it was ranking what was left after the easy calls
     // were made, and a share of that is a different claim entirely.
-    var caption = seaTotal.toLocaleString() + ' open CVEs in the fleet. '
-        + 'The deterministic rules settled all but '
-        + analysed.toLocaleString() + ', and of those '
-        + allLifted.length.toLocaleString() + ' came back above the waterline ('
-        + pct + '% of the ones asked about)'
+    // Three plain counts and one percentage that names its own denominator.
+    // Two earlier versions of this line were wrong in opposite directions: the
+    // first invited reading the percentage as a share of the whole fleet, and
+    // the second claimed the deterministic rules had settled the remainder,
+    // which this page has no way of knowing. It knows how big the fleet is,
+    // how many verdicts are cached, and how many of those are above the line.
+    // It says those, and nothing it cannot see.
+    var caption = seaTotal.toLocaleString() + ' open CVEs in the fleet · '
+        + analysed.toLocaleString() + ' with a verdict · '
+        + allLifted.length.toLocaleString() + ' above the waterline ('
+        + pct + '% of those analysed)'
         + (overflow > 0 ? ', strongest ' + lifted.length + ' drawn' : '');
     // The second line is a caveat, not decoration. These are CVE-level
     // verdicts: the fleet's worst case for each vulnerability, before the
