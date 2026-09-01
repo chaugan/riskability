@@ -121,7 +121,8 @@ def _overview_from_kv(service) -> dict:
                 "cve_id", "priority_tier", "priority_score", "confidence",
                 "rationale", "recommended_action", "recommended_mitigations",
                 "attck_techniques", "exploitability_signal", "analysis_source",
-                "analysed_at", "title", "package", "severity", "epss", "kev",
+                "analysed_at", "title", "package", "vendor",
+                "installed_version", "severity", "epss", "kev",
                 "exposure_zone", "cwe_id")}
             for _, v in scored
         ]

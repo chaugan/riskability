@@ -116,7 +116,28 @@ def _upsert(kv, docs):
     return failed, first_error
 
 
-@Configuration()
+# required_fields = ["*"], and it is the difference between this feature
+# working and this feature being a CVE-metadata guesser.
+#
+# splunkd prunes fields a search does not appear to need. The scheduled
+# analyse search ends in a stats over analysis_source, so nothing downstream
+# references exposure_zone, version_match, process_name, process_path,
+# listening_ports, affected_version, asset_criticality, cvss_vector or cwe_id,
+# and splunkd therefore never sent them to this command. Everything the queue
+# search measured about reachability and running processes, which is the whole
+# reason to prefer this app's verdicts over a CVSS sort, was being dropped one
+# pipe before the prompt was built.
+#
+# It hid well. The fields the dashboard shows (package, severity, epss, kev,
+# title) survive because this command backfills those from the findings KV, so
+# a stored verdict looked complete while the model had been shown almost none
+# of the evidence. Measured: exposure_zone arrived empty in the scheduled
+# shape and populated when an ad hoc "| table exposure_zone" made splunkd keep
+# it, which is why an interactive test never reproduced it.
+#
+# The SDK documents the default (None) as implicitly selecting all fields.
+# That is not what splunkd did here, so the selection is explicit.
+@Configuration(required_fields=["*"])
 class RiskabilityAIAnalyzeCommand(EventingCommand):
     def transform(self, records):
         try:
@@ -315,6 +336,8 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                     doc.update({
                         "title": rec.get("cve_description", ""),
                         "package": rec.get("affected_product", ""),
+                       "vendor": rec.get("vendor", ""),
+                       "installed_version": rec.get("process_version", ""),
                         "severity": rec.get("severity", ""),
                         "epss": rec.get("epss", ""),
                         "kev": rec.get("kev", "false"),
@@ -390,6 +413,8 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                        # to join back to the findings lookup.
                        "title": rec.get("cve_description", ""),
                        "package": rec.get("affected_product", ""),
+                       "vendor": rec.get("vendor", ""),
+                       "installed_version": rec.get("process_version", ""),
                        "severity": rec.get("severity", ""),
                        "epss": rec.get("epss", ""),
                        "kev": rec.get("kev", "false"),

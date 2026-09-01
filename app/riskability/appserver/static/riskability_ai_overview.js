@@ -169,7 +169,7 @@
 
         var tbl = el("table", "rk-table rk-ai-table");
         var head = el("tr");
-        ["Tier", "Score", "CVE / Advisory", "Action", "Why"].forEach(function (h) {
+        ["Tier", "Score", "CVE / Advisory", "Software", "Action", "Why"].forEach(function (h) {
             head.appendChild(el("th", null, h));
         });
         tbl.appendChild(head);
@@ -191,11 +191,12 @@
             link.href = splunkRoot() + "/app/riskability/riskability_cve?form.cve_tok=" +
                         encodeURIComponent(row.cve_id || "");
             cveCell.appendChild(link);
+            // The advisory title is shown in full. It used to be cut at 90
+            // characters in JavaScript, with no ellipsis and nowhere to read
+            // the rest, which truncated most advisories mid-sentence. The
+            // column wraps instead; CSS decides the width, not a magic number.
             if (row.title) {
-                cveCell.appendChild(el("div", "rk-ai-title", String(row.title).slice(0, 90)));
-            }
-            if (row.package) {
-                cveCell.appendChild(el("div", "rk-dim", row.package));
+                cveCell.appendChild(el("div", "rk-ai-title", String(row.title)));
             }
             var signals = [];
             if (row.severity) signals.push(row.severity);
@@ -206,6 +207,26 @@
                 cveCell.appendChild(el("div", "rk-ai-signals", signals.join(" · ")));
             }
             tr.appendChild(cveCell);
+
+            // Whose software, which product, which copy. A priority list that
+            // names a CVE and not the thing the CVE is in makes the reader go
+            // and look it up, which is the work this page exists to save.
+            // vendor is absent for software the inventory reported without one
+            // (most Linux packages), and the line simply omits it rather than
+            // printing "unknown": the package name is the identity there.
+            var sw = el("td", "rk-ai-sw");
+            if (row.package) {
+                sw.appendChild(el("div", "rk-ai-pkg", row.package));
+            } else {
+                sw.appendChild(el("div", "rk-dim", "not identified"));
+            }
+            if (row.vendor) {
+                sw.appendChild(el("div", "rk-dim", row.vendor));
+            }
+            if (row.installed_version) {
+                sw.appendChild(el("div", "rk-dim", "installed " + row.installed_version));
+            }
+            tr.appendChild(sw);
 
             tr.appendChild(el("td", null, row.recommended_action));
 

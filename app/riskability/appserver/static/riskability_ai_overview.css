@@ -139,3 +139,25 @@
 .rk-ai-filter-btn.rk-ai-p2.rk-ai-filter-active { background: #b08c1a; border-color: #ffcc00; }
 .rk-ai-filter-btn.rk-ai-p3.rk-ai-filter-active { background: #3f6e8c; border-color: #66aaff; }
 .rk-ai-filter-btn.rk-ai-p4.rk-ai-filter-active { background: #4a5560; border-color: #8899aa; }
+
+/* Software column: the product is the heading, vendor and installed version
+   sit under it. Bounded so a long publisher string cannot push the rationale
+   off the page, and wrapping rather than clipping so nothing is unreadable. */
+.rk-ai-sw {
+    max-width: 220px;
+    word-break: break-word;
+}
+
+.rk-ai-pkg {
+    color: #d6dee6;
+    font-weight: 600;
+}
+
+/* The advisory title wraps. It was cut at 90 characters in JavaScript before,
+   which left most advisories ending mid-sentence with no way to see the rest. */
+.rk-ai-title {
+    max-width: 420px;
+    word-break: break-word;
+}
+
+.rk-ai-cve { max-width: 440px; }
