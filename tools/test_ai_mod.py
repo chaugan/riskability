@@ -110,7 +110,8 @@ GOOD = {
 def test_result():
     print("validate_result / parse_llm_json:")
     clean, err = ai_config.validate_result(GOOD)
-    check("valid result accepted", err is None and clean["priority_tier"] == "P0")
+    check("valid result accepted", err is None and clean["model_tier"] == "P0"
+          and "priority_tier" not in clean)
     check("invalid technique dropped, valid kept",
           clean and clean["attck_techniques"] == ["T1195.001"])
     for key, bad in (("priority_tier", "P9"), ("recommended_action", "yolo"),
@@ -133,6 +134,25 @@ def test_result():
           ai_config.parse_llm_json("Here you are:\n" + json.dumps(GOOD)) is not None)
     err = raises(ai_config.parse_llm_json, "no json at all")
     check("prose without json rejected", err is not None, err)
+
+
+def test_priority_is_deterministic():
+    print("priority from measured facts:")
+    hot = {"kev": "true", "epss": "0.6", "cvss_base_score": "9.5",
+           "exposure_zone": "internal", "version_match": "yes"}
+    dull = {"kev": "false", "epss": "0.02", "cvss_base_score": "7.5",
+            "exposure_zone": "internal", "version_match": "unknown"}
+    hs, ds = ai_config.priority_score(hot), ai_config.priority_score(dull)
+    check("KEV plus confirmed version reaches P0",
+          ai_config.tier_for_score(hs) == "P0", str(hs))
+    check("unconfirmed low-EPSS internal stays low",
+          ai_config.tier_for_score(ds) in ("P3", "P4"), str(ds))
+    # The whole point: nothing the model says can move these numbers.
+    check("model cannot influence the score",
+          ai_config.priority_score(dict(dull, priority_score=99,
+                                        priority_tier="P0")) == ds)
+    check("no affected version is a real downgrade",
+          ai_config.priority_score(dict(hot, version_match="no")) < hs)
 
 
 def test_auth_header():
@@ -165,8 +185,8 @@ def test_probes(port, invalid=False):
               and r.get("validation_error"), json.dumps(r))
     else:
         check("completion probe ok", r["ok"] is True, json.dumps(r)[:400])
-        check("completion validated to tier",
-              r["ok"] and r["result"]["priority_tier"] == "P0")
+        check("completion validated to model tier",
+              r["ok"] and r["result"]["model_tier"] == "P0")
         check("latency measured", r.get("latency_ms", 0) >= 0)
 
     r = ai_config.probe_bert(url, True, 10)
@@ -243,7 +263,7 @@ def test_t0_and_analyze(port):
     url = "http://127.0.0.1:%d" % port
     r = ai_config.analyze_finding(url, "bearer", "", "k", "foundation-sec-8b",
                                   True, 60, mid, 300)
-    check("analyze_finding ok", r["ok"] and r["result"]["priority_tier"] == "P0",
+    check("analyze_finding ok", r["ok"] and r["result"]["model_tier"] == "P0",
           json.dumps(r)[:200])
 
 
@@ -296,6 +316,7 @@ def main():
     test_result()
     test_auth_header()
     test_verdict_sig()
+    test_priority_is_deterministic()
     test_conf_files()
 
     server = MockServer(8931)

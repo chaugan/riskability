@@ -41,7 +41,8 @@ from splunklib.searchcommands import Configuration, EventingCommand, dispatch  #
 from riskability import ai_config, ai_settings  # noqa: E402
 
 VERDICT_COLLECTION = "riskability_aiverdicts"
-VERDICT_FIELDS = ("priority_tier", "priority_score", "confidence", "rationale",
+VERDICT_FIELDS = ("priority_tier", "priority_score", "model_tier", "model_score",
+                  "confidence", "rationale",
                   "exploitability_signal", "exposure_signal",
                   "process_match_confidence", "recommended_action",
                   "recommended_mitigations", "attck_techniques")
@@ -415,6 +416,15 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                         "attck_techniques": [],
                     }
                     source = "fallback"
+                # The priority is computed from the measured facts on the
+                # candidate row, not taken from the answer. The model's own
+                # tier is preserved as model_tier so the gap between what it
+                # would have said and what the facts say stays visible and
+                # measurable rather than being quietly discarded.
+                result = dict(result)
+                derived = ai_config.priority_score(rec)
+                result["priority_score"] = derived
+                result["priority_tier"] = ai_config.tier_for_score(derived)
                 row = dict(rec)
                 row.update({f: result.get(f) for f in VERDICT_FIELDS})
                 row["analysis_source"] = source

@@ -401,17 +401,36 @@ def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
     if not isinstance(payload, dict):
         return None, "not an object"
     clean = {}
+    # The tier is still REQUIRED from the model, because asking for it is what
+    # makes the model reason about where the finding sits, and the heuristics
+    # in the prompt are written in tiers. It is then thrown away and recomputed
+    # from the score. Both fields came back independently before and disagreed
+    # on 842 of 1020 real verdicts; the model's own two answers cannot both be
+    # authoritative, so the number is kept and the label is derived.
+    # Still REQUIRED from the model, and still thrown away. Asking for a tier
+    # is what makes the model reason about where a finding sits, and the
+    # rationale is visibly better for having been asked. The answer is then
+    # recorded as model_tier, for calibration, and the priority is computed
+    # from measured facts by priority_score() in the caller.
+    # The model's own priority answer is validated and then RECORDED, not
+    # used. It is required because asking for it is what makes the model
+    # reason about where a finding sits, and the rationale is visibly better
+    # for having been asked. It is named model_tier and model_score so that
+    # nothing downstream can mistake it for the priority: that is computed
+    # from measured facts by priority_score() and stamped by the caller.
+    # Keeping it is what lets the gap between the two be measured instead of
+    # argued about.
     tier = payload.get("priority_tier")
     if tier not in ALLOWED_TIERS:
         return None, "priority_tier must be one of %s" % "|".join(ALLOWED_TIERS)
-    clean["priority_tier"] = tier
     try:
-        score = int(payload.get("priority_score"))
+        model_score = int(payload.get("priority_score"))
     except (TypeError, ValueError):
         return None, "priority_score must be an integer"
-    if not 0 <= score <= 100:
+    if not 0 <= model_score <= 100:
         return None, "priority_score out of range"
-    clean["priority_score"] = score
+    clean["model_score"] = model_score
+    clean["model_tier"] = tier
     try:
         confidence = float(payload.get("confidence"))
     except (TypeError, ValueError):
@@ -485,7 +504,23 @@ Strict rules:
 - recommended_mitigations: up to 5 short concrete strings.
 - attck_techniques: list of MITRE ATT&CK technique ids such as "T1059.004".
   Empty list if unsure.
-- Never invent CVE data. Use only what was provided."""
+- Never invent CVE data. Use only what was provided. If a critical field is
+  missing, set confidence to 0.3 or below and say so in the rationale.
+- If process_match_confidence is "unknown", confidence must be below 0.5.
+
+Heuristics you should apply. These are the calibration: without them every
+answer drifts to the middle, and a prioritiser whose every answer is "fairly
+important" has not prioritised anything.
+- KEV yes, internet-facing, confirmed version match: P0, score 90-100.
+- KEV yes, internal only: P1, score 70-85.
+- EPSS above 0.5, internet-facing, confirmed version: P0 or P1.
+- EPSS below 0.05, not KEV, internal: P3 or P4.
+- CVSS 9 or above, confirmed version match, internet-facing: P0 or P1.
+- CVSS below 4: P4 regardless of other factors, unless KEV.
+- A version mismatch, meaning the running version is not in the affected
+  range, downgrades by at least one tier.
+P3 and P4 are ordinary answers, not failures. Most of any real fleet belongs
+there, and refusing to use them is what makes a priority list unreadable."""
 
 # A finding with every field filled, because the test's job is to see whether
 # the endpoint can produce the schema, not to exercise the model's opinions
@@ -1135,6 +1170,81 @@ def explain_finding(url: str, auth_type: str, username: str, secret: str,
         return {"ok": False, "latency_ms": latency,
                 "error": "the model returned an empty answer"}
     return {"ok": True, "latency_ms": latency, "text": text}
+
+
+# Priority thresholds. ONE table, and the only place a score becomes a tier.
+# The model used to return both fields independently and they contradicted each
+# other on 842 of 1020 real verdicts: 657 rows carried score 85, which this
+# table reads as P0, next to a tier of P1. Worse, the two halves of the app
+# then read different fields, the overview page taking the model's tier while
+# the expansion search recomputed from the model's score, so the page and the
+# findings disagreed by construction. The model now answers a score and the
+# tier is derived, here, once.
+TIER_THRESHOLDS = ((85, "P0"), (65, "P1"), (45, "P2"), (25, "P3"))
+
+
+# Deterministic priority weights, calibrated against a real queue of 2,020
+# distinct CVEs rather than chosen by taste. What that population looks like
+# matters and is worth writing down: 19 KEV, ZERO internet-facing, 235 with a
+# confirmed version match against 1,717 unknown, and CVSS spread right across
+# the range. A rule keyed on internet exposure contributes nothing on a fleet
+# like that, so the discrimination has to come from KEV, exploit likelihood and
+# whether the version is actually confirmed affected.
+#
+# Measured outcome of these numbers on that queue: P0 17, P1 31, P2 305,
+# P3 1359, P4 308. Above the waterline: 2.4%. The model, asked the same
+# question with the build spec's own calibration heuristics restored to its
+# prompt, answered 82% on a random sample of the same population, and never
+# once answered P3 or P4 in 1,020 verdicts.
+_W_KEV = 45
+_W_EPSS = {"0": 0, "1": 8, "2": 20, "3": 30, "4": 40}
+_W_CVSS = {"": 0, "0": 0, "1": 8, "2": 16, "3": 22}
+_W_EXPOSURE = {"internet-facing": 25, "internal": 8, "isolated": 0}
+_W_EXPOSURE_UNKNOWN = 4
+_W_VERSION = {"yes": 22, "unknown": 4, "no": -25}
+
+
+def priority_score(cve: dict) -> int:
+    """The priority score, from measured facts only. No model input at all.
+
+    This used to be the model's answer, and the model is not able to give one.
+    Asked for a 0-100 score on 1,020 real findings it returned seven distinct
+    integers, 663 of them the single value 85, and a tier that contradicted its
+    own score on 842 of them. Restoring the calibration heuristics that the
+    original build spec specified, and that the implementation had dropped,
+    made its two fields agree with each other and did not move the
+    distribution: still 82% above the waterline on a random sample, still not
+    one P3 or P4.
+
+    So the number is computed here and the model is not consulted for it. It
+    still answers the things it is good at, and those answers are shown: the
+    rationale an analyst reads, the mitigations, the ATT&CK ids, and the closed
+    signals. It cannot influence the ordering, which means no prompt, no
+    advisory title and no future model swap can inflate a priority. That is the
+    property worth having, and it is worth more than the model's opinion of a
+    number it was never able to produce.
+    """
+    score = _W_KEV if _bool(cve.get("kev")) else 0
+    score += _W_EPSS.get(_epss_band(cve.get("epss")), 0)
+    score += _W_CVSS.get(
+        _cvss_band(cve.get("cvss_score") if cve.get("cvss_score") not in (None, "")
+                   else cve.get("cvss_base_score")), 0)
+    exposure = str(cve.get("exposure_zone") or "").strip().lower()
+    score += _W_EXPOSURE.get(exposure, _W_EXPOSURE_UNKNOWN)
+    score += _W_VERSION.get(
+        str(cve.get("version_match") or "unknown").strip().lower(), 0)
+    return max(0, min(100, score))
+
+
+def tier_for_score(score) -> str:
+    try:
+        value = int(score)
+    except (TypeError, ValueError):
+        return "P4"
+    for cut, tier in TIER_THRESHOLDS:
+        if value >= cut:
+            return tier
+    return "P4"
 
 
 def verdict_sig(cve: dict, salt: str) -> str:

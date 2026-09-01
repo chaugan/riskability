@@ -336,10 +336,20 @@ function render(el, payload, onPick) {
     // that lifts most of what it sees is helping.
     var analysed = results.length;
     var pct = analysed ? Math.round((allLifted.length / analysed) * 100) : 0;
-    var caption = seaTotal.toLocaleString() + ' open CVEs in the fleet · '
-        + analysed.toLocaleString() + ' analysed · '
-        + allLifted.length.toLocaleString() + ' above the waterline (' + pct + '%)'
-        + (overflow > 0 ? ' · showing the strongest ' + lifted.length : '');
+    // The percentage is of what was ANALYSED, never of the sea, and the wording
+    // has to make that impossible to misread. An earlier version put the fleet
+    // total and the percentage in the same breath, which invites "82% of my
+    // CVEs are urgent" when the true statement is "82% of the ambiguous middle
+    // that reached the model". The deterministic rules already removed both
+    // extremes before the model saw anything, so the model was never choosing
+    // from the sea at all: it was ranking what was left after the easy calls
+    // were made, and a share of that is a different claim entirely.
+    var caption = seaTotal.toLocaleString() + ' open CVEs in the fleet. '
+        + 'The deterministic rules settled all but '
+        + analysed.toLocaleString() + ', and of those '
+        + allLifted.length.toLocaleString() + ' came back above the waterline ('
+        + pct + '% of the ones asked about)'
+        + (overflow > 0 ? ', strongest ' + lifted.length + ' drawn' : '');
     // The second line is a caveat, not decoration. These are CVE-level
     // verdicts: the fleet's worst case for each vulnerability, before the
     // expansion search steps each finding DOWN for the host it is actually on.
