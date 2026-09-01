@@ -77,9 +77,13 @@ def test_allowlist():
     # from, which is how a field nothing computes gets onto an allowlist.
     check("every field declares a type, a status, a note and a source",
           not incomplete, incomplete)
+    # A literal, so adding a field nothing computes costs an edit here. That
+    # friction is the feature: the alternative is a field quietly arriving on
+    # the allowlist marked produced by optimism rather than by a macro.
     check("the unproduced fields are marked, not quietly present",
           set(escalate.FIELD_ALLOWLIST) - escalate.PRODUCED_FIELDS
-          == {"rk_esc_sole_listener", "rk_esc_root_autorun_writable"})
+          == {"rk_esc_sole_listener", "rk_esc_root_autorun_writable",
+              "rk_esc_route_evidence"})
     modelish = [n for n in escalate.FIELD_ALLOWLIST
                 if "priority" in n or "verdict" in n or "rationale" in n or "tier" in n]
     # Nothing a model says can move an ordering. If that ever stops being true
@@ -514,8 +518,9 @@ def test_shipped_conf():
     # not exist yet. They are refused with the reason said out loud, which is
     # the only honest state for a rule that would otherwise be switched on and
     # evaluate null for ever.
-    check("the two rules waiting on an unmeasured fact are named",
-          unproduced == ["sole_listener_availability",
+    check("the three rules waiting on an unmeasured fact are named",
+          unproduced == ["observed_route_the_binding_cannot_see",
+                         "sole_listener_availability",
                          "writable_root_autorun_local_flaw"], unproduced)
     check("the rules whose facts are all measured do load",
           sorted(r.name for r in rules) == ["listener_loads_the_library",
@@ -524,6 +529,88 @@ def test_shipped_conf():
     check("every shipped rule says why the five signals cannot catch it",
           all(len(r.description) > 200 for r in rules),
           [(r.name, len(r.description)) for r in rules])
+
+
+# ---------------------------------------------------------------------------
+# Route evidence, and the grade that must never escalate on its own silence
+# ---------------------------------------------------------------------------
+
+def shipped_rule(name, enabled=True):
+    """One stanza from the shipped file, compiled by hand into a Rule.
+
+    load_rules refuses a rule naming an unproduced field, which is the point
+    of that status rather than something to work around. A test still has to
+    evaluate the predicate the FILE ships: an expression retyped in here would
+    be a test of the copy, and it would go on passing after somebody edited
+    the rule it was written about.
+    """
+    with open(SHIPPED_CONF, encoding="utf-8") as fh:
+        settings = dict(escalate.parse_conf(fh.read()))[name]
+    when = settings["when"]
+    ast, suspects = escalate.compile_when(when)
+    rule = escalate.Rule(name=name, description=settings["description"], when=when,
+                         bump=1, enabled=enabled, ast=ast,
+                         fields=sorted(escalate._fields_of(ast)))
+    return rule, suspects
+
+
+def test_route_evidence():
+    print("route evidence:")
+    # The four grades are a vocabulary and not a scale, and the declared type
+    # is what enforces it: on a string field the validator refuses every
+    # ordering operator, so no rule can decide where "unknown" sits relative
+    # to "not observed". Absence of a measurement has no place on a scale with
+    # measurements on it, and this is the one field where somebody would try.
+    for op in ("<", "<=", ">", ">="):
+        ok, err = escalate.validate_when('rk_esc_route_evidence %s "unknown"' % op)
+        check("the grades cannot be ordered with %s" % op, not ok, err)
+    ok, err = escalate.validate_when('rk_esc_route_evidence = "confirmed observed"')
+    check("but a grade can be named", ok, err)
+
+    # The SUSPECT verdict matters more on this field than on any other,
+    # because the words somebody will reach for are the ones the vocabulary
+    # deliberately refuses to use.
+    for invented in ("reachable", "exposed", "internet-facing", "true"):
+        _, suspects = escalate.compile_when(
+            'rk_esc_route_evidence = "%s"' % invented)
+        check('a rule saying the grade is "%s" is reported as suspect' % invented,
+              len(suspects) == 1 and "rk_esc_route_evidence" in suspects[0], suspects)
+
+    rule, suspects = shipped_rule("observed_route_the_binding_cannot_see")
+    check("the shipped rule compares against measured grades only",
+          not suspects, suspects)
+
+    observed = {"rk_esc_route_evidence": "confirmed observed", "rk_esc_reach_rank": 0}
+    assert_decisive(rule, observed,
+                    decisive=["rk_esc_route_evidence", "rk_esc_reach_rank"])
+
+    # The whole of the honesty requirement, asserted rather than described.
+    # The error direction of this evidence is the opposite of the local
+    # binding it corrects: a permitted path nobody has used yet produces no
+    # record at all, so three of the four grades are perfectly compatible with
+    # a route existing. Only one of them is evidence, and only that one may
+    # move a finding. A rule that fired on the others would be reading its own
+    # blind spot as safety, which is false reassurance and worse in this
+    # product than over claiming.
+    for grade in ("historically observed", "unknown", "not observed"):
+        row = dict(observed, rk_esc_route_evidence=grade)
+        check('the grade "%s" escalates nothing' % grade,
+              not escalate.fires(rule, row), row)
+    check("a site that has onboarded no firewall data escalates nothing",
+          not escalate.fires(rule, {"rk_esc_reach_rank": 0}))
+    check("and neither does a blank grade, which is not a fifth value",
+          not escalate.fires(rule, dict(observed, rk_esc_route_evidence="")))
+
+    # Same shape as the listener rule, and the same reason: where the binding
+    # is already a wildcard the five signals have the finding covered, and
+    # escalating there would be scoring exposure twice.
+    covered = escalate.mutate(observed, "rk_esc_reach_rank", to=3)
+    check("a package the score already calls internet facing is not escalated again",
+          not escalate.fires(rule, covered), covered)
+    for rank in (-1, 0, 1, 2):
+        row = dict(observed, rk_esc_reach_rank=rank)
+        check("a binding the score stepped down at reach_rank %d still is" % rank,
+              escalate.fires(rule, row), row)
 
 
 def test_no_silent_drift():
@@ -607,6 +694,7 @@ def main():
     test_mutation()
     test_three_valued_logic()
     test_shipped_conf()
+    test_route_evidence()
     test_no_silent_drift()
 
     print()

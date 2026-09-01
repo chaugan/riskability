@@ -73,6 +73,9 @@ when = <eval-boolean-expression>
 #   rk_esc_has_fix                1, 0
 #   rk_esc_sole_listener          1, 0
 #   rk_esc_root_autorun_writable  1, 0
+#   rk_esc_route_evidence         "confirmed observed",
+#                                 "historically observed", "unknown",
+#                                 "not observed"
 #
 # Each is a normalised value, never a raw lookup output. The prefix is the
 # point: world_writable arrives from the scanner as the string "true" on some
@@ -85,6 +88,31 @@ when = <eval-boolean-expression>
 # means the advisory carried no CVSS v3 vector. Absence of a measurement is
 # not a measurement of absence, and a rule that reads it as one fires hardest
 # on exactly the components about which least is known.
+#
+# rk_esc_route_evidence is the same principle with a vocabulary instead of a
+# blank, and it is worth reading before writing a rule over it. It grades
+# whether traffic to this finding's host and port was PERMITTED and OBSERVED
+# at an enforcement point that logs, which is the one layer a collector
+# running on the host cannot see: measured exposure comes from local socket
+# binding and knows nothing of the NAT, firewall, security group or balancer
+# in front of that socket. It is evidence of observed permitted traffic and
+# never a statement of reachability. An observed edge says a flow crossed that
+# point at some time T. It does not say the rule still stands, that the path
+# is bidirectional, that anything answered at L7, or that the host still holds
+# the address it held then.
+#
+# The grades are a vocabulary and not a scale, which is why the field is a
+# string: the validator refuses < <= > >= on a string field, so no rule can
+# place "unknown" in an ordering, and "unknown" is not a low reading of the
+# measurement, it is the absence of one. A site with no firewall data carries
+# "unknown" on every row, and "not observed" means a covered segment produced
+# no edge, which is not the same claim at all.
+#
+# Write rules that fire on "confirmed observed" and on nothing else. The
+# evidence is incomplete by construction, because a permitted path nobody has
+# used yet produces no record, so a rule that fires on the other three grades
+# is reading silence as safety. Missing firewall data may cost confidence in a
+# finding. It must never cost the finding its priority.
 bump = 1
 # How many tiers the rule raises the finding. The only accepted value is 1.
 #

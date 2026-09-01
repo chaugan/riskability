@@ -183,6 +183,40 @@ FIELD_ALLOWLIST = {
         "source": "NOT MEASURED: the mechanism, its user and its world_writable flag are in "
                   "riskability_config, but no per host rollup reduces them to one flag",
     },
+    # Graded on purpose, and a string on purpose. Every other exposure term in
+    # this app is a rank, and a rank invites an ordering comparison, which is
+    # exactly what must not be written here: "unknown" is not a low grade on
+    # the same scale as "not observed", it is the absence of the measurement,
+    # and any rule allowed to say rk_esc_route_evidence > something would be
+    # deciding where absence sits on a scale it does not belong to. Declaring
+    # it a string makes the validator refuse < <= > >= on it outright, so the
+    # only thing a rule can do with a grade is name the one it means. The four
+    # values are the whole vocabulary and none of them is a boolean: a
+    # permitted edge nobody has yet used produces no record at all, so silence
+    # here is silence about the world rather than evidence of safety.
+    "rk_esc_route_evidence": {
+        "type": STRING,
+        "status": UNPRODUCED,
+        "values": ("confirmed observed", "historically observed",
+                   "unknown", "not observed"),
+        "note": 'Graded evidence that traffic to this finding\'s host and port was '
+                'PERMITTED and OBSERVED at an enforcement point that logs. Never a '
+                'statement of reachability, and "unknown" is the default rather than '
+                'a negative.',
+        "source": "NOT ASSIGNED: the ledger now exists. Riskability - assess observed "
+                  "permitted traffic writes this exact grade per host and port into "
+                  "riskability_netevidence, under the identity guard. What is missing "
+                  "is the last join, and it is missing on purpose, because it is not "
+                  "mechanical: the ledger is keyed by PORT and a finding is keyed by "
+                  "PACKAGE, and one finding can sit behind several ports whose grades "
+                  "disagree. Reducing them means choosing whether a finding inherits "
+                  "the strongest grade of any of its ports, which makes one observed "
+                  "flow speak for all of them, or the weakest, which lets one silent "
+                  "port mute a confirmed one. That choice moves priorities, so it is "
+                  "a decision to take deliberately rather than a wire to solder. Until "
+                  "it is taken the field reads null on every row and the validator "
+                  "refuses any rule that names it",
+    },
 }
 
 PRODUCED_FIELDS = frozenset(
