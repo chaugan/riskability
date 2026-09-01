@@ -126,6 +126,83 @@ Worth noting what it missed: the actual insight in that evidence, the sole
 listener on the only resolver port in the fleet, was sitting in two fields it
 did not use.
 
+## Offensive tuning: wrong for two jobs, right for this one
+
+An earlier survey dismissed offensive and red-team tuned models as pointing the
+wrong way. That was too broad, and the owner was right to push back:
+prioritisation IS an attacker-perspective question, and a model that hedges
+about exploitation is worse at it, not better.
+
+The distinction that holds up is per job.
+
+* **Scoring: irrelevant.** The model is out of that loop entirely.
+* **Explaining: a liability.** Recall is forbidden and the prose is what a human
+  reads. An attacker-tuned model dramatises, and inventing an exploit path is a
+  worse failure here than hedging.
+* **Proposing escalation rules: an asset.** This is the one job where attacker
+  framing is the right framing, and it is fail-closed, so an aggressive
+  proposer costs a voided predicate rather than a wrong priority.
+
+Measured, same prompt, same evidence block, same card. The block described a
+CVSS 5.3 availability-only flaw in bind9, scored P4, in the sole process
+listening on the only port 53 in the fleet.
+
+| model | found the decisive field | predicate valid | time |
+|---|---|---|---|
+| Foundation-Sec-1.1-8B-Instruct (defensive) | no, used exposure_zone, already a scorer signal | no, invented the enum value "external" and contradicted the measurement | 14.9s |
+| DeepHat-V1-7B, published earlier as WhiteRabbitNeo-V3-7B (offensive, Apache-2.0, Qwen2.5-Coder-7B base) | yes, process_is_sole_listener_for_port | yes, evaluates true | 150.3s |
+
+The offensive model found the chokepoint the defensive one walked past, and
+correctly reported that no existing signal covers it.
+
+Two things temper that. Its rule is too broad: it bumps every sole listener,
+without tying the bump to the CVE actually being an availability flaw or to
+that port having one listener fleet-wide. A reviewer narrows it, which is the
+loop working. And 150 seconds is ten times the Instruct variant, so this
+belongs on a deliberate rule-proposal path, never in the hourly pass.
+
+The sharper observation, and the one to keep: what the defensive model failed
+at was not aggression, it was FIELD FIDELITY. It invented an enum value.
+Nothing about offensive tuning buys fidelity either, and output-aggressive
+training probably cuts against it. Offensive framing buys salience, knowing
+which fact matters. The host evaluating the predicate is what buys fidelity.
+Those are two different problems and only one of them is solved by the model.
+
+## Two leaks the fail-closed argument does not cover
+
+Fail-closed protects enforcement. It does not protect acceptance.
+
+**The human is the unsound component.** The predicate is evaluated by the host,
+but a person reads the prose to decide whether to accept the rule, and the
+story is aimed squarely at them. The acceptance view must show the predicate's
+counterfactual replay, which findings it would have bumped across history, not
+the model's narrative.
+
+**Individually sound rules compose.** Ten reasonable acceptances can rebuild the
+distribution this project spent a day flattening, one sensible decision at a
+time. The rule set needs its own guard: the share of findings bumped, capped or
+alerted on, independent of any single rule's merit.
+
+And the risk is not symmetric. A voided predicate is silent; inflation is
+visible. The chokepoint the model misses costs more than the story it invents,
+which argues for running the proposer wide and filtering hard rather than
+prompting it to be cautious.
+
+## The experiment that would settle attacker framing
+
+Two controls, because otherwise the result measures lineage rather than tuning.
+DeepHat is a Qwen2.5-Coder-7B finetune, so the control is that same base with a
+defensively framed prompt. Foundation-Sec is a Llama-3.1-8B finetune, so its
+control is vanilla Llama 3.1.
+
+The discriminator is a **mutation test**, and it is cheap. Take a block where a
+rule fired, then perturb the decisive fact: move the port from 53 to 5353, or
+add a second listener so the process is no longer sole. A rule that found the
+real path stops firing. A plausible story keeps firing, because story
+predicates are invariant under semantically decisive mutations. That single
+test separates insight from narrative better than any amount of reading the
+rationales.
+
 ## A reasoning model does not change this
 
 Cisco ships Foundation-Sec-8B-Reasoning, advertised for exactly this work:
