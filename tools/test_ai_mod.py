@@ -60,12 +60,12 @@ def test_settings():
     print("validate_settings:")
     base = {"endpoint_url": "http://127.0.0.1:8000", "enabled": "0"}
     merged = ai_config.validate_settings(base, {})
-    # t2_concurrency defaults to 1 deliberately. Measured on the reference
+    # t2_concurrency defaults to 2, matching the two sequence slots the Measured on the reference
     # 3060: 3,142 ms for a single request against a 23,419 ms median at
     # concurrency 8, for the same aggregate throughput. The default must not
     # drift back up without a server that actually batches.
     check("defaults fill in", merged["model"] == "foundation-sec-8b"
-          and merged["t2_concurrency"] == "1"
+          and merged["t2_concurrency"] == "2"
           and merged["candidate_cap"] == "1000")
     check("url keeps scheme, loses trailing slash",
           ai_config.validate_settings({"endpoint_url": "http://x:8000/"}, {})["endpoint_url"]

@@ -113,7 +113,7 @@ FIELD_SPECS: Dict[str, dict] = {
     # it to what one inference process on that card can genuinely serve at
     # once, which is usually far less than the number of threads it accepts.
     "t2_concurrency": {
-        "kind": "int", "min": 1, "max": 128, "default": 1,
+        "kind": "int", "min": 1, "max": 128, "default": 2,
     },
     "t2_max_tokens": {
         "kind": "int", "min": 64, "max": 4000, "default": 400,
@@ -141,15 +141,16 @@ PRESETS = {
     "rtx3060": {
         "label": "RTX 3060 12 GB (single card)",
         "values": {
-            # Concurrency 1, measured rather than guessed. On the reference
-            # 3060 a single request returns in 3,142 ms, but the median across
-            # 21 real verdicts at concurrency 8 was 23,419 ms: the threads
-            # queue behind a server that is not serving them in parallel, so
-            # aggregate throughput went from ~0.32 to ~0.34 CVEs per second
-            # for eight times the outstanding requests. Raise this only to
-            # match a server actually configured to batch (Ollama's
-            # OLLAMA_NUM_PARALLEL, vLLM's continuous batching), never hopefully.
-            "t2_concurrency": 1, "t2_max_tokens": 400, "t3_max_tokens": 1200,
+            # Concurrency 2, and the number means one thing: it MATCHES the
+            # model server's own parallelism. Measured on the reference 3060,
+            # direct to the endpoint, 400 max tokens, warm:
+            #   server 1 slot,  2 threads -> 0.231 req/s   (flat, 3x latency)
+            #   server 2 slots, 2 threads -> 0.350 req/s   (+46%)
+            # Ollama shipped with a single sequence slot, so every extra thread
+            # queued and bought nothing but latency. Setting OLLAMA_NUM_PARALLEL=2
+            # on the box is what made 2 worth asking for. Raising this past the
+            # server's slot count is not a speed-up, it is a queue.
+            "t2_concurrency": 2, "t2_max_tokens": 400, "t3_max_tokens": 1200,
             "t3_deep_threshold": 70, "request_timeout": 150,
             "candidate_cap": 1000,
         },
