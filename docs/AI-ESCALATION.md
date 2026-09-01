@@ -97,6 +97,15 @@ prioritising vulnerabilities by contextual risk, modelling attacker behaviour,
 predicting attacker next steps. It is the model the original build spec named
 for the T3 tier that was never built.
 
+Measured on the reference RTX 3060, both at Q4_K_M, same card, same Ollama:
+the Instruct variant answered a grounded explanation prompt in 12.1 seconds.
+The Reasoning variant, given one rule-proposal prompt with a 700 token budget,
+had not returned after 181 seconds and was killed. That is more than fifteen
+times slower on a comparable task, and the batch path has a 0.35 request per
+second budget to work inside. Whatever else it is good for, it is not the
+hourly pass. If it earns a place at all it is on the on-demand path, where a
+person has asked about one finding and can wait.
+
 It may well propose better candidates and format them more usefully. It does
 not change the honour path, because the failure being guarded is not a shortage
 of deliberation. The collapse to 85 everywhere was not too few thinking tokens;
