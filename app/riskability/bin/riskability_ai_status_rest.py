@@ -88,8 +88,14 @@ def _overview_from_kv(service) -> dict:
             **{"query": json.dumps(
                 {"priority_tier": {"$in": ["P0", "P1", "P2", "P3", "P4"]}})}))
         out["analyzed_cves"] = len({v.get("cve_id") for v in verdicts})
-        out["failed_analyses"] = sum(1 for v in verdicts
-                                     if v.get("analysis_source") == "fallback")
+        # No failed_analyses count here, deliberately. Failures produce a
+        # fallback row that the command reports and then does NOT cache, so
+        # counting cache rows with analysis_source "fallback" would answer 0
+        # forever and a tile reading "0 failed" is worse than no tile: it
+        # says the pipeline is healthy using a number that cannot move.
+        # Failures are counted per run by the analyze saved search's own
+        # stats (rows, verdicts, model_calls, fallbacks, cache_hits,
+        # deferred, unclassified), which is where a run's health belongs.
         # P0/P1 counts come from the verdicts themselves, not the expansion
         # summary row (which hasn't been written on a fresh install).
         out["p0"] = sum(1 for v in verdicts if _first(v.get("priority_tier")) == "P0")

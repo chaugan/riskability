@@ -117,7 +117,9 @@
         var awaiting = Math.max(0, (ov.open_cves || 0) - (ov.analyzed_cves || 0));
         if (ov.open_cves) strip.appendChild(tile(ov.open_cves, "open CVEs in fleet"));
         if (awaiting > 0) strip.appendChild(tile(awaiting, "awaiting analysis budget"));
-        if (ov.failed_analyses > 0) strip.appendChild(tile(ov.failed_analyses, "failed (fallback rows)", "rk-ai-p2"));
+        // No "failed analyses" tile: failures are reported per run and never
+        // cached, so this page has no honest number for them. The analyze
+        // saved search's job history is where a run's health is counted.
         if (strip.children.length > 0) root.appendChild(strip);
     }
 

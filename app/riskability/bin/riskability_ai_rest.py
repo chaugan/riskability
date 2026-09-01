@@ -53,10 +53,10 @@ from riskability.ai_settings import SECRET_REALM, SECRET_USER  # noqa: E402,F401
 SECRET_REALM = "riskability"
 SECRET_USER = "riskability_ai"
 
-# Saved searches the master switch owns. Both ship disabled: a scheduled
-# search building a candidate queue for a GPU box nobody configured would sit
-# there running every hour for nothing, and worse, announce the pipeline's
-# existence in the job system. The set action flips both together.
+# Saved searches the master switch owns. All four ship disabled: a scheduled
+# search building a candidate queue for a model endpoint nobody configured
+# would sit there running every hour for nothing, and worse, announce the
+# pipeline's existence in the job system. The set action flips them together.
 QUEUE_SEARCH = "Riskability AI - generate candidate queue"
 HEALTH_SEARCH = "Riskability AI - results stopped arriving"
 ANALYZE_SEARCH = "Riskability AI - analyze latest queue"
@@ -133,26 +133,70 @@ class AIAdminHandler(PersistentServerConnectionApplication):
             out[name] = state
         return out
 
-    def _set_searches(self, service, disabled: bool):
+    def _set_searches(self, service, disabled: bool) -> str:
+        """Flip every managed schedule, and say which ones would not move.
+
+        Returns prose for the reminders list, or "" when all four followed.
+
+        This used to swallow the failure entirely, and the comment claimed the
+        page reported it. It did not, and the gap was invisible for as long as
+        the searches shipped with no disabled key: a search nobody managed
+        simply ran, so a silent failure and a success looked identical. Now
+        that they ship disabled, the same silence has the opposite effect and
+        is far worse. A switch-on that quietly fails to enable the analyse and
+        expand searches leaves the queue search building a candidate queue
+        every hour that nothing ever consumes: no verdicts, no prioritised
+        rows, no error, and a page that says AI analysis is on. Found exactly
+        that on the reference instance, where only two of the four searches
+        had ever been written.
+        """
+        failed = []
         for name in MANAGED_SEARCHES:
             try:
                 service.confs["savedsearches"][name].update(
                     disabled="1" if disabled else "0")
-            except Exception:
-                # Reported in the reply rather than raised: the core setting
-                # is saved either way, and the page tells the admin exactly
-                # which schedule could not follow it.
-                pass
+            except Exception as exc:
+                failed.append("%s (%s)" % (name, exc))
+        if not failed:
+            return ""
+        return ("These schedules could not be %s and the pipeline will not "
+                "run correctly until they are: %s"
+                % ("disabled" if disabled else "enabled", "; ".join(failed)))
 
-    def _sync_budget_macro(self, service, merged: dict):
-        """The per-run budget lives in a macro (the searches expand it) but
-        is edited as a settings field (the admin page writes conf). One
-        source of truth: every save re-stamps the macro from the field."""
+    def _sync_macros(self, service, merged: dict) -> str:
+        """Re-stamp the macros that mirror a saved setting, and say so when
+        that fails.
+
+        Two settings are edited here as conf fields and read elsewhere as
+        macros, because a scheduled search can expand a macro and cannot read
+        a conf file: the per-run budget, and the verdict cache salt. Every
+        save re-stamps both from what was just saved, so there is one source
+        of truth rather than a conf value and a macro drifting apart.
+
+        This used to be written twice, once here and once in ai_settings, and
+        only the ai_settings copy was ever called. Two implementations of a
+        bridge whose whole purpose is to stop two copies of a number
+        disagreeing is the joke telling itself, so the local copy is gone.
+
+        A failure is RETURNED rather than raised or swallowed. Raising would
+        report a save that did happen as a failure, since the settings are
+        already written by the time this runs. Swallowing would leave the
+        page showing one budget while the queue obeys another, which is the
+        exact condition this bridge exists to prevent and the one nobody goes
+        looking for.
+        """
         try:
-            service.confs["macros"]["riskability_ai_candidate_cap"].update(
-                definition=str(merged["candidate_cap"]))
-        except Exception:
-            pass
+            ai_settings.sync_budget_macro(service, merged["candidate_cap"])
+            ai_settings.sync_sig_salt_macro(service, merged["model"])
+        except Exception as exc:
+            return (
+                "The settings are saved, but the macros the scheduled "
+                "searches read could not be re-stamped (%s). Until they are, "
+                "the candidate queue keeps its previous size limit and the "
+                "verdict cache keeps its previous salt, so a changed model "
+                "will be answered from the old model's cached verdicts. Save "
+                "again once splunkd accepts a configuration write." % exc)
+        return ""
 
     def _mirror_enabled(self, service, enabled: bool):
         """Publish the switch to everything that reads it.
@@ -295,8 +339,13 @@ class AIAdminHandler(PersistentServerConnectionApplication):
             password_message = "Stored secret removed."
 
         enabled = merged["enabled"] == "1"
-        self._set_searches(service, disabled=not enabled)
-        ai_settings.sync_budget_macro(service, merged["candidate_cap"])
+        schedule_error = self._set_searches(service, disabled=not enabled)
+        # Unconditionally, on the one path that can write these settings.
+        # Not inside the "enabled" branch: an admin who lowers the budget
+        # while AI is off, then switches it on later, must not get one run at
+        # the old number. The test actions below never write settings, so
+        # this is the only place the mirrors can fall behind.
+        macro_error = self._sync_macros(service, merged)
         # Mirrored last: the user-facing bit flips only after the schedules
         # behind it have followed, so the page can never be visible while its
         # pipeline is still disabled, nor hidden while its schedules still run.
@@ -310,16 +359,23 @@ class AIAdminHandler(PersistentServerConnectionApplication):
                 "status endpoint may lag one save behind. Save once more once "
                 "the KV Store and REST are reachable." % exc)
         if enabled:
+            # The three scheduled searches do the whole job on this search
+            # head, so the reminders describe the model SERVER's settings
+            # rather than an orchestrator's environment. Saying otherwise
+            # sent admins to configure a component this app does not have.
             reminders = [
-                "The candidate queue search is now scheduled. It builds the "
-                "queue the GPU box reads; nothing is analysed until the GPU "
-                "side runs.",
-                "Set the same numbers on the GPU box's orchestrator: "
-                "T2_CONCURRENCY=%s, T2_MAX_TOKENS=%s, T3_MAX_TOKENS=%s, "
-                "T3_DEEP_THRESHOLD=%s." % (
-                    merged["t2_concurrency"], merged["t2_max_tokens"],
-                    merged["t3_max_tokens"], merged["t3_deep_threshold"]),
-                "Run 'Test analysis' once with the GPU box connected before "
+                "The AI searches are now scheduled: the queue is built at "
+                ":50, analysed at :52 and expanded onto findings at :55. "
+                "Nothing leaves this instance except the analysis requests "
+                "to the endpoint above.",
+                "Concurrency is set to %s. It must match what the model "
+                "server itself serves in parallel (OLLAMA_NUM_PARALLEL, or "
+                "vLLM's batching); above that the requests queue inside the "
+                "server. On the reference RTX 3060 one request answered in "
+                "3,142 ms, while the median at concurrency 8 was 23,419 ms "
+                "for about six per cent more throughput."
+                % merged["t2_concurrency"],
+                "Run 'Test analysis' once against this endpoint before "
                 "trusting the first scheduled run.",
             ]
         else:
@@ -328,11 +384,12 @@ class AIAdminHandler(PersistentServerConnectionApplication):
                 "from everyone, the queue search is disabled, and no data "
                 "leaves this instance.",
             ]
-        if mirror_error:
-            # Appended after the static text: a reminder list built above must
-            # not silently overwrite a failure notice nobody would otherwise
-            # see -- which is exactly what an append-before-replace does.
-            reminders.append(mirror_error)
+        # Appended after the static text: a reminder list built above must
+        # not silently overwrite a failure notice nobody would otherwise see,
+        # which is exactly what an append-before-replace does.
+        for problem in (schedule_error, macro_error, mirror_error):
+            if problem:
+                reminders.append(problem)
         return _reply(200, {
             "ok": True,
             "config": self._read_config(service),

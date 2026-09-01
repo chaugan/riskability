@@ -6,9 +6,13 @@
 with no route to the internet.**
 
 Riskability correlates the software [`swinv`](https://github.com/chaugan/swinv)
-finds on every host - including inside containers, snap bases and unpacked
-images - against CVE data you carry in by hand. No agent calls out, no lookup
-leaves the building, and no cloud service is asked what your estate is running.
+finds on every host (including inside containers, snap bases and unpacked
+images) against CVE data you carry in by hand. On a default installation no
+agent calls out, no lookup leaves the building, and no cloud service is asked
+what your estate is running. Anything that does go out is something an
+administrator turned on deliberately, and it goes to the endpoint that
+administrator named. Point that at a model on your own network, in the same
+location as the Splunk instance, and nothing leaves the organisation either.
 
 Three things separate it from pointing a scanner at NVD.
 
@@ -32,11 +36,18 @@ half a host is more dangerous than one that says so, so every page reports its
 own gaps, and an empty panel here says whether it found nothing or looked at
 nothing.
 
-Built for air-gapped estates and regulated networks: the search head never
-initiates an outbound connection. Feeds are built on a connected machine and
-carried across. There is one opt-in exception for instances that do have a route
-out - a *Fetch directly* button on **Feed administration** - which checks
-reachability first and reports plainly when there is none.
+Built for air-gapped estates and regulated networks: what the app rules out is
+data leaving *unintentionally*. Feeds are built on a connected machine and
+carried across, and out of the box the search head initiates no outbound
+connection at all. Two things can change that, and neither happens on its own.
+*Fetch directly* on **Feed administration** downloads the feed sources on an
+instance that does have a route out, checking reachability first and reporting
+plainly when there is none. Optional AI analysis calls the model endpoint an
+administrator configured, first from the test buttons on the configuration
+page and then, once the master switch is on, with the queue of CVEs to
+analyse. The recommended endpoint is a model on your own network, in the same
+location as the Splunk instance, which keeps that traffic inside the
+organisation.
 
 ---
 
@@ -786,7 +797,7 @@ hosts × packages.
 
 ## Dashboards
 
-Twelve views, in nav order — thirteen when AI analysis is switched on.
+Twelve views, in nav order, and thirteen when AI analysis is switched on.
 
 | View | Answers |
 |---|---|
@@ -802,32 +813,87 @@ Twelve views, in nav order — thirteen when AI analysis is switched on.
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
 | **AI prioritization** | Only present when an administrator has switched the AI analysis pipeline on. The tiers, scores, rationales and mitigations the GPU pipeline produced, newest per CVE per asset |
-| **Feed administration** | Build, upload and import bundles — now in the separate **Riskability Configuration** app, together with the AI settings, where only administrators can reach it |
+| **Feed administration** | Build, upload and import bundles, now in the separate **Riskability Configuration** app, together with the AI settings, where only administrators can reach it |
 
 ## AI analysis (optional)
 
-Riskability's core promise is that the search head never calls out. The AI
-pipeline does not break that promise; it adds a second one: **until an
-administrator deliberately switches it on, AI does not exist for a normal
-user** — no page, no empty panels, no message about anything missing, no
-schedule in the job system, no endpoint answering anything but one silent
-`false`.
+Riskability's promise is that nothing leaves *unintentionally*, and that is
+three statements rather than one.
 
-When an admin does switch it on, an AI model running on a GPU box on your own
-network (a single RTX 3060 12 GB is the reference build; anything larger only
-makes it faster) reads what Riskability has already measured — open findings
-carrying reach class, version-match evidence, EPSS and KEV — and returns a
-priority per CVE per asset: a P0–P4 tier, a score, a rationale in prose,
-concrete mitigations and the ATT&CK techniques that apply. The decision of
-what to analyse, in what order and when stays in Splunk; the model is the
-only non-deterministic component in the pipeline, and its answers are
+**The default is zero egress.** A fresh installation calls nothing on its own.
+The
+master switch ships off, the endpoint URL ships empty, and
+`riskabilityaianalyze` reads that switch before anything else and raises
+rather than contact any endpoint, so a user who finds the command name and
+types it into the search bar gets an error and not a request. For everyone who
+is not an administrator, AI does not exist: no page, no empty panels, no
+message about anything missing, and `/riskability/ai_status` answering one
+silent `false`.
+
+**Setting AI up is a deliberate act, and it is the act that causes egress.** An
+administrator opens the **Riskability Configuration** app, types the URL of a
+model endpoint and its credential, and from that moment the *Test connection*
+and *Test analysis* buttons on that page reach that endpoint, with the master
+switch still off. That is the correct behaviour rather than a leak: you have to
+be able to prove an endpoint answers before you trust the fleet's data to it.
+Neither test sends anything about your estate. *Test connection* asks the
+endpoint for its model list; *Test analysis* sends one synthetic CVE, the xz
+backdoor, whose values are hard coded in the app. Real findings go out only
+once the master switch is on, and only to the endpoints that administrator
+named.
+
+**Put the model on your own network, and nothing leaves the organisation.**
+The recommended deployment runs it on-prem, in the same location as the Splunk
+instance, on hardware you own: a single RTX 3060 12 GB is the reference build,
+and anything larger only makes it faster. On that shape the isolation around
+the estate is intact, which is the whole reason to prefer it. Pointing the
+endpoint at a hosted model works, and is the practical way to try the pipeline
+out before the hardware exists, but it is then genuinely sending fleet data to
+a third party. That is a decision to take on purpose, with whoever owns the
+data, and not one to discover afterwards.
+
+When an admin does switch it on, `riskabilityaianalyze` runs on the search
+head and posts each candidate to the configured endpoint. Back comes a
+priority per CVE: a P0 to P4 tier, a score, a rationale in prose, concrete
+mitigations and the ATT&CK techniques that apply. The decision of what to
+analyse, in what order and when stays in Splunk; the model is the only
+non-deterministic component in the pipeline, and its answers are
 schema-validated before anything reads them.
 
-Everything about it — the endpoint, the secret (Splunk's encrypted password
-store, never a browser), the hardware profile, the dispatch — is configured in
-the **Riskability Configuration** app, which only `admin` and `sc_admin` can
-open. Full documentation, including how to test against hosted model hubs
-before the hardware exists, is in [docs/AI-MOD.md](AI-MOD.md).
+**What leaves, once it is on.** One request per CVE, and it carries only what
+`ai_config.build_user_payload` renders: the CVE id and CWE id, the CVSS vector,
+base score and severity, the EPSS score, KEV status, the advisory title as the
+CVE description, the affected package and the version considered, and then the
+running-process evidence. That evidence is the part worth reading twice before
+you approve an endpoint. It is the process name, its version, **its absolute
+path on disk** (`/usr/bin/xz`, and on a real fleet paths that name your
+software layout), **the ports that process is listening on**, an asset id and
+its criticality, the exposure zone, and the version match and confidence
+Riskability had already worked out. If a classifier URL is also configured,
+that second endpoint receives the CVE description and the process ancestry
+chain, and nothing else.
+
+The inventory does not leave. The findings do not leave. What is going to be
+sent is readable before it is sent, because the queue search writes every row
+to `index=riskability_ai_candidates` and the analysis search picks it up two
+minutes later. Read that index and you are reading the outbound payload's
+source fields.
+
+One honest discrepancy, because it cuts the other way for once. The switch-on
+dialog tells the administrator that host names are among what is sent. Today
+they are not. The queue search emits the worst-case host as `worst_asset` and
+nothing renames it to `asset_id`, which is the field the prompt reads, so
+`asset_id` renders empty and no host name reaches the model. The prompt is
+what actually happens; the dialog describes what the queue was designed to
+send. Treat host names as *intended* to leave and plan the approval for that,
+because closing the mismatch by renaming the field is a one-line change and
+the intended design is the one to review against.
+
+Everything about it, the endpoint, the secret (Splunk's encrypted password
+store, never a browser) and the hardware profile, is configured in the
+**Riskability Configuration** app, which only `admin` and `sc_admin` can open.
+Full documentation, including how to test against hosted model hubs before the
+hardware exists, is in [docs/AI-MOD.md](docs/AI-MOD.md).
 
 ### The CVE encyclopaedia, and why it needs a source of its own
 
@@ -1138,7 +1204,7 @@ flowchart LR
     ND --> UF["universal forwarder<br/>TA-riskability"]
   end
 
-  subgraph sh["Search head - no outbound network"]
+  subgraph sh["Search head (no outbound network by default)"]
     IMP["Feed administration<br/>upload or stage a file"]
     WORKER["riskability_feedworker<br/>modular input, 60s"]
     IDX["index=riskability_inventory"]

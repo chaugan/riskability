@@ -111,7 +111,6 @@
         out.username = form.username.value;
         out.bert_url = form.bert_url.value;
         out.verify_tls = form.verify_tls.checked ? "1" : "0";
-        out.trigger_command = form.trigger_command.value;
         return out;
     }
 
@@ -383,47 +382,6 @@
         card.appendChild(grid);
     }
 
-    function renderDispatch(card) {
-        card.appendChild(el("h4", null, "Dispatch"));
-        card.appendChild(el("p", "rk-dim",
-            "When the candidate queue is built, Splunk runs this command to start the "
-            + "analysis on the GPU box ($run_id$ is substituted). It runs as the Splunk "
-            + "service account, and only an admin with the riskability_ai_admin "
-            + "capability can set it."));
-
-        var ta = el("textarea", "rk-input rk-ai-cmd");
-        ta.rows = 3;
-        ta.value = state.config.trigger_command || "";
-        ta.placeholder = "ssh -i /opt/splunk/etc/auth/ssh/gpu_key cve-admin@gpu-cve-01 "
-            + "\"sudo systemctl start cve-orchestrator@$run_id@.service\"";
-        ta.spellcheck = false;
-        form.trigger_command = ta;
-        card.appendChild(ta);
-
-        card.appendChild(el("p", "rk-dim",
-            "Leave it empty if the GPU box polls Splunk for new queues itself — the "
-            + "alert action then does nothing, by design, so a poller and a trigger "
-            + "never run the same queue twice."));
-
-        var save = el("button", "rk-btn", "Save dispatch");
-        save.type = "button";
-        var msg = el("div", "rk-dim");
-        save.addEventListener("click", function () {
-            save.disabled = true;
-            msg.textContent = "Saving…";
-            var cfg = formValues();
-            request("POST", { action: "set", config: cfg }).then(function () {
-                msg.textContent = "Saved.";
-                save.disabled = false;
-            }).catch(function (e) {
-                msg.textContent = "Failed: " + e.message;
-                save.disabled = false;
-            });
-        });
-        card.appendChild(save);
-        card.appendChild(msg);
-    }
-
     function renderSwitch(card) {
         card.appendChild(el("h4", null, "Master switch"));
         var on = state.config.enabled === "1";
@@ -537,8 +495,7 @@
         root.appendChild(hw);
 
         var dispatch = el("div", "rk-card");
-        dispatch.appendChild(el("h3", null, "Dispatch and schedules"));
-        renderDispatch(dispatch);
+        dispatch.appendChild(el("h3", null, "Master switch and schedules"));
         renderSwitch(dispatch);
         renderContract(dispatch);
         root.appendChild(dispatch);

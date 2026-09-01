@@ -3,9 +3,12 @@
 
 Input: the candidate queue (one row per distinct CVE, budget-selected by the
 queue saved search, with T0-decided rows already excluded). Output: one
-verdict row per input CVE, PLUS an upsert of every verdict into the
-``riskability_aiverdicts`` KV collection — the cache the expansion search
-joins against.
+verdict row per distinct input CVE, PLUS an upsert of every SUCCESSFUL
+verdict into the ``riskability_aiverdicts`` KV collection, the cache the
+expansion search joins against. A failed analysis is returned as a row and
+deliberately not cached, so the next run retries it: cached, it would match
+its own signature forever and the CVE would drop out of the prioritised view
+on the strength of one HTTP 500.
 
 Scale contract (why this is CVE-level and cached):
 
@@ -28,6 +31,7 @@ import json
 import os
 import sys
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -42,20 +46,139 @@ VERDICT_FIELDS = ("priority_tier", "priority_score", "confidence", "rationale",
                   "process_match_confidence", "recommended_action",
                   "recommended_mitigations", "attck_techniques")
 
+# Documents per batch_save call. The KV Store caps both the document count and
+# the payload size of one batch_save, and candidate_cap lets a single run
+# produce enough verdicts to reach either. Chunking also bounds what a rejected
+# write costs: the CVEs in a failed chunk are re-analysed on the next run and
+# every other chunk stays written.
+UPSERT_CHUNK = 200
+
+
+def _log(message: str) -> None:
+    """Append one diagnostic line to the app's log under var/log/splunk.
+
+    A search command's failures otherwise reach the operator as "exited
+    unexpectedly" and nothing else. splunkd indexes its own log directory into
+    _internal, so a line written here is searchable from the search head and
+    can be alerted on, which is the only way anyone learns about a command that
+    runs on a schedule and is never watched. It replaces a probe that wrote to
+    a fixed path in /tmp, which any local user could pre-create as a symlink
+    onto a file the splunk account owns.
+
+    Best effort on purpose: a logging failure must never replace the problem it
+    was trying to describe.
+    """
+    try:
+        splunk_home = os.environ.get("SPLUNK_HOME", "")
+        if not os.path.isabs(splunk_home):
+            return
+        path = os.path.join(splunk_home, "var", "log", "splunk",
+                            "riskability_ai_analyze.log")
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write("%s riskabilityaianalyze %s\n"
+                         % (time.strftime("%Y-%m-%d %H:%M:%S"), message))
+    except Exception:
+        pass
+
+
+def _upsert(kv, docs):
+    """Upsert verdict documents through the KV Store's batch_save.
+
+    batch_save keys on _key and replaces whatever is there, so there is no
+    delete half to lose. The delete-then-insert this replaces could destroy a
+    good verdict outright: the delete succeeded, the insert hit a 409 on a
+    duplicate _key elsewhere in the batch, and the CVE then left the
+    prioritised view completely, because the expansion search drops a finding
+    whose CVE has no verdict.
+
+    Returns (documents that failed, first error), so the caller can report a
+    write failure without throwing away the verdicts it already paid for.
+    """
+    if not hasattr(kv, "batch_save"):
+        raise RuntimeError(
+            "the bundled Splunk SDK exposes no KVStoreCollectionData."
+            "batch_save; the verdict cache needs an upsert, and the "
+            "delete-then-insert it replaces destroys a live verdict whenever "
+            "the insert half fails")
+    failed, first_error = 0, None
+    for start in range(0, len(docs), UPSERT_CHUNK):
+        # _key is the one internal field the KV Store accepts back; _user and
+        # friends arrive on a queried document and are the server's to set.
+        batch = [{k: v for k, v in doc.items()
+                  if k == "_key" or not k.startswith("_")}
+                 for doc in docs[start:start + UPSERT_CHUNK]]
+        try:
+            kv.batch_save(*batch)
+        except Exception as exc:
+            failed += len(batch)
+            if first_error is None:
+                first_error = str(exc)
+    return failed, first_error
+
 
 @Configuration()
 class RiskabilityAIAnalyzeCommand(EventingCommand):
     def transform(self, records):
-        # TEMP crash probe: search-command generator exceptions vanish into
-        # "exited unexpectedly" — capture the real traceback.
-        import traceback
         try:
             for row in self._transform_impl(records):
                 yield row
         except BaseException:
-            with open("/tmp/rkai_analyze_error.log", "w") as f:
-                f.write(traceback.format_exc())
+            _log("unhandled exception\n" + traceback.format_exc())
             raise
+
+    def _report(self, message: str) -> None:
+        """Surface an operational problem in both places it can be seen.
+
+        A search message reaches whoever opens the job; the log reaches an
+        alert, which is what a scheduled run actually needs. Neither is allowed
+        to break the run, and the braces are doubled because write_warning
+        passes the text through str.format and a KV Store error body is full
+        of them.
+        """
+        _log(message)
+        try:
+            self.write_warning(message.replace("{", "{{").replace("}", "}}"))
+        except Exception:
+            pass
+
+    def _sig_salt(self) -> str:
+        """The verdict signature salt, read from the macro the SPL half uses.
+
+        Read, never reconstructed. The salt is "<schema version>:<model name>",
+        and the same string has to reach both writers of the signature: the
+        md5() in savedsearches.conf, which expands this macro directly, and
+        verdict_sig() here. Rebuilding it in Python from the configured model
+        name would give the salt two sources of truth, and the day they
+        disagree the cache splits in half in complete silence.
+
+        A read failure is fatal on purpose. An empty salt would still produce
+        perfectly valid signatures, they would simply match nothing that has
+        ever been stored, so the entire fleet would be re-analysed on every run
+        and the only symptom would be a GPU that never goes idle.
+
+        The macro definition carries its own quotes, the app convention for a
+        string-valued macro (riskability_ai_asset_criticality, and see the
+        comment above riskability_ai_sig_salt itself). SPL drops them when it
+        expands the macro into the concatenation, so they are dropped here too.
+        """
+        try:
+            definition = self.service.confs["macros"][
+                "riskability_ai_sig_salt"].content["definition"]
+        except Exception as exc:
+            raise RuntimeError(
+                "cannot read the riskability_ai_sig_salt macro (%s); refusing "
+                "to sign verdicts with an unknown salt, because an empty salt "
+                "matches no cached verdict and re-analyses the whole fleet"
+                % exc)
+        salt = str(definition).strip()
+        if len(salt) >= 2 and salt[0] == '"' and salt[-1] == '"':
+            salt = salt[1:-1]
+        if not salt:
+            raise RuntimeError(
+                "the riskability_ai_sig_salt macro is empty; refusing to sign "
+                "verdicts with an empty salt, which would match no cached "
+                "verdict and re-analyse the whole fleet")
+        return salt
 
     def _transform_impl(self, records):
         cfg = ai_settings.load_config(self.service)
@@ -74,11 +197,35 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
         budget = max(1, int(cfg["candidate_cap"]))
         bert_url = (cfg.get("bert_url") or "").strip()
 
-        records = [dict(r) for r in records]
-        for rec in records:
-            rec.setdefault("rk_sig", ai_config.verdict_sig(rec))
+        salt = self._sig_salt()
+        # _bert_url is stripped on the way in and re-attached from the
+        # configuration at call time. analyze_finding takes the classifier URL
+        # off the record it is handed, so a record that keeps its own value
+        # lets anyone who can write an event into the candidate index aim the
+        # search head's POST, carrying the advisory text and process chain, at
+        # a host of their choosing. Nothing in the app ever set the field, so
+        # nothing legitimate loses anything by its removal.
+        records = [{k: v for k, v in r.items() if k != "_bert_url"}
+                   for r in records]
 
-        # Backfill finding context from the findings state KV — the queue
+        # One row per distinct CVE, enforced here instead of assumed. The
+        # saved search does "dedup cve_id" upstream and the cache write below
+        # keys on the CVE id, so a duplicate that gets through is not a wasted
+        # model call, it is a rejected write that loses a whole batch of
+        # verdicts already paid for. A row with no cve_id cannot be keyed,
+        # cached or joined back to a finding, so it is passed through rather
+        # than spending a model call on a verdict nothing can ever read.
+        deduped, unkeyed, seen = [], [], set()
+        for rec in records:
+            cve_id = rec.get("cve_id")
+            if not cve_id:
+                unkeyed.append(rec)
+            elif cve_id not in seen:
+                seen.add(cve_id)
+                deduped.append(rec)
+        records = deduped
+
+        # Backfill finding context from the findings state KV. The queue
         # index's stash rows can carry stale context, so the command reads
         # the authoritative source directly. One indexed KV lookup per CVE.
         cve_ids_needing_context = [r.get("cve_id") for r in records
@@ -103,6 +250,14 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
             except Exception:
                 pass  # context is display-only; analysis proceeds without it
 
+        # The queue search stamps rk_sig on every row and this recomputation is
+        # the fallback for a row that arrived without one. It runs AFTER the
+        # backfill above, because the fields it hashes are the fields the
+        # backfill fills: signing first would sign a half-empty record and
+        # store a verdict under a signature the SPL half will never produce.
+        for rec in records:
+            rec.setdefault("rk_sig", ai_config.verdict_sig(rec, salt))
+
         # ---- cache pass ------------------------------------------------
         # One query for every input CVE; signature matches are served
         # instantly and never reach the model. This is what makes the
@@ -114,8 +269,8 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
         if cve_ids:
             try:
                 query = json.dumps({"cve_id": {"$in": cve_ids}})
-                # splunklib 3.0: the REST query param goes as a KEYWORD —
-                # positionally this raises TypeError, which silently
+                # splunklib 3.0: the REST query param goes as a KEYWORD.
+                # Positionally this raises TypeError, which silently
                 # emptied the cache on every run.
                 for row in kv.query(**{"query": query}):
                     cached[row.get("cve_id")] = row
@@ -123,8 +278,7 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 cached = {}
 
         # ---- triage: cached / to-analyse --------------------------------
-        out, to_analyse = [], []
-        now = int(time.time())
+        out, to_analyse, backfill_docs = [], [], []
         for rec in records:
             cve_id = rec.get("cve_id")
             hit = cached.get(cve_id)
@@ -132,15 +286,33 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 row = dict(rec)
                 for f in VERDICT_FIELDS:
                     row[f] = hit.get(f)
-                row["analysis_source"] = hit.get("analysis_source", "cache")
+                # "cache", not the stored verdict's own source. Every stored
+                # document carries analysis_source "T2", so reading it back
+                # here labelled every cache hit a model call: the analyze
+                # search's cache_hits counted approximately nothing and its
+                # model_calls counted the whole run, which is precisely
+                # backwards for the number that says what the GPU was asked to
+                # do. The verdict's provenance is not lost, it stays on the
+                # cached document and reaches the expansion search as rk_src.
+                row["analysis_source"] = "cache"
                 row["analysed_at"] = hit.get("analysed_at")
                 out.append(row)
                 # Backfill context on cache hits: old verdicts predate the
-                # context fields, so the dashboard had nothing to show. One
-                # KV upsert per hit, bounded by the budget, fills them in
-                # without calling the model again.
-                if not hit.get("title"):
-                    hit.update({
+                # context fields, so the dashboard had nothing to show. The
+                # verdict itself is already correct, so this is cosmetic, and
+                # cosmetic work is never allowed to cost a verdict. It used to
+                # delete the row and insert it again with both halves inside a
+                # bare except: a delete that succeeded ahead of an insert that
+                # failed destroyed a live verdict, and the finding then
+                # vanished from the prioritised view, which drops findings
+                # whose CVE has no verdict. Collected instead and upserted in
+                # one batch below, where nothing is deleted at any point.
+                # Skipped without a _key, because a keyless save would add a
+                # second row for the same CVE and the lookup would then pick
+                # between them at random.
+                if hit.get("_key") and not hit.get("title"):
+                    doc = dict(hit)
+                    doc.update({
                         "title": rec.get("cve_description", ""),
                         "package": rec.get("affected_product", ""),
                         "severity": rec.get("severity", ""),
@@ -148,23 +320,26 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                         "kev": rec.get("kev", "false"),
                         "exposure_zone": rec.get("exposure_zone", ""),
                         "cwe_id": rec.get("cwe_id", "")})
-                    try:
-                        kv.delete(json.dumps({"_key": hit.get("_key")}))
-                        kv.insert(json.dumps(hit))
-                    except Exception:
-                        pass
+                    backfill_docs.append(doc)
             else:
                 to_analyse.append(rec)
 
         # ---- budget-bounded model calls ---------------------------------
         llm_rows, deferred = to_analyse[:budget], to_analyse[budget:]
         if llm_rows:
+            def analyse(rec):
+                # The classifier URL is the configured one, attached to a
+                # throwaway copy so it never reaches the emitted row or the
+                # cache. Taking it from the record is what let an event decide
+                # where the search head posts finding data; the scheme itself
+                # is asserted in ai_config._http.
+                call = dict(rec, _bert_url=bert_url) if bert_url else rec
+                return ai_config.analyze_finding(
+                    url, auth_type, username, secret, model, verify,
+                    timeout, call, max_tokens)
+
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                analyses = list(pool.map(
-                    lambda rec: ai_config.analyze_finding(
-                        url, auth_type, username, secret, model, verify,
-                        timeout, rec, max_tokens),
-                    llm_rows))
+                analyses = list(pool.map(analyse, llm_rows))
             verdict_docs = []
             for rec, analysis in zip(llm_rows, analyses):
                 now_row = int(time.time())
@@ -177,7 +352,7 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                         "priority_tier": "P2", "priority_score": 50,
                         "confidence": 0.0,
                         "rationale": "Analysis failed (%s). Conservative "
-                                     "placeholder - review manually."
+                                     "placeholder. Review manually."
                                      % analysis.get("error", "unknown"),
                         "exploitability_signal": "theoretical",
                         "exposure_signal": rec.get("exposure_zone", "internal"),
@@ -193,6 +368,19 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 row["analysed_at"] = now_row
                 row["analysis_latency_ms"] = analysis.get("latency_ms", 0)
                 out.append(row)
+                if source == "fallback":
+                    # Reported, never cached. Stored under the current
+                    # signature a fallback becomes a cache hit on the next
+                    # run, so the queue search stops selecting the CVE and the
+                    # expansion search drops it as stale a week later: one
+                    # HTTP 500 and the CVE is gone from the prioritised view
+                    # until its advisory text changes, with the daily "no
+                    # results" alert quiet throughout because every other CVE
+                    # succeeded. An endpoint that failed only for chosen CVE
+                    # ids could delete exactly those from the risk view.
+                    # Leaving no cache entry means the next run simply tries
+                    # again, which is what a transient failure deserves.
+                    continue
                 doc = {"_key": "cve:" + str(rec.get("cve_id")),
                        "cve_id": rec.get("cve_id"), "sig": rec.get("rk_sig"),
                        "analysed_at": now_row, "analysis_source": source,
@@ -210,25 +398,40 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 doc.update({f: result.get(f) for f in VERDICT_FIELDS})
                 verdict_docs.append(doc)
             if verdict_docs:
-                # Upsert by primary key: delete the ids we are about to
-                # write, then one batch insert. The verdicts collection is
-                # the cache; a failed write here must fail the command.
-                ids = [d["cve_id"] for d in verdict_docs]
-                try:
-                    kv.delete(json.dumps({"cve_id": {"$in": ids}}))
-                except Exception:
-                    pass
-                # splunklib 3.0 insert() accepts a single object per call —
-                # a JSON array lands as "Expecting an object but got an
-                # array". One post per verdict; bounded by the budget.
-                for doc in verdict_docs:
-                    kv.insert(json.dumps(doc))
+                # One upsert keyed on "cve:<id>", no delete anywhere. A write
+                # that fails is loud but not fatal: the verdicts are already
+                # in the rows being returned, and a CVE missing from the cache
+                # is picked up again by the next run, so failing the command
+                # here would throw away model calls that have been paid for
+                # and fix nothing.
+                failed, error = _upsert(kv, verdict_docs)
+                if failed:
+                    self._report(
+                        "could not cache %d of %d verdict(s); they will be "
+                        "re-analysed on the next run: %s"
+                        % (failed, len(verdict_docs), error))
 
-        # ---- budget-deferred: reported, never faked ----------------------
-        self._deferred = len(deferred)
+        if backfill_docs:
+            failed, error = _upsert(kv, backfill_docs)
+            if failed:
+                self._report(
+                    "could not backfill display context on %d cached "
+                    "verdict(s); the verdicts themselves are untouched: %s"
+                    % (failed, error))
+
+        # ---- budget-deferred and unkeyed: reported, never faked -----------
+        # Both carry a source like every other emitted row. Without one they
+        # were counted into the analyze search's "verdicts" total while
+        # matching none of its breakdowns, so the total reported work that had
+        # not been done. Neither writes to the cache, so a deferred CVE is
+        # picked up by the next run.
         for rec in deferred:
             row = dict(rec)
-            row["analysis_deferred"] = "1"
+            row["analysis_source"] = "deferred"
+            out.append(row)
+        for rec in unkeyed:
+            row = dict(rec)
+            row["analysis_source"] = "skipped"
             out.append(row)
 
         yield from out

@@ -5,9 +5,9 @@
 
 Covers the two things that must not silently rot:
 
-1. The settings and output contract in bin/riskability/ai_config.py — the
-   validation both the admin endpoint and the alert action depend on, and the
-   result schema the whole pipeline hangs off.
+1. The settings and output contract in bin/riskability/ai_config.py: the
+   validation the admin endpoint depends on, and the result schema the whole
+   pipeline hangs off.
 2. The HTTP probes end to end against tools/ai_mock_server.py: the same
    functions the admin page's Test buttons call, over real sockets.
 3. The conf files the mod adds parse the strict way the Splunk Packaging
@@ -60,8 +60,13 @@ def test_settings():
     print("validate_settings:")
     base = {"endpoint_url": "http://127.0.0.1:8000", "enabled": "0"}
     merged = ai_config.validate_settings(base, {})
+    # t2_concurrency defaults to 1 deliberately. Measured on the reference
+    # 3060: 3,142 ms for a single request against a 23,419 ms median at
+    # concurrency 8, for the same aggregate throughput. The default must not
+    # drift back up without a server that actually batches.
     check("defaults fill in", merged["model"] == "foundation-sec-8b"
-          and merged["t2_concurrency"] == "8")
+          and merged["t2_concurrency"] == "1"
+          and merged["candidate_cap"] == "1000")
     check("url keeps scheme, loses trailing slash",
           ai_config.validate_settings({"endpoint_url": "http://x:8000/"}, {})["endpoint_url"]
           == "http://x:8000")
@@ -183,7 +188,7 @@ def test_conf_files():
     import conf_lint
     targets = [os.path.join(ROOT, "app", "riskability", "default", n)
                for n in ("riskability_ai.conf", "restmap.conf", "web.conf",
-                         "authorize.conf", "alert_actions.conf", "macros.conf",
+                         "authorize.conf", "macros.conf",
                          "savedsearches.conf", "app.conf")]
     targets.append(os.path.join(ROOT, "app", "riskability-config", "default", "app.conf"))
     targets += [os.path.join(ROOT, "app", "TA-riskability-ai", "default", n)
@@ -244,19 +249,46 @@ def test_t0_and_analyze(port):
 
 def test_verdict_sig():
     print("verdict_sig:")
+    salt = "v2:foundation-sec-8b"
+    sig = lambda cve: ai_config.verdict_sig(cve, salt)
     base = {"cve_id": "CVE-1", "severity": "High", "kev": "false",
             "epss": "0.12345", "cvss_score": "7.5", "title": "Some flaw"}
-    a, b = ai_config.verdict_sig(base), ai_config.verdict_sig(dict(base))
+    a, b = sig(base), sig(dict(base))
     check("deterministic", a == b)
-    changed = dict(base); changed["epss"] = "0.13"
-    check("epss excluded from sig (float-format drift)",
-          ai_config.verdict_sig(changed) == a)
+    # Version 2 bands EPSS rather than excluding it. Two values inside one
+    # band must still agree: that is what keeps the SPL and Python writers
+    # from drifting on float formatting, which is why EPSS was excluded
+    # outright in version 1.
+    same_band = dict(base); same_band["epss"] = "0.13"
+    check("epss inside a band -> same sig", sig(same_band) == a)
+    # And the half version 1 could not do: a move that crosses a band MUST
+    # invalidate the verdict. An EPSS jump from 12% to 70% on a KEV add is
+    # the case that used to leave a stale verdict alive for a week.
+    cross_band = dict(base); cross_band["epss"] = "0.70"
+    check("epss crossing a band -> new sig", sig(cross_band) != a)
+    cvss_band = dict(base); cvss_band["cvss_score"] = "9.1"
+    check("cvss crossing a band -> new sig", sig(cvss_band) != a)
     changed2 = dict(base); changed2["title"] = "Different advisory text"
-    check("title change -> new sig", ai_config.verdict_sig(changed2) != a)
+    check("title change -> new sig", sig(changed2) != a)
     case = dict(base); case["severity"] = "high"
-    check("severity case-insensitive", ai_config.verdict_sig(case) == a)
-    check("kev string/false split",
-          ai_config.verdict_sig(dict(base, kev="true")) != a)
+    check("severity case-insensitive", sig(case) == a)
+    check("kev string/false split", sig(dict(base, kev="true")) != a)
+    # The salt is the whole point of version 2: change the model or the
+    # prompt and every cached verdict must be re-earned exactly once.
+    check("salt change -> new sig",
+          ai_config.verdict_sig(base, "v2:some-other-model") != a)
+    # A missing salt would quietly match nothing and re-analyse the fleet on
+    # every run, with no error anywhere. It must not be silently tolerated.
+    check("empty salt refused",
+          _raises(lambda: ai_config.verdict_sig(base, "")))
+
+
+def _raises(fn):
+    try:
+        fn()
+    except Exception:
+        return True
+    return False
 
 
 def main():

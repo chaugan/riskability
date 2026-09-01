@@ -46,6 +46,23 @@ access = read : [ * ], write : [ admin, sc_admin ]
 [commands]
 access = read : [ * ], write : [ admin, sc_admin ]
 
+# riskabilitymatch and riskabilityvercmp stay readable by everyone on purpose:
+# they are pure functions over the arguments they are handed, and vercmp exists
+# precisely so an operator can sanity-check the matcher from the search bar.
+#
+# The AI queue consumer is not that. Running it reads the configured endpoint,
+# spends the app's stored credential against it and writes the verdict cache
+# every other user's expansion joins against, so typing it is an act of data
+# egress on behalf of the whole instance. authorize.conf argues that
+# riskability_ai_admin exists so "who can turn data egress on" has a one-word
+# answer; that capability gates configuring the pipeline, and a blanket
+# read : [ * ] here let anyone who can search perform the egress the
+# capability was written to hold back. Metadata takes roles rather than
+# capabilities, so this names the two roles authorize.conf grants
+# riskability_ai_admin to.
+[commands/riskabilityaianalyze]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
 # The verdict cache is readable by every search (the expansion join needs
 # it); writes happen only through the queue consumer command under the
 # master switch.

@@ -178,6 +178,23 @@ else
   printf '  ok    %-52s\n' "every conf parses under strict rules"
 fi
 
+# The vendored SDK must be the vendored SDK.
+#
+# A hand-applied patch in bin/splunklib carried a "re-apply after any upgrade"
+# comment and nothing that would notice when an upgrade dropped it. The patch
+# is gone, because chunked = true in commands.conf is the real fix for the
+# v1/v2 protocol mismatch it claimed to solve, and this is what keeps the next
+# one from being written. A vendored dependency that differs from its release
+# is a thing every future reader has to discover for themselves.
+if grep -rlF 'VENDOR PATCH' "$ROOT/app/riskability/bin/splunklib" >/dev/null 2>&1; then
+  grep -rlF 'VENDOR PATCH' "$ROOT/app/riskability/bin/splunklib" | while read -r f; do
+    printf '  BAD   %-52s %s\n' "riskability: patched vendored SDK" "${f#"$ROOT/"}"
+  done
+  fail=1
+else
+  printf '  ok    %-52s\n' "vendored SDK carries no hand-applied patch"
+fi
+
 # The wrappers and the tool they invoke must agree on flags. They are separate
 # argument parsers in separate files, and a flag added to one and not the other
 # fails only on a user's machine, with "unrecognized arguments".
@@ -216,11 +233,9 @@ need riskability "riskability/default/data/ui/views/riskability_setup.xml"  "poi
 need riskability "riskability/default/data/ui/views/riskability_ai.xml"     "the AI prioritization overview"
 need riskability "riskability/bin/riskability_ai_rest.py"                   "the AI config endpoint"
 need riskability "riskability/bin/riskability_ai_status_rest.py"            "the one-bit status endpoint (separate file: splunkd allows one handler class per script)"
-need riskability "riskability/bin/riskability_ai_trigger.py"                "the dispatch alert action (must share the alert_actions.conf stanza name)"
 need riskability "riskability/bin/riskability/ai_config.py"                 "settings schema and probes, shared by the endpoint and the action"
 need riskability "riskability/default/riskability_ai.conf"                  "AI connection settings spec"
 need riskability "riskability/README/riskability_ai.conf.spec"              "conf spec, required for the setting to be recognised"
-need riskability "riskability/default/alert_actions.conf"                   "the dispatch alert action"
 need riskability "riskability/appserver/static/riskability_exceptions.js" "the accept-risk dialog"
 need riskability "riskability/appserver/static/riskability_exceptions.css" "styles the dialog"
 need riskability "riskability/bin/riskability_exceptions_rest.py"    "the only writer of the exception register"

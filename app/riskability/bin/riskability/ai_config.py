@@ -1,26 +1,34 @@
-"""Configuration and probe logic for the AI analysis pipeline.
+"""Configuration, output contract and outbound HTTP for the AI pipeline.
 
 Everything in this module is stdlib-only and Splunk-free, on purpose:
 
 * ``riskability_ai_rest.py`` (the admin REST handler) imports it for validation
   and the network probes.
-* ``riskability_alert_ai_trigger.py`` (the alert action) imports the settings
-  schema.
+* ``riskabilityaianalyze.py``, the custom search command that does the real
+  work, imports it for the T0 rules, the request path and the verdict
+  signature. Every call this app makes to a model endpoint leaves through
+  ``_http`` below, which is why the scheme, redirect and response-size limits
+  live there rather than in each caller.
 * ``tools/test_ai_mod.py`` exercises all of it on a laptop, against
   ``tools/ai_mock_server.py``, with no Splunk and no GPU in sight. A module
   that could only be tested on a search head against a real model server
   would never be tested at all, and this one guards secrets.
 
-The pipeline this configures is the one described in
-``docs/AI-MOD.md``: a GPU box runs vLLM (Foundation-Sec-8B or any
-OpenAI-compatible server) and an optional MITRE-ATT&CK BERT classifier;
-Splunk builds a candidate queue and the GPU box reads it, analyses it and
-writes prioritised results back over HEC. Splunk owns the schedule and the
-audit trail; the GPU box owns the inference.
+The pipeline this configures: a GPU box runs vLLM (Foundation-Sec-8B or any
+OpenAI-compatible server) and an optional MITRE-ATT&CK BERT classifier, and
+nothing else. Every step runs on the search head. A saved search builds the
+candidate queue, the riskabilityaianalyze custom command calls the endpoint
+directly and caches each verdict, and a third saved search expands the cached
+verdicts onto findings. There is no orchestrator on the GPU side and no HEC
+writeback, which is what ``docs/AI-MOD.md`` describes as well: Splunk owns the
+schedule, the audit trail and the data, and the GPU box owns the inference
+alone.
 
 Nothing here ever logs or returns a secret. The password lives in Splunk
 storage passwords and is passed around only in memory for the duration of a
-probe.
+probe. Model output gets the opposite treatment: it is the one input nobody on
+this side wrote, so it is parsed, schema-checked and bounded here, and the
+deterministic SPL rules downstream override it.
 """
 
 from __future__ import annotations
@@ -83,7 +91,12 @@ FIELD_SPECS: Dict[str, dict] = {
     },
     # Verifying TLS against a GPU box with a self-signed certificate fails in
     # a way that looks exactly like a network fault, so the choice is explicit
-    # rather than an undocumented verify=False.
+    # rather than an undocumented verify=False. Switching it off turns off
+    # certificate chain AND hostname checking, for the model endpoint and for
+    # the BERT sidecar alike: the configured bearer or basic secret then goes
+    # to whoever answers on that address, and whoever that is writes every
+    # verdict this search head caches, trusts and expands onto its fleet. It
+    # is a setting for a lab box on a segment you own, nowhere else.
     "verify_tls": {
         "kind": "bool", "default": True,
     },
@@ -95,10 +108,12 @@ FIELD_SPECS: Dict[str, dict] = {
     "request_timeout": {
         "kind": "int", "min": 5, "max": 600, "default": 120,
     },
-    # Concurrent T2 calls the GPU box accepts. This mirrors the orchestrator's
-    # T2_CONCURRENCY: both must be set to the same budget for the same card.
+    # Concurrent T2 calls in flight from the search command, which is the only
+    # caller there is: no orchestrator runs on the GPU side to agree with. Set
+    # it to what one inference process on that card can genuinely serve at
+    # once, which is usually far less than the number of threads it accepts.
     "t2_concurrency": {
-        "kind": "int", "min": 1, "max": 128, "default": 8,
+        "kind": "int", "min": 1, "max": 128, "default": 1,
     },
     "t2_max_tokens": {
         "kind": "int", "min": 64, "max": 4000, "default": 400,
@@ -114,13 +129,7 @@ FIELD_SPECS: Dict[str, dict] = {
     # presets lower this; the queue is ordered by EPSS so the head of the
     # queue is always the most worth analysing.
     "candidate_cap": {
-        "kind": "int", "min": 10, "max": 100000, "default": 5000,
-    },
-    # What the alert action runs to poke the GPU box when a queue is ready.
-    # Admin-set, admin-owned: it runs with the Splunk service account's rights,
-    # which is exactly why only the AI admin capability may write it.
-    "trigger_command": {
-        "kind": "text", "max": 2000, "default": "",
+        "kind": "int", "min": 10, "max": 100000, "default": 1000,
     },
 }
 
@@ -132,9 +141,17 @@ PRESETS = {
     "rtx3060": {
         "label": "RTX 3060 12 GB (single card)",
         "values": {
-            "t2_concurrency": 8, "t2_max_tokens": 400, "t3_max_tokens": 1200,
-            "t3_deep_threshold": 70, "request_timeout": 120,
-            "candidate_cap": 2000,
+            # Concurrency 1, measured rather than guessed. On the reference
+            # 3060 a single request returns in 3,142 ms, but the median across
+            # 21 real verdicts at concurrency 8 was 23,419 ms: the threads
+            # queue behind a server that is not serving them in parallel, so
+            # aggregate throughput went from ~0.32 to ~0.34 CVEs per second
+            # for eight times the outstanding requests. Raise this only to
+            # match a server actually configured to batch (Ollama's
+            # OLLAMA_NUM_PARALLEL, vLLM's continuous batching), never hopefully.
+            "t2_concurrency": 1, "t2_max_tokens": 400, "t3_max_tokens": 1200,
+            "t3_deep_threshold": 70, "request_timeout": 150,
+            "candidate_cap": 1000,
         },
     },
     "rtx4090": {
@@ -249,12 +266,12 @@ def validate_settings(updates: dict, current: dict) -> Dict[str, str]:
 # ---------------------------------------------------------------------------
 # LLM output contract
 # ---------------------------------------------------------------------------
-# The schema the GPU pipeline's prompts demand, validated here independently of
-# the orchestrator. The orchestrator validates before writing HEC; this
-# validates again at test time, because the whole point of the "Send test
-# analysis" button is to answer "will this endpoint produce something the
-# pipeline accepts" before a run depends on it. Duplicated deliberately: the
-# two checks disagreeing is a finding, not a bug.
+# The schema the prompt demands, enforced on everything a model says: the
+# "Send test analysis" button and every real verdict go through the same
+# validate_result, because the button's whole job is to answer "will this
+# endpoint produce something the pipeline accepts" before a run depends on it.
+# Nothing outside the schema survives the trip, and every string that does is
+# bounded, because this is text an outside party influenced.
 
 ALLOWED_TIERS = ("P0", "P1", "P2", "P3", "P4")
 ALLOWED_EXPLOITABILITY = ("active-exploit", "proof-of-concept", "theoretical", "none")
@@ -264,37 +281,110 @@ ALLOWED_ACTION = ("patch-now", "mitigate", "monitor", "accept",
                   "risk-accept-with-compensation")
 _TECHNIQUE_RE = re.compile(r"^T\d{4}(\.\d{3})?$")
 
+# Model text ends up in a KV Store field, an event written by collect, a
+# drilldown table and splunkd.log, and control characters make all four hard
+# to read while an unbounded mitigation string makes the table unusable.
+# Stripping and bounding is display hygiene and log cleanliness, nothing more.
+# It is explicitly NOT an event-forging defence: collect escapes a newline
+# inside a field value to a literal backslash and writes one event with no
+# extra fields, measured on a live search head rather than assumed.
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_MAX_RATIONALE = 2000
+_MAX_MITIGATION = 300
+
+# How many FAILED decode attempts one answer is worth. Counting failures
+# rather than scan positions matters: a failure advances by a single
+# character, so a budget spent on positions is exhausted by a run of bare
+# braces before the real object is ever reached, and brace spam would deny a
+# verdict rather than merely cost CPU. Successful decodes do not draw on it.
+# The residual is honest: enough leading garbage still gives up, and that
+# costs one finding on one run, because a failed analysis is reported and
+# never cached, so the next run asks again.
+_MAX_JSON_FAILURES = 2000
+# And a bound on how much of an answer is worth scanning at all. The HTTP
+# read cap is megabytes; a chat completion carrying a verdict is not.
+_MAX_JSON_TEXT = 256 * 1024
+
+
+def _clean_text(value, limit: int) -> str:
+    """Control characters out, length bounded. See _CONTROL_RE above for why."""
+    return _CONTROL_RE.sub(" ", str(value)).strip()[:limit]
+
+
+def _json_objects(text: str):
+    """Every top-level JSON object in an answer, in the order they appear.
+
+    Returns (objects, last decode error as prose). Decodes forward from each
+    "{" instead of slicing between the first "{" and the last "}": that slice
+    is exactly what breaks when an answer carries two objects, which is the
+    case that matters here rather than a curiosity. Stepping past a decoded
+    object also keeps its own members from being offered as candidates.
+    """
+    decoder = json.JSONDecoder()
+    text = text[:_MAX_JSON_TEXT]
+    objects = []
+    last_error = None
+    index = text.find("{")
+    failures = 0
+    while index >= 0 and failures < _MAX_JSON_FAILURES:
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except Exception as exc:
+            # Deliberately Exception and not JSONDecodeError. A deeply nested
+            # answer raises RecursionError, which is not a ValueError, so it
+            # would escape parse_llm_json's contract, escape analyze_finding's
+            # "except ValueError", and take the whole batch down over one bad
+            # answer. Everything that goes wrong in here leaves as prose.
+            last_error = str(exc)
+            failures += 1
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(value, dict):
+            objects.append(value)
+        index = text.find("{", max(end, index + 1))
+    return objects, last_error
+
 
 def parse_llm_json(content: str):
-    """Pull a JSON object out of a chat completion's text answer.
+    """Pull the model's verdict object out of a chat completion's text answer.
 
-    Models wrap JSON in code fences more often than not. Accepts bare JSON,
-    ```json fences, and leading prose before the first brace -- the last is
-    the one failure mode a strict parser turns into a false "endpoint broken".
+    Lenient about wrapping on purpose: models really do put the object in a
+    ```json fence, or behind a sentence of prose, or both, and a strict parser
+    turns that into a false "endpoint broken".
+
+    When an answer holds more than one object the LAST schema-valid one wins,
+    not the first. Advisory titles are written outside this organisation,
+    arrive in the imported CVE bundle and go into the prompt as
+    cve_description, so a title can try to talk the model into emitting a
+    complete, schema-valid decoy verdict ahead of its own answer. Preferring
+    the first object hands that decoy the win, and a verdict is CVE-level: it
+    is cached and then expanded onto every affected host, so one advisory
+    string could suppress a CVE across the whole fleet. Taking the last object
+    rests on a habit rather than a guarantee: a model that echoes something
+    then answers usually puts its own answer after the echo. That is a
+    heuristic, it has not been measured against this model, and an answer that
+    echoes a decoy last would still win.
+
+    That is a mitigation, not a fix. The control that actually holds is
+    deterministic and downstream: the expansion search recomputes the T0 rules
+    in SPL and lets them override the cached verdict, so KEV plus
+    internet-facing plus version-confirmed plus CVSS>=7 stays P0 at score 95
+    whatever the model said. Nothing here may weaken that.
     """
     if content is None:
         raise ValueError("the model returned an empty answer")
-    text = content.strip()
-    if "```" in text:
-        parts = text.split("```")
-        for part in parts:
-            candidate = part.strip()
-            if candidate.startswith("json"):
-                candidate = candidate[4:]
-            candidate = candidate.strip()
-            if candidate.startswith("{"):
-                text = candidate
-                break
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
+    objects, error = _json_objects(str(content))
+    if not objects:
+        if error is not None:
+            raise ValueError("the model's answer was not valid JSON: %s" % error)
         raise ValueError("the model's answer contained no JSON object")
-    try:
-        parsed = json.loads(text[start:end + 1])
-    except json.JSONDecodeError as exc:
-        raise ValueError("the model's answer was not valid JSON: %s" % exc)
-    if not isinstance(parsed, dict):
-        raise ValueError("the model's answer was not a JSON object")
-    return parsed
+    for candidate in reversed(objects):
+        if validate_result(candidate)[1] is None:
+            return candidate
+    # Nothing in the answer matched the schema. Hand back the last object so
+    # the caller reports the schema violation it can see and quote, which is a
+    # far better diagnosis than "no JSON object".
+    return objects[-1]
 
 
 def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
@@ -327,7 +417,9 @@ def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
     rationale = payload.get("rationale")
     if not isinstance(rationale, str) or not rationale.strip():
         return None, "rationale missing"
-    clean["rationale"] = rationale.strip()[:2000]
+    clean["rationale"] = _clean_text(rationale, _MAX_RATIONALE)
+    if not clean["rationale"]:
+        return None, "rationale missing"
     for key, allowed in (
             ("exploitability_signal", ALLOWED_EXPLOITABILITY),
             ("exposure_signal", ALLOWED_EXPOSURE),
@@ -343,7 +435,8 @@ def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
     if not isinstance(mitigations, list) \
             or any(not isinstance(m, str) for m in mitigations):
         return None, "recommended_mitigations must be a list of strings"
-    clean["recommended_mitigations"] = [m for m in mitigations if m.strip()][:5]
+    clean["recommended_mitigations"] = [
+        m for m in (_clean_text(v, _MAX_MITIGATION) for v in mitigations) if m][:5]
     techniques = payload.get("attck_techniques")
     if techniques is None:
         techniques = []
@@ -358,9 +451,10 @@ def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
 # Prompts and the synthetic test finding
 # ---------------------------------------------------------------------------
 
-# A trimmed T2 prompt. The GPU box carries the full one; this exists so the
-# "Send test analysis" button exercises the same output contract without the
-# two prompts having to be kept byte-identical across two machines.
+# The T2 prompt. The GPU box runs an inference server and nothing else, so
+# this constant is the only copy of it anywhere: the "Send test analysis"
+# button and a scheduled run send the same system prompt, and a change here
+# changes both at once.
 SYSTEM_PROMPT_T2 = """You are a CVE prioritization assistant for a Security Operations Center.
 Combine the CVE metadata, the running-process evidence and the asset context
 into one priority decision.
@@ -459,16 +553,104 @@ def auth_header(auth_type: str, username: str, secret: str) -> dict:
     return {}
 
 
+# A chat completion is a few kilobytes. Four megabytes is room for an answer
+# nobody sane would send and still small enough that a search head can hold a
+# few of them per thread without noticing.
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """A redirect handler that refuses every redirect instead of following it.
+
+    urllib's default opener follows up to ten of them, counts ftp among the
+    schemes it will follow to, and carries the Authorization header along even
+    when the redirect changes host or scheme. On a search head that is a
+    server-side request forgery primitive with the model endpoint's own token
+    attached: an endpoint answering "302 Location:
+    http://127.0.0.1:8089/services/..." gets this app to make an authenticated
+    call to splunkd on its behalf. No inference server needs us to follow a
+    redirect, so this declines them all (returning None is urllib's own way for
+    a handler to say no) and _http turns the refusal into a clear error.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _opener(ctx: Optional[ssl.SSLContext]) -> urllib.request.OpenerDirector:
+    """An opener carrying only the handlers this app is allowed to have.
+
+    Neither urlopen()'s global opener nor build_opener(): both register
+    FileHandler, FTPHandler and DataHandler, so an endpoint_url of
+    file:///etc/passwd is a working request rather than an error, and both
+    follow redirects. Built by hand, the handler list is the whole answer to
+    "what can this reach": http, https, and nothing else.
+
+    ProxyHandler({}) is empty deliberately. It pins the proxy set to nothing,
+    so http_proxy or https_proxy in splunkd's environment cannot silently
+    reroute an air-gapped search head's inference traffic off the box.
+    """
+    opener = urllib.request.OpenerDirector()
+    for handler in (urllib.request.ProxyHandler({}),
+                    urllib.request.HTTPHandler(),
+                    urllib.request.HTTPSHandler(context=ctx),
+                    _NoRedirects(),
+                    urllib.request.HTTPErrorProcessor(),
+                    urllib.request.HTTPDefaultErrorHandler(),
+                    urllib.request.UnknownHandler()):
+        opener.add_handler(handler)
+    return opener
+
+
+def _read_capped(stream, url: str) -> bytes:
+    """Read one response body up to _MAX_RESPONSE_BYTES and refuse more.
+
+    read() with no argument reads to EOF, which lets the endpoint decide how
+    much memory this search head spends. max_tokens bounds nothing here: it is
+    a request parameter the server is free to ignore, and a server worth
+    defending against ignores it by definition.
+    """
+    blob = stream.read(_MAX_RESPONSE_BYTES + 1)
+    if len(blob) > _MAX_RESPONSE_BYTES:
+        raise ValueError(
+            "%s sent more than %s bytes for one answer and was cut off. A chat "
+            "completion is kilobytes, so this is either the wrong URL or a "
+            "server sending something that is not an answer."
+            % (url, _MAX_RESPONSE_BYTES))
+    return blob
+
+
 def _http(url: str, method: str = "GET", headers: Optional[dict] = None,
           body: Optional[dict] = None, timeout: int = 30,
           verify_tls: bool = True) -> Tuple[int, bytes]:
     """One request. Returns (status, body bytes); raises ValueError in prose.
 
+    This function is the trust boundary. Everything the app sends to a model
+    endpoint leaves here and everything an endpoint says arrives here, so the
+    scheme check, the refusal to follow redirects and the read cap live here
+    rather than in the callers, who each have their own reasons to forget.
+
     urllib reports TLS verification failures with an error message that names
     the certificate, which is the detail that separates "self-signed cert, set
     verify accordingly" from "wrong port". Surfaces it instead of flattening
     every failure to "request failed".
+
+    verify_tls=False disables certificate chain AND hostname checking, and the
+    cost is worth stating plainly: the configured bearer or basic secret is
+    handed to whoever answers on that address, and anyone on the path can be
+    whoever answers. They then choose every verdict this search head caches
+    and expands onto its fleet. It is a setting for a self-signed lab box on a
+    segment you own.
     """
+    # normalize_url() gates the admin page, but riskabilityaianalyze.py reads
+    # endpoint_url straight out of conf, and conf can be written by a
+    # deployment server or edited by hand without passing that gate. This is
+    # the check on the path every request actually takes.
+    scheme = urllib.parse.urlparse(url or "").scheme.lower()
+    if scheme not in ("http", "https"):
+        raise ValueError(
+            "refusing to request %s: only http:// and https:// endpoints are "
+            "allowed" % ((url or "")[:200],))
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     # A named agent, never the default Python-urllib string: Cloudflare (which
@@ -481,13 +663,26 @@ def _http(url: str, method: str = "GET", headers: Optional[dict] = None,
     if data is not None:
         req.add_header("Content-Type", "application/json")
     ctx = None
-    if url.startswith("https:") and not verify_tls:
+    if scheme == "https" and not verify_tls:
         ctx = ssl._create_unverified_context()
     try:
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            return resp.status, resp.read()
+        with _opener(ctx).open(req, timeout=timeout) as resp:
+            return resp.status, _read_capped(resp, url)
     except urllib.error.HTTPError as exc:
-        return exc.code, exc.read()
+        if 300 <= exc.code < 400:
+            # Reported, never followed: see _NoRedirects. An admin who meant
+            # to point at a URL that redirects needs to see that and fix the
+            # setting, and an endpoint trying to steer us somewhere else needs
+            # to fail loudly here.
+            location = ""
+            if exc.headers:
+                location = str(exc.headers.get("Location", ""))[:200]
+            raise ValueError(
+                "%s answered HTTP %s and asked us to go to %s instead. "
+                "Redirects are not followed; set the endpoint URL to the "
+                "address that answers directly." % (url, exc.code, location or "(no Location)"))
+        return exc.code, (_read_capped(exc, url)
+                          if getattr(exc, "fp", None) is not None else b"")
     except urllib.error.URLError as exc:
         reason = getattr(exc, "reason", exc)
         raise ValueError("could not reach %s: %s" % (url, reason))
@@ -495,6 +690,10 @@ def _http(url: str, method: str = "GET", headers: Optional[dict] = None,
         raise ValueError(
             "no answer from %s within %s seconds. A loaded GPU box can "
             "legitimately be slower than this; raise the timeout." % (url, timeout))
+    except ValueError:
+        # Already prose from _read_capped: re-raising keeps it from being
+        # wrapped into a second, vaguer sentence by the catch-all below.
+        raise
     except Exception as exc:
         raise ValueError("request to %s failed: %s" % (url, exc))
 
@@ -564,12 +763,14 @@ def probe_completion(url: str, auth_type: str, username: str, secret: str,
         parsed = parse_llm_json(content)
     except ValueError as exc:
         return {"ok": False, "status": status, "latency_ms": latency,
-                "validation_error": str(exc), "raw": content[:500]}
+                "validation_error": str(exc), "raw": _clean_text(content, 500)}
     clean, error = validate_result(parsed)
     if error:
         return {"ok": False, "status": status, "latency_ms": latency,
                 "validation_error": error,
-                "raw": content[:500]}
+                # The echo the admin page shows so a broken answer can be read
+                # rather than guessed at, cleaned like any other model text.
+                "raw": _clean_text(content, 500)}
     return {"ok": True, "status": status, "latency_ms": latency, "result": clean}
 
 
@@ -581,8 +782,16 @@ def probe_bert(bert_url: str, verify_tls: bool, timeout: int) -> dict:
     """
     base = bert_url.rstrip("/")
     started = time.time()
-    status, raw = _http(base + "/health", timeout=max(5, min(int(timeout), 30)),
-                        verify_tls=verify_tls)
+    # Both calls are guarded because the docstring above promises they are:
+    # _http refuses redirects, oversized bodies and non-http schemes by
+    # raising, and an unguarded raise here would fail the whole connection
+    # test on the one component this app calls optional.
+    try:
+        status, raw = _http(base + "/health", timeout=max(5, min(int(timeout), 30)),
+                            verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"ok": False, "latency_ms": int((time.time() - started) * 1000),
+                "error": str(exc)}
     latency = int((time.time() - started) * 1000)
     if status != 200:
         return {"ok": False, "latency_ms": latency,
@@ -590,10 +799,13 @@ def probe_bert(bert_url: str, verify_tls: bool, timeout: int) -> dict:
     sample = ("A remote code execution vulnerability in a public-facing web "
               "server allows an unauthenticated attacker to gain initial "
               "access and execute commands.")
-    status, raw = _http(base + "/classify", method="POST",
-                        body={"text": sample, "top_k": 3},
-                        timeout=max(5, min(int(timeout), 30)),
-                        verify_tls=verify_tls)
+    try:
+        status, raw = _http(base + "/classify", method="POST",
+                            body={"text": sample, "top_k": 3},
+                            timeout=max(5, min(int(timeout), 30)),
+                            verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"ok": False, "latency_ms": latency, "error": str(exc)}
     if status != 200:
         return {"ok": False, "latency_ms": latency,
                 "error": "/classify answered HTTP %s" % status}
@@ -610,9 +822,16 @@ def probe_bert(bert_url: str, verify_tls: bool, timeout: int) -> dict:
 def summarize_test(kind: str, ok: bool, detail: str) -> str:
     """The one-line history kept in conf so the page can show the last result
     after a reload, not only the one it just ran. Never carries a secret: the
-    detail is prose the probes above wrote."""
+    detail is prose the probes above wrote.
+
+    One line means one line: this ends up as a conf value, and conf files are
+    line-based, so a stray newline in a detail string has nowhere good to go.
+    Today every caller passes prose written on this side, and _clean_text
+    keeps that true if one day a caller passes something a model influenced.
+    """
     stamp = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
-    return "%s · %s · %s · %s" % (stamp, kind, "ok" if ok else "failed", detail[:300])
+    return "%s · %s · %s · %s" % (stamp, kind, "ok" if ok else "failed",
+                                  _clean_text(detail, 300))
 
 
 # ---------------------------------------------------------------------------
@@ -709,11 +928,23 @@ def analyze_finding(url: str, auth_type: str, username: str, secret: str,
          + (("\n\nATT&CK tactic pre-tag: " + ", ".join(tactics)) if tactics else "")},
     ]
     auth = auth_header(auth_type, username, secret)
-    status, raw = _http(
-        url.rstrip("/") + "/v1/chat/completions", method="POST", headers=auth,
-        body={"model": model, "messages": messages,
-              "temperature": 0.1, "max_tokens": int(max_tokens)},
-        timeout=max(10, min(int(timeout), 300)), verify_tls=verify_tls)
+    # _http raises ValueError for the things it now refuses outright: a
+    # redirect, a body past the read cap, a scheme that is not http or https.
+    # Those must arrive here as a per-finding failure, not as an exception.
+    # This function is called through a thread pool whose results are consumed
+    # with list(pool.map(...)), so an escaping exception re-raises in the main
+    # thread and takes down the whole scheduled run, discarding every verdict
+    # already earned in that batch. One hostile or misconfigured endpoint must
+    # cost one finding, never the run.
+    try:
+        status, raw = _http(
+            url.rstrip("/") + "/v1/chat/completions", method="POST", headers=auth,
+            body={"model": model, "messages": messages,
+                  "temperature": 0.1, "max_tokens": int(max_tokens)},
+            timeout=max(10, min(int(timeout), 300)), verify_tls=verify_tls)
+    except ValueError as exc:
+        return {"ok": False, "latency_ms": int((time.time() - started) * 1000),
+                "source": "T2", "error": str(exc)}
     latency = int((time.time() - started) * 1000)
 
     if status != 200:
@@ -730,42 +961,116 @@ def analyze_finding(url: str, auth_type: str, username: str, secret: str,
         parsed = parse_llm_json(content)
     except ValueError as exc:
         return {"ok": False, "latency_ms": latency, "source": "T2",
-                "error": str(exc), "raw": content[:300]}
+                "error": str(exc), "raw": _clean_text(content, 300)}
     clean, error = validate_result(parsed)
     if error:
         return {"ok": False, "latency_ms": latency, "source": "T2",
-                "error": error, "raw": content[:300]}
+                "error": error, "raw": _clean_text(content, 300)}
     return {"ok": True, "latency_ms": latency, "source": "T2", "result": clean}
 
 
-def verdict_sig(cve: dict) -> str:
+def _cvss_band(value) -> str:
+    """CVSS as one of four band characters, or "" when there is no score.
+
+    A band rather than the number itself, because the signature has two
+    writers. SPL's tostring and Python's str disagree about how to print the
+    same float ("14" against "14.000000"), so a number in the signature drifts
+    between the two writers and every CVE re-analyses forever. The SPL half
+    computes this with tonumber() and the same three thresholds, and tonumber()
+    of a missing or unparseable score is null, which is why anything this
+    cannot read becomes "" here rather than 0.
+    """
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if score < 4:
+        return "0"
+    if score < 7:
+        return "1"
+    if score < 9:
+        return "2"
+    return "3"
+
+
+def _epss_band(value) -> str:
+    """EPSS as one of five band characters, absent or unparseable meaning 0.0.
+
+    Banded for the format-stability reason above, and present at all because
+    the version 1 signature left EPSS out entirely: a CVE could go from 0.002
+    to 0.70 on the morning it was added to KEV and keep serving a verdict
+    written when nobody was exploiting it, for a week, until the staleness
+    clock ran out. The bands are coarse enough that ordinary daily noise does
+    not re-analyse the fleet, and sharp enough that a real move does.
+    """
+    try:
+        epss = float(value)
+    except (TypeError, ValueError):
+        epss = 0.0
+    if epss < 0.01:
+        return "0"
+    if epss < 0.05:
+        return "1"
+    if epss < 0.20:
+        return "2"
+    if epss < 0.50:
+        return "3"
+    return "4"
+
+
+def verdict_sig(cve: dict, salt: str) -> str:
     """Content signature of every input that may change a CVE's verdict.
 
-    Computed identically on the SPL side (md5 of the same joined fields in
-    the saved searches) and here in the command. The stored verdict is valid
-    only while this signature matches: an EPSS move, a new KEV listing, a
-    severity change or a revised description produces a new signature and
-    forces one re-analysis. Deliberately EXCLUDED: anything per-asset
-    (exposure, version match, criticality) — those are applied per finding
-    by deterministic SPL after the verdict, so they can never trigger model
-    calls.
+    Version 2: md5 of salt, CVE id, lowercased severity, KEV as 1/0, CVSS
+    band, EPSS band and advisory title, joined with "|". The identical
+    computation lives in savedsearches.conf as an SPL md5(), in the candidate
+    queue and the expansion searches. The two halves must agree byte for byte:
+    a divergence does not fail, it silently splits the cache into one half that
+    never gets read and one that never gets written, and nothing anywhere
+    reports it. That is why the normalisation here is exactly what SPL does and
+    nothing more, no trimming of stray whitespace and no clever coercion. A
+    tidying step that exists in only one of the two writers is the divergence.
 
-    Strings only — deliberately NO float pieces: SPL's tostring and
-    Python's str format the same number differently ("14" vs "14.000000"),
-    and a signature that drifts between the SPL writer and the Python
-    writer would re-analyse forever. EPSS is therefore NOT in the
-    signature; verdict freshness is time-bounded instead (the expansion
-    treats verdicts older than 7 days as stale), and the queue's urgency
-    ordering always uses live EPSS regardless.
+    Deliberately EXCLUDED: anything per-asset (exposure, version match,
+    criticality). Those are applied per finding by deterministic SPL after the
+    verdict, so they can never trigger model calls.
+
+    The salt is passed in rather than derived here, and it is not optional.
+    It carries the schema version and the model name, so swapping the model or
+    editing the prompt invalidates every cached verdict exactly once instead of
+    leaving the old model's judgements alive under the new model's name. Its
+    one source of truth is the riskability_ai_sig_salt macro, which the SPL
+    half expands directly; the caller reads that macro and hands the value
+    over. Reconstructing it here from the model name would make a second
+    source of truth for the one string whose whole job is to be the same in
+    both writers.
     """
     import hashlib
 
+    # Refuse an empty salt rather than hash one. The caller already raises if
+    # the macro is unreadable, but this is the function every future caller
+    # will reach for, and the failure it prevents is the worst kind: an empty
+    # salt hashes perfectly well, matches nothing the SPL half ever wrote, and
+    # so re-analyses every CVE on every run forever with no error anywhere.
+    # Loud here, once, beats silent there, always.
+    if not str(salt or "").strip():
+        raise ValueError(
+            "verdict_sig needs the riskability_ai_sig_salt value; an empty "
+            "salt would silently invalidate the whole verdict cache")
+
     kev01 = "1" if _bool(cve.get("kev")) else "0"
     basis = "|".join([
+        str(salt),
         str(cve.get("cve_id") or ""),
-        str(cve.get("severity") or "").strip().lower(),
+        str(cve.get("severity") or "").lower(),
         kev01,
-        str(cve.get("cvss_score") or cve.get("cvss_base_score") or "").strip(),
-        str(cve.get("title") or cve.get("cve_description") or "").strip(),
+        _cvss_band(cve.get("cvss_score") if cve.get("cvss_score") not in (None, "")
+                   else cve.get("cvss_base_score")),
+        _epss_band(cve.get("epss")),
+        # cve_description first: it is the field the queue search writes, and
+        # it holds exactly what the SPL half hashed, the advisory title with
+        # the finding's own title as fallback. A row that has neither is a row
+        # the model was given no title for, and "" is the honest signature.
+        str(cve.get("cve_description") or cve.get("title") or ""),
     ])
     return hashlib.md5(basis.encode("utf-8")).hexdigest()

@@ -941,22 +941,6 @@ class SearchCommand:
         if not header:
             return None
 
-        # VENDOR PATCH (riskability): Splunk 9.4+ prepends key:value
-        # handshake lines ("splunkVersion:9.4.14", "allowStream:1", ...) to
-        # the chunked transport header; the 3.0.0 vendored SDK predates that
-        # handshake and hard-failed on the first one. Skip every preamble
-        # line until the real "chunked 1.0,N,M" header arrives.
-        # RE-APPLY THIS PATCH after any vendored SDK upgrade.
-        for _ in range(16):
-            candidate = ensure_str(header)
-            if SearchCommand._header.match(candidate):
-                break
-            if not header:
-                return None
-            header = istream.readline()
-            if not header:
-                return None
-
         match = SearchCommand._header.match(ensure_str(header))
 
         if match is None:
