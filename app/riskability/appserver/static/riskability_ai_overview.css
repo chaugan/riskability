@@ -369,3 +369,17 @@ body.rk-help-off .rk-ai-method-card { display: none; }
     overflow-x: auto; max-width: 100%;
 }
 .rk-ai-explain-meta { margin: 4px 0 0; font-size: 11px; }
+
+
+/* Sort and filter on the queue. */
+.rk-ai-sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.rk-ai-sortable:hover { color: #fff; }
+.rk-ai-sorted { color: #fff; }
+.rk-ai-sort-arrow { font-size: 10px; opacity: 0.8; }
+.rk-ai-filter-row { display: flex; gap: 8px; align-items: center; margin: 8px 0 2px; }
+.rk-ai-filter-input {
+    flex: 1 1 320px; max-width: 640px;
+    background: rgba(255,255,255,0.04); border: 1px solid #3c4a57; border-radius: 4px;
+    color: #d6dde4; padding: 5px 9px; font-size: 12px;
+}
+.rk-ai-filter-input:focus { outline: none; border-color: #2a86c4; }

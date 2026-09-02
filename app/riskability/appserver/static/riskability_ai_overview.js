@@ -20,6 +20,14 @@
     var tierFilter = "all"; // current filter selection
     var page = 0;          // zero based page index into the filtered rows
     var pageSize = 25;
+    // Sort and text filter over the loaded verdicts, client side, on top of
+    // the tier filter and the pager. Score descending is the queue's natural
+    // order and stays the default; a click on a header sorts by it, a second
+    // click reverses, and the filter box matches any word against the CVE,
+    // title, software, vendor, action and rationale of every loaded row.
+    var sortKey = "priority_score";
+    var sortDir = -1;
+    var textFilter = "";
 
     // Why this table is paged rather than long. Every analysed CVE used to be
     // written into the DOM at once: on the fleet this was built against that
@@ -651,9 +659,24 @@
             card.appendChild(clear);
         }
 
+        card.appendChild(filterBox(filtered.length));
+        var needle = textFilter.trim().toLowerCase();
+        if (needle) {
+            var words = needle.split(/\s+/);
+            filtered = filtered.filter(function (r) {
+                var hay = [r.cve_id, r.title, r.package, r.vendor, r.installed_version,
+                           r.recommended_action, r.rationale, r.priority_tier,
+                           r.exploitability_signal, r.exposure_zone]
+                    .join(" ").toLowerCase();
+                return words.every(function (w) { return hay.indexOf(w) >= 0; });
+            });
+        }
+        filtered = sorted(filtered);
+
         if (!filtered.length) {
             card.appendChild(el("p", "rk-dim",
-                rows.length ? "No " + tierFilter + " findings. Try another tier."
+                needle ? "Nothing matches \u201c" + textFilter.trim() + "\u201d in this tier."
+                : rows.length ? "No " + tierFilter + " findings. Try another tier."
                 : "No analysis results yet. The first run happens after the queue " +
                   "search completes and the GPU server works through it."));
             return;
@@ -661,8 +684,23 @@
 
         var tbl = el("table", "rk-table rk-ai-table");
         var head = el("tr");
-        ["Tier", "Score", "CVE / Advisory", "Software", "Action", "Why"].forEach(function (h) {
-            head.appendChild(el("th", null, h));
+        [["Tier", "priority_score"], ["Score", "priority_score"], ["CVE / Advisory", "cve_id"],
+         ["Software", "package"], ["Action", "recommended_action"], ["Why", null]].forEach(function (h) {
+            var th = el("th", h[1] ? "rk-ai-sortable" : null, h[0]);
+            if (h[1]) {
+                if (sortKey === h[1]) {
+                    th.className += " rk-ai-sorted";
+                    th.appendChild(el("span", "rk-ai-sort-arrow", sortDir < 0 ? " \u25be" : " \u25b4"));
+                }
+                th.title = "Sort by " + h[0];
+                th.addEventListener("click", function () {
+                    if (sortKey === h[1]) { sortDir = -sortDir; }
+                    else { sortKey = h[1]; sortDir = (h[1] === "priority_score") ? -1 : 1; }
+                    page = 0;
+                    render();
+                });
+            }
+            head.appendChild(th);
         });
         tbl.appendChild(head);
 
@@ -824,6 +862,54 @@
         if (pageCount > 1) {
             card.appendChild(pager(filtered.length, pageCount, start, pageRows.length));
         }
+    }
+
+    function sorted(rows) {
+        var key = sortKey, dir = sortDir;
+        var out = rows.slice();
+        out.sort(function (a, b) {
+            var x = a[key], y = b[key];
+            if (key === "priority_score") { x = Number(x) || 0; y = Number(y) || 0; }
+            else { x = String(x || "").toLowerCase(); y = String(y || "").toLowerCase(); }
+            if (x < y) return -1 * dir;
+            if (x > y) return 1 * dir;
+            // Ties keep score order, so sorting by software still lists the
+            // worst finding for that software first.
+            return (Number(b.priority_score) || 0) - (Number(a.priority_score) || 0);
+        });
+        return out;
+    }
+
+    var filterTimer = null;
+    function filterBox(total) {
+        var bar = el("div", "rk-ai-filter-row");
+        var input = el("input", "rk-ai-filter-input");
+        input.type = "search";
+        input.placeholder = "Filter these " + total + " rows: CVE, software, vendor, action, words in the reasoning";
+        input.value = textFilter;
+        input.setAttribute("aria-label", "Filter the table");
+        // Debounced, and re-rendered without losing the caret: the whole
+        // table is rebuilt on each change, so the input is recreated and
+        // given back its value and focus.
+        input.addEventListener("input", function () {
+            var v = input.value;
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(function () {
+                textFilter = v;
+                page = 0;
+                render();
+                var again = document.querySelector(".rk-ai-filter-input");
+                if (again) { again.focus(); again.setSelectionRange(v.length, v.length); }
+            }, 180);
+        });
+        bar.appendChild(input);
+        if (textFilter.trim()) {
+            var clear = el("button", "rk-ai-pager-btn", "clear");
+            clear.type = "button";
+            clear.addEventListener("click", function () { textFilter = ""; page = 0; render(); });
+            bar.appendChild(clear);
+        }
+        return bar;
     }
 
     // One pager, rendered above the table and again below it when there is
