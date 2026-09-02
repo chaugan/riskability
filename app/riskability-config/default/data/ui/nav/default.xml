@@ -2,5 +2,6 @@
   <view name="riskability_admin" default="true"/>
   <view name="riskability_ai"/>
   <view name="riskability_escalations"/>
+  <view name="riskability_firewall"/>
   <view name="search"/>
 </nav>

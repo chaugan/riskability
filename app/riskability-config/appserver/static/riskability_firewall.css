@@ -1,0 +1,16 @@
+.rk-fw-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px 20px; margin: 12px 0; }
+.rk-fw-row { display: flex; flex-direction: column; gap: 3px; }
+.rk-fw-wide { grid-column: 1 / -1; }
+.rk-fw-label { font-size: 12px; font-weight: 600; color: #d6dde4; }
+.rk-fw-input {
+    background: rgba(255,255,255,0.04); border: 1px solid #3c4a57; border-radius: 4px;
+    color: #d6dde4; padding: 5px 8px; font-size: 12px; font-family: inherit;
+}
+textarea.rk-fw-input { font-family: Consolas, "Liberation Mono", Menlo, monospace; font-size: 11px; }
+.rk-fw-input:focus { outline: none; border-color: #2a86c4; }
+.rk-fw-help { font-size: 11px; }
+.rk-fw-actions { display: flex; gap: 8px; margin: 6px 0 10px; }
+.rk-fw-btn { background: rgba(255,255,255,0.05); border: 1px solid #3c4a57; border-radius: 4px; color: #d6dde4; padding: 5px 12px; cursor: pointer; }
+.rk-fw-primary { background: #1f6b9c; border-color: #2a86c4; color: #fff; }
+.rk-fw-btn:disabled { opacity: 0.5; cursor: default; }
+.rk-fw-query { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(255,255,255,0.04); padding: 6px 8px; border-radius: 4px; margin-top: 6px; }

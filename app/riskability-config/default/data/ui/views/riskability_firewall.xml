@@ -1,0 +1,26 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_firewall.js" stylesheet="application.css,riskability_admin.css,riskability_firewall.css">
+  <label>Firewall data source</label>
+  <description>Where the network evidence pipeline reads permitted flows from, what counts as an entry point, and how fresh the data has to be.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px;">
+          <b>Nothing here changes a priority. It decides what the app is allowed to say about the network.</b>
+          <span>With no index named, every Network evidence row reads <i>unknown</i>,
+          which is the correct answer for a site that has not connected its firewall
+          logs. Naming one lets the pipeline grade a port <i>confirmed observed</i>
+          when a permitted flow from a declared entry point reached it, and, only
+          where a <i>constant</i> pressure entry point is declared, <i>not observed</i>
+          when none did. Test the mapping before saving: a source that yields no edges
+          produces a page of unknowns that reads as a fact about the network.</span>
+          <span>Saving writes one settings stanza and regenerates the five
+          <tt>riskability_fw_*</tt> macros from it through Splunk's configuration
+          service, so on a search head cluster every member reads the same source.
+          Edit the settings, not the macros.</span>
+        </div>
+        <div id="riskability-firewall-admin"></div>
+      </html>
+    </panel>
+  </row>
+</dashboard>
