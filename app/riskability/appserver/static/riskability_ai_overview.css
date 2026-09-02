@@ -191,3 +191,127 @@
     width: 100%;
     height: 260px;
 }
+
+/* ---------------------------------------------------------------------------
+   Pager. The table used to render every analysed CVE at once; on the fleet
+   this was built against that was 5,753 rows and a page over a million pixels
+   tall. Rendered above the table always, and below it as well once there is
+   more than one page.
+   --------------------------------------------------------------------------- */
+
+.rk-ai-pager {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin: 10px 0;
+    font-size: 12px;
+    color: #b9c2cc;
+}
+
+.rk-ai-pager-count { white-space: nowrap; }
+
+.rk-ai-pager-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.rk-ai-pager-size {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.rk-ai-pager-btn {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid #3c4a57;
+    border-radius: 4px;
+    color: #d6dde4;
+    padding: 3px 9px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.rk-ai-pager-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.1); }
+
+/* Disabled rather than hidden: controls that vanish at the ends of a range
+   move the ones next to them, and a reader paging quickly then clicks the
+   wrong thing. */
+.rk-ai-pager-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+.rk-ai-pager-active {
+    background: #1f6b9c;
+    border-color: #2a86c4;
+    color: #fff;
+}
+
+.rk-ai-pager-page {
+    white-space: nowrap;
+    padding: 0 4px;
+}
+
+/* ---------------------------------------------------------------------------
+   How this page works. Collapsed by default except the first section: the
+   people who need it need it once, and the people who do not are here to read
+   the queue.
+   --------------------------------------------------------------------------- */
+
+/* The same contract as every other explanatory block in the app: an amber
+   marker down the side, and it disappears with the Panel notes toggle. This is
+   the app talking about itself, which is exactly what that switch is for. The
+   sections stay individually collapsible underneath, because a reader who
+   wants the notes on does not necessarily want the whole scoring table open
+   every time they load the queue. */
+.rk-ai-method-card {
+    margin-bottom: 14px;
+    border-left: 3px solid #f8be34;
+}
+
+.rk-ai-method-card > h3 { color: #f8be34; }
+
+body.rk-help-off .rk-ai-method-card { display: none; }
+
+.rk-ai-method {
+    border-top: 1px solid #2f3a44;
+    padding: 8px 0 4px;
+}
+
+.rk-ai-method:first-of-type { border-top: none; }
+
+.rk-ai-method > summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #d6dde4;
+    padding: 4px 0;
+    list-style: revert;
+}
+
+.rk-ai-method > summary:hover { color: #fff; }
+
+.rk-ai-method p { margin: 6px 0; max-width: 96ch; }
+
+.rk-ai-method-list {
+    margin: 6px 0 6px 18px;
+    max-width: 96ch;
+}
+
+.rk-ai-method-list li { margin: 4px 0; }
+
+.rk-ai-weights,
+.rk-ai-tiers {
+    margin: 10px 0 4px;
+    max-width: 860px;
+}
+
+.rk-ai-weights td,
+.rk-ai-tiers td { padding: 3px 10px 3px 0; }
+
+.rk-ai-weight {
+    font-weight: 700;
+    white-space: nowrap;
+}

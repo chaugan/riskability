@@ -18,12 +18,14 @@ Covers the two things that must not silently rot:
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -311,6 +313,79 @@ def _raises(fn):
     return False
 
 
+def test_dashboard_weights_match_the_scorer():
+    """The AI page prints the scoring table; this fails when it drifts.
+
+    The weights live in ai_config.py and are written a second time in
+    riskability_ai_overview.js so a reader can check the arithmetic against the
+    number in front of them. Two copies of a constant is a promise to keep them
+    equal, and a dashboard that explains the score wrongly is worse than one
+    that does not explain it at all: it is confidently wrong about the only
+    thing on the page a reader might verify.
+    """
+    js_path = (Path(__file__).resolve().parents[1] / "app" / "riskability" /
+               "appserver" / "static" / "riskability_ai_overview.js")
+    if not js_path.exists():
+        check("the dashboard script exists", False, str(js_path))
+        return
+    js = js_path.read_text(encoding="utf-8")
+
+    def weights(block_name):
+        m = re.search(block_name + r"\s*=\s*\[(.*?)\n    \];", js, re.S)
+        if not m:
+            return {}
+        found = {}
+        for label, value in re.findall(r'\["([^"]+)",\s*"([^"]+)"', m.group(1)):
+            clean = (value.replace("\\u2212", "-").replace("+", "").strip())
+            try:
+                found[label] = int(clean)
+            except ValueError:
+                pass
+        return found
+
+    got = weights("SCORE_ROWS")
+    check("the dashboard prints a scoring table", bool(got), str(len(got)))
+
+    expected = {
+        "On CISA KEV": ai_config._W_KEV,
+        "EPSS \\u2265 50%": ai_config._W_EPSS["4"],
+        "EPSS 20\\u201350%": ai_config._W_EPSS["3"],
+        "EPSS 5\\u201320%": ai_config._W_EPSS["2"],
+        "EPSS 1\\u20135%": ai_config._W_EPSS["1"],
+        "EPSS < 1%": ai_config._W_EPSS["0"],
+        "CVSS \\u2265 9": ai_config._W_CVSS["3"],
+        "CVSS 7\\u20139": ai_config._W_CVSS["2"],
+        "CVSS 4\\u20137": ai_config._W_CVSS["1"],
+        "CVSS < 4, or none": ai_config._W_CVSS["0"],
+        "Internet-facing": ai_config._W_EXPOSURE["internet-facing"],
+        "Internal": ai_config._W_EXPOSURE["internal"],
+        "Isolated": ai_config._W_EXPOSURE["isolated"],
+        "Exposure unknown": ai_config._W_EXPOSURE_UNKNOWN,
+        "Version confirmed vulnerable": ai_config._W_VERSION["yes"],
+        "Version unknown": ai_config._W_VERSION["unknown"],
+        "Version confirmed NOT vulnerable": ai_config._W_VERSION["no"],
+    }
+    for label, want in expected.items():
+        check("dashboard weight for %r is %s" % (label, want),
+              got.get(label) == want, "page says %s" % got.get(label))
+
+    # Every weight the scorer can add must appear on the page. A term that is
+    # in the arithmetic and not in the table is the same silent gap in a
+    # different place.
+    check("the page lists every weight the scorer uses",
+          len(got) == len(expected), "%d on the page, %d expected"
+          % (len(got), len(expected)))
+
+    tiers = re.search(r"TIER_ROWS\s*=\s*\[(.*?)\n    \];", js, re.S)
+    check("the dashboard prints a tier table", bool(tiers))
+    if tiers:
+        floors = [int(x) for x in re.findall(r'"(\d+)\\u2013\d+"', tiers.group(1))]
+        want_floors = [cut for cut, _ in ai_config.TIER_THRESHOLDS] + [0]
+        check("tier floors match TIER_THRESHOLDS", floors == want_floors,
+              "page %s, scorer %s" % (floors, want_floors))
+
+
+
 def main():
     test_settings()
     test_result()
@@ -318,6 +393,7 @@ def main():
     test_verdict_sig()
     test_priority_is_deterministic()
     test_conf_files()
+    test_dashboard_weights_match_the_scorer()
 
     server = MockServer(8931)
     try:
