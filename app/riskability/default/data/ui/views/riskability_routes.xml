@@ -1,0 +1,223 @@
+<form version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+  <label>Routes</label>
+  <description>The jumps a permitted flow has actually been seen to make: from a declared entry point to a host, from that host onward, and what is listening where it lands.</description>
+
+  <!-- Whether there is anything to draw, decided from the data and not from a
+       setting. The edge macro resolves to nothing until an administrator
+       configures the firewall source, and a configured source can still yield
+       no edges. Both are stated to the reader in their own words; neither is
+       shown as an empty graph. -->
+  <search id="rk_fw_state">
+    <query>| `riskability_fw_edges`
+| stats count AS edges
+| append [| inputlookup riskability_netevidence_lookup | stats count AS ledger, count(eval(coverage_state="no firewall data")) AS nofw]
+| stats max(edges) AS edges, max(ledger) AS ledger, max(nofw) AS nofw
+| eval edges = coalesce(edges, 0), ledger = coalesce(ledger, 0), nofw = coalesce(nofw, 0)
+| eval state = case(edges == 0 AND (ledger == 0 OR nofw == ledger), "unconfigured", edges == 0, "empty", 1=1, "ready")</query>
+    <earliest>-30d</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.state$ == &quot;ready&quot;">
+        <set token="fw_ready">1</set>
+        <unset token="fw_unconfigured"></unset>
+        <unset token="fw_empty"></unset>
+      </condition>
+      <condition match="$result.state$ == &quot;empty&quot;">
+        <set token="fw_empty">1</set>
+        <unset token="fw_ready"></unset>
+        <unset token="fw_unconfigured"></unset>
+      </condition>
+      <condition>
+        <set token="fw_unconfigured">1</set>
+        <unset token="fw_ready"></unset>
+        <unset token="fw_empty"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <init>
+    <set token="host_filter">*</set>
+    <set token="entry_filter">*</set>
+  </init>
+
+  <row depends="$fw_unconfigured$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0;">
+          <b>No firewall data source has been configured, so there are no routes to draw.</b>
+          <span>This page draws the jumps a permitted flow has been seen to make,
+          from the firewall's own logs. Nothing here is measured on the hosts, so
+          without a firewall source the app cannot say anything about the network
+          and shows nothing rather than guessing. Exposure on the other pages is
+          unaffected: it is measured from how each process bound its socket.</span>
+          <span>An administrator configures the source in <b>Riskability
+          Configuration, Firewall data source</b>: the index and field names, and
+          the entry points (the internet, an admin network) that a route can start
+          from. Until then every Network evidence row reads <i>unknown</i>, which
+          is correct.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row depends="$fw_empty$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0;">
+          <b>A firewall source is configured, but it yielded no permitted edges in the last 30 days.</b>
+          <span>Either the source holds no permitted flows yet, or the field mapping
+          does not match the events. An administrator can run <i>Test source</i>
+          on the Firewall data source page to see which. Nothing is drawn until an
+          edge exists, because an empty graph and a quiet network look the same.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <fieldset submitButton="false" depends="$fw_ready$">
+    <input type="dropdown" token="entry_filter" searchWhenChanged="true">
+      <label>Entry point</label>
+      <choice value="*">Any entry point</choice>
+      <search>
+        <query>| `riskability_fw_entry_points` | table entry_name, entry_cidr</query>
+      </search>
+      <fieldForLabel>entry_name</fieldForLabel>
+      <fieldForValue>entry_cidr</fieldForValue>
+      <default>*</default>
+    </input>
+    <input type="text" token="host_filter" searchWhenChanged="true">
+      <label>Host (blank for all)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <row depends="$fw_ready$">
+    <panel>
+      <title>Possible jumps, as the firewall has seen them</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <!-- Five layers, left to right: where an attacker starts, the host a
+               permitted flow reached, the port it reached on that host, the
+               software listening there, and the CVEs open in it. A lateral
+               jump (a flow from one inventory host to another) enters the
+               graph as host -> port on the next host, so the picture stays a
+               left-to-right chain and a host that reaches three others fans
+               out to their ports. Addresses are resolved through the same
+               identity rows the evidence pipeline uses, and an address more
+               than one host has held is refused rather than guessed. -->
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$
+| where observed_grade IN ("confirmed observed", "historically observed")
+| eval rk_entry = mvindex(split(coalesce(entry_text, "entry point"), " "), 0)
+| search rk_entry=$entry_filter|s$
+| eval rk_portnode = hostname . ":" . port
+| eval rk_v = coalesce(tonumber(sessions), 1)
+| eval rk_rows = mvappend(rk_entry . "|entry|" . hostname . "|host|" . rk_v,
+                          hostname . "|host|" . rk_portnode . "|port|" . rk_v)
+| fields rk_rows
+| mvexpand rk_rows
+| append
+    [ | `riskability_fw_edges`
+      | lookup riskability_hostaddr_lookup address AS src_ip OUTPUT hostname AS rk_src_host, claimants AS rk_src_claim
+      | lookup riskability_hostaddr_lookup address AS dest_ip OUTPUT hostname AS rk_dst_host, claimants AS rk_dst_claim
+      | where isnotnull(rk_src_host) AND isnotnull(rk_dst_host) AND rk_src_host != rk_dst_host
+      | where mvcount(rk_src_host) == 1 AND mvcount(rk_dst_host) == 1
+      | where coalesce(tonumber(rk_src_claim), 1) &lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &lt;= 1
+      | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
+      | stats sum(sessions) AS rk_v BY rk_src_host, rk_dst_host, port
+      | eval rk_rows = rk_src_host . "|host|" . rk_dst_host . ":" . port . "|port|" . rk_v
+      | fields rk_rows ]
+| append
+    [ | inputlookup riskability_netevidence_lookup
+      | where observed_grade IN ("confirmed observed", "historically observed")
+      | search hostname=$host_filter|s$
+      | fields hostname, port
+      | lookup riskability_exposure_lookup hostname, port OUTPUT package AS rk_pkg
+      | mvexpand rk_pkg
+      | where isnotnull(rk_pkg) AND rk_pkg != ""
+      | eval rk_portnode = hostname . ":" . port
+      | join type=left hostname, rk_pkg
+          [ | inputlookup riskability_findings_state_lookup where status="open"
+            | rename package AS rk_pkg
+            | lookup riskability_aiverdicts_lookup cve_id OUTPUT priority_tier AS rk_tier
+            | eval rk_tier = coalesce(rk_tier, "P" . case(severity=="critical", 1, severity=="high", 2, severity=="medium", 3, 1=1, 4))
+            | stats dc(cve_id) AS rk_cves, min(rk_tier) AS rk_top BY hostname, rk_pkg ]
+      | eval rk_cves = coalesce(rk_cves, 0)
+      | eval rk_rows = mvappend(rk_portnode . "|port|" . rk_pkg . "|package|" . rk_cves,
+                                if(rk_cves &gt; 0, rk_pkg . "|package|" . rk_cves . " open, worst " . rk_top . "|cve|" . rk_cves, null()))
+      | fields rk_rows
+      | mvexpand rk_rows ]
+| where isnotnull(rk_rows)
+| eval source = mvindex(split(rk_rows, "|"), 0), source_kind = mvindex(split(rk_rows, "|"), 1),
+       target = mvindex(split(rk_rows, "|"), 2), target_kind = mvindex(split(rk_rows, "|"), 3),
+       value = tonumber(mvindex(split(rk_rows, "|"), 4))
+| stats max(value) AS value BY source, source_kind, target, target_kind
+| sort 5000 - value
+| head 300
+| fields source, source_kind, target, target_kind, value</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_chart.chartType">chaingraph</option>
+        <option name="riskability.riskability_chart.chainKinds">entry:entry point,host:host reached,port:port reached,package:software listening,cve:open findings</option>
+        <option name="riskability.riskability_chart.valueLabel">sessions or CVEs</option>
+        <option name="riskability.riskability_chart.emptyText">Edges exist, but none from a declared entry point has resolved to a host and port in the inventory. Either no entry point is declared, or the addresses the firewall logged are not ones the inventory has seen a host hold. The Network evidence page's "where the app refused to name a host" panel says which.</option>
+        <option name="height">640</option>
+        <drilldown>
+          <set token="host_filter">$row.node$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status rk-warn" style="margin:8px 0 0">
+          <b>A jump here is a permitted flow the firewall logged, not an exploit path.</b>
+          <span>The hop after a compromise needs privilege, credentials or a trust
+          relationship, and a firewall log records none of them. Read the graph as
+          "traffic was allowed and happened between these points", and the last two
+          columns as "and this is what was listening there, with these findings
+          open". Widths are sessions on the left and open CVEs on the right; a
+          thin edge is still a path.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row depends="$fw_ready$">
+    <panel>
+      <title>The jumps, listed</title>
+      <table>
+        <search>
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$
+| where observed_grade IN ("confirmed observed", "historically observed")
+| eval From = coalesce(entry_text, ""), To = hostname . ":" . port, Kind = "entry point to host"
+| eval rk_ef = $entry_filter|s$
+| where rk_ef == "*" OR From == rk_ef
+| fields - rk_ef
+| fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen
+| append
+    [ | `riskability_fw_edges`
+      | lookup riskability_hostaddr_lookup address AS src_ip OUTPUT hostname AS rk_src_host, claimants AS rk_src_claim
+      | lookup riskability_hostaddr_lookup address AS dest_ip OUTPUT hostname AS rk_dst_host, claimants AS rk_dst_claim
+      | where isnotnull(rk_src_host) AND isnotnull(rk_dst_host) AND rk_src_host != rk_dst_host
+      | where mvcount(rk_src_host) == 1 AND mvcount(rk_dst_host) == 1
+      | where coalesce(tonumber(rk_src_claim), 1) &lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &lt;= 1
+      | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
+      | stats sum(sessions) AS sessions, max(edge_last_seen) AS edge_last_seen, values(src_ip) AS srcs_text BY rk_src_host, rk_dst_host, port
+      | eval From = rk_src_host, To = rk_dst_host . ":" . port, Kind = "host to host", observed_grade = "lateral, permitted"
+      | fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen ]
+| eval "Last seen" = if(isnotnull(edge_last_seen) AND edge_last_seen != "", strftime(tonumber(edge_last_seen), "%Y-%m-%d %H:%M"), "")
+| eval Sources = mvjoin(mvdedup(srcs_text), " ")
+| rename observed_grade AS Grade, sessions AS Sessions
+| sort - Sessions
+| table Kind, From, To, Grade, Sessions, Sources, "Last seen"</query>
+          <earliest>-30d</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+</form>
