@@ -109,14 +109,70 @@
             return JSON.parse(text);
         });
     }).then(function (s) {
-        if (!s || s.enabled !== true) { hideNavItem(); return; }
+        if (!s || s.enabled !== true) {
+            // The page's ACL keeps it out of every non-admin's navigation while
+            // AI is off, so anybody who can see this is an administrator, and
+            // a blank panel tells them nothing. Say what the state is and
+            // where it is changed.
+            hideNavItem();
+            renderDisabled();
+            return;
+        }
         state = s;
         render();
-    }).catch(function () { hideNavItem(); });
+    }).catch(function () {
+        hideNavItem();
+        renderUnreachable();
+    });
+
+    function notice(title, body, cls) {
+        var box = el("div", "rk-status " + (cls || ""));
+        box.appendChild(el("b", null, title));
+        box.appendChild(el("span", null, body));
+        root.textContent = "";
+        root.appendChild(box);
+    }
+
+    function renderDisabled() {
+        notice("AI analysis is currently switched off by an administrator.",
+               "Nothing on this page runs and no data is sent to a model endpoint "
+               + "while it is off. An administrator can switch it on under "
+               + "Riskability Configuration, AI analysis. Priorities elsewhere in "
+               + "the app are unaffected: they are computed from measured facts, "
+               + "not from the model.", "rk-warn");
+    }
+
+    function renderUnreachable() {
+        notice("The AI status endpoint did not answer.",
+               "This page could not find out whether AI analysis is switched on. "
+               + "That is a search head problem rather than a model problem: the "
+               + "endpoint is local to Splunk and makes no outbound call. Reload, "
+               + "and if it persists check splunkd's log for riskability_ai_status.",
+               "rk-bad");
+    }
 
     var cveFilter = null;   // set by clicking a stem in the sea chart
 
+    // Re-rendering empties the root, which collapses the document for one
+    // frame; the browser clamps the scroll position to the new, short page,
+    // and the reader lands at the top every time they turn a page or change
+    // the rows per page. Everything that re-renders goes through this, which
+    // remembers the offset and puts it back once the new content has laid
+    // out. A pager that moves the page is a pager people stop using.
+    function preserveScroll(fn) {
+        var y = window.scrollY || window.pageYOffset || 0;
+        fn();
+        window.scrollTo(0, y);
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(function () { window.scrollTo(0, y); });
+        }
+    }
+
     function render() {
+        preserveScroll(renderNow);
+    }
+
+    function renderNow() {
         root.textContent = "";
         var ov = state.overview || {};
         buildSummary(ov);
@@ -672,15 +728,12 @@
                 if (enabled) {
                     b.addEventListener("click", function () {
                         page = target;
+                        // Stay exactly where the reader is. An earlier version
+                        // scrolled to the table after the re-render, which read
+                        // as the page jumping about, because the re-render had
+                        // already thrown the position away and the scroll was
+                        // a second movement on top of the first.
                         render();
-                        // Back to the top of the table, not the top of the
-                        // document: the chart above is context the reader
-                        // already has, and re-reading it every page turn is
-                        // the sort of thing that makes a pager feel broken.
-                        var t = document.querySelector(".rk-ai-table");
-                        if (t && t.scrollIntoView) {
-                            t.scrollIntoView({block: "start", behavior: "smooth"});
-                        }
                     });
                 }
                 return b;
