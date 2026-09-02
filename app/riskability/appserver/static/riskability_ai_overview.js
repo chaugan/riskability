@@ -226,22 +226,29 @@
         card.appendChild(what);
 
         // --- the division of labour, which is the part people get wrong --------
-        var who = methodSection("What the model does, and what it cannot do", false);
+        var who = methodSection("What the model is asked, and what is done with each answer", false);
         who.appendChild(el("p", null,
-            "The score is arithmetic. The model is not asked for it and cannot "
-            + "change it."));
+            "The model returns one JSON object per finding, against a fixed "
+            + "schema. Not every field in it is treated the same way, and the "
+            + "difference is the whole design."));
         var ul = el("ul", "rk-ai-method-list");
-        [["The app decides", "the score, the tier and the ordering, from KEV, EPSS, "
-          + "CVSS, measured exposure and version evidence."],
-         ["The model decides", "the words: the rationale you read in the Why "
-          + "column, the suggested mitigations and the ATT&CK technique ids."],
-         ["Why it is split that way", "asked directly for a 0\u2013100 score on 1,020 "
-          + "real findings, the model returned seven distinct integers, 663 of them "
-          + "the value 85, and a tier that contradicted its own score on 842 of "
-          + "them. It is good at explaining and bad at ranking, so it is asked "
-          + "only to explain."],
-         ["What follows from it", "no prompt, no advisory wording and no future "
-          + "model swap can inflate a priority."]
+        [["Kept and shown to you",
+          "the rationale in the Why column, the Action, the suggested "
+          + "mitigations, the ATT&CK technique ids and the confidence printed "
+          + "under each score. These are the model's, and they are what it is "
+          + "good at."],
+         ["Asked for, recorded, and then thrown away",
+          "a priority score and a tier. It is required to answer, because "
+          + "being made to commit to a ranking is what makes the rationale "
+          + "worth reading, and its answer is stored as model_score and "
+          + "model_tier so the gap between its opinion and the arithmetic can "
+          + "be measured rather than argued about. The score you see is not "
+          + "it."],
+         ["Never the model's at all",
+          "the priority score, the tier, the ordering of this table, and every "
+          + "exposure, version and KEV fact it was shown. No prompt, no "
+          + "advisory wording and no future model swap can inflate a "
+          + "priority."]
         ].forEach(function (pair) {
             var li = el("li");
             li.appendChild(el("b", null, pair[0] + ": "));
@@ -249,7 +256,43 @@
             ul.appendChild(li);
         });
         who.appendChild(ul);
+        who.appendChild(el("p", "rk-dim",
+            "Asked directly for a 0\u2013100 score on 1,020 real findings, the "
+            + "model returned seven distinct integers, 663 of them the value 85, "
+            + "and a tier that contradicted its own score on 842 of them. It is "
+            + "good at explaining and bad at ranking, so it is asked to do both "
+            + "and believed about only one."));
         card.appendChild(who);
+
+        // Which rows the model never saw. The source is stamped on every row
+        // and, until now, was printed as a bare "T0" or "T2" that the page
+        // never explained: a reader looking at a T0 row believed they were
+        // reading the model's reasoning when they were reading a rule.
+        var src = methodSection("Not every row went to the model (T0 and T2)", false);
+        src.appendChild(el("p", null,
+            "Each row records which pass produced it, next to its age."));
+        var ul2 = el("ul", "rk-ai-method-list");
+        [["T0", "answered by deterministic rules without calling the model at "
+          + "all, at both ends of the range: known-exploited and "
+          + "internet-facing with the version confirmed, or low CVSS with "
+          + "negligible EPSS, no KEV entry and the version confirmed NOT "
+          + "affected. The rationale on a T0 row was written by this app, not "
+          + "by a model. It costs nothing and cannot hallucinate."],
+         ["T2", "sent to the model. Everything the rules do not settle, in "
+          + "score order, until the analysis budget runs out."]
+        ].forEach(function (pair) {
+            var li = el("li");
+            li.appendChild(el("b", null, pair[0] + ": "));
+            li.appendChild(document.createTextNode(pair[1]));
+            ul2.appendChild(li);
+        });
+        src.appendChild(ul2);
+        src.appendChild(el("p", "rk-dim",
+            "ATT&CK technique ids come from a small BERT classifier when an "
+            + "administrator has configured one, and are asked of the model "
+            + "otherwise, which is slightly less precise. Which one answered is "
+            + "not recorded per row."));
+        card.appendChild(src);
 
         // --- the arithmetic ---------------------------------------------------
         var how = methodSection("How the score is calculated", false);
@@ -328,8 +371,9 @@
         strip.appendChild(tile(humanAge(ov.latest_at), "last analysis"));
         root.appendChild(strip);
         root.appendChild(el("p", "rk-dim",
-            "Priorities combine Riskability's own measurements (reach, version evidence, EPSS and KEV) " +
-            "with model reasoning about exploitability. A tier is advice about order of work, not a measurement."));
+            "Priorities are computed from Riskability's own measurements: reach, version evidence, " +
+            "EPSS, CVSS and KEV. The model writes the reasoning you read beside each one and does " +
+            "not decide the order. A tier is advice about order of work, not a measurement."));
     }
 
     function buildCoverage(ov) {

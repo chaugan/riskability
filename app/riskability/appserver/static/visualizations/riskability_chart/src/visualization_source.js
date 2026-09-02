@@ -240,6 +240,16 @@ var CATEGORY_COLOR = {
     'answers any address': '#a4302a', 'answers one address': '#dc4e41',
     'loopback only': '#f8be34', 'no listening port': '#3f7d7a',
     'not assessed': '#6b5a2a',
+    // Observed permitted traffic. Nothing here is green either, and the reason
+    // is sharper than it is for reachability: "not observed" is the one thing
+    // on that page a reader is most likely to misread as "safe". It means no
+    // permitted flow was LOGGED, and a permitted rule nobody has used yet
+    // produces no log line at all, so the calmest grade still gets the cool
+    // teal that reads as "later" rather than anything that reads as "fine".
+    // "unknown" is already mapped, to the same grey as every other absence of
+    // a measurement in this app, which is exactly what it is.
+    'confirmed observed': '#a4302a', 'historically observed': '#dc4e41',
+    'not observed': '#3f7d7a',
     // Container lifecycle. Stopped is grey for parked, never green: a stopped
     // container is one docker start from being a running one.
     '1. running and published': '#a4302a',

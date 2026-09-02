@@ -67,15 +67,22 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="riskability.riskability_chart.chartType">bar</option>
+        <!-- A donut, not a column chart. There are at most four grades, which
+             is the small ordered category set the donut is for, and the
+             question this panel answers is "how much of the fleet is in each
+             grade" - a share of a whole, which is what an arc reads as and a
+             column does not. It also puts the grade names in a legend down the
+             side instead of rotated under an axis, where two-word labels were
+             being clipped to "-erved" and "-nown". -->
+        <option name="riskability.riskability_chart.chartType">donut</option>
         <option name="riskability.riskability_chart.colorScale">category</option>
-        <option name="riskability.riskability_chart.valueLabel">count</option>
+        <option name="riskability.riskability_chart.valueLabel">host and port rows</option>
         <option name="riskability.riskability_chart.emptyText">The assess job has not run, or it found no open finding on a listening port. Nothing here is a statement about your network.</option>
         <!-- Tall enough for the rotated category labels. The grade names are
              two words and the axis rotates them 40 degrees, so at the default
              height the container clipped them to their last few characters and
              the chart read "-erved" and "-nown". -->
-        <option name="height">360</option>
+        <option name="height">300</option>
         <drilldown>
           <set token="grade_filter">observed_grade="$row.observed_grade$"</set>
           <set token="grade_label">$row.observed_grade$</set>
