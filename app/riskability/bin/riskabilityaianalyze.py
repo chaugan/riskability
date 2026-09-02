@@ -45,7 +45,14 @@ VERDICT_FIELDS = ("priority_tier", "priority_score", "model_tier", "model_score"
                   "confidence", "rationale",
                   "exploitability_signal", "exposure_signal",
                   "process_match_confidence", "recommended_action",
-                  "recommended_mitigations", "attck_techniques")
+                  "recommended_mitigations", "attck_techniques",
+                  # Where the answer contradicts a fact its own payload
+                  # carried. Stored with the verdict rather than recomputed on
+                  # read, because it is a property of THAT answer to THAT
+                  # evidence: re-deriving it later against evidence that has
+                  # since moved would score the model on a question it was
+                  # never asked.
+                  "grounding")
 
 # Documents per batch_save call. The KV Store caps both the document count and
 # the payload size of one batch_save, and candidate_cap lets a single run
@@ -200,6 +207,30 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
                 "the riskability_ai_sig_salt macro is empty; refusing to sign "
                 "verdicts with an empty salt, which would match no cached "
                 "verdict and re-analyse the whole fleet")
+
+        # The macro is the salt's one source of truth and stays that way. What
+        # it cannot do is notice that the APP moved on: the macro is written
+        # only when an administrator saves the AI settings, so an upgrade that
+        # changes the prompt or the verdict schema bumps SIG_SCHEMA_VERSION in
+        # the code and changes nothing at all on a running instance. Every
+        # cached verdict keeps matching, and the fleet goes on serving
+        # reasoning produced by a prompt the app no longer contains.
+        #
+        # Found on the dev instance carrying "v2" while the code said v6, which
+        # means four schema bumps had silently failed to invalidate anything.
+        # Warn rather than re-stamp: writing a macro needs a capability this
+        # command should not hold, and quietly re-analysing a fleet is not a
+        # decision a search command gets to take on an operator's behalf.
+        current = str(getattr(ai_settings, "SIG_SCHEMA_VERSION", "")).strip()
+        stamped = salt.split(":", 1)[0]
+        if current and stamped and stamped != current:
+            self.write_warning(
+                "Verdict cache is keyed on schema %s but this app produces %s. "
+                "Cached answers were written by an older prompt or schema and "
+                "are still being served. Open the Riskability Configuration AI "
+                "page and save the connection to re-stamp the salt, which "
+                "re-analyses the fleet within the configured budget."
+                % (stamped, current))
         return salt
 
     def _transform_impl(self, records):

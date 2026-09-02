@@ -471,6 +471,103 @@ def validate_result(payload: dict) -> Tuple[Optional[dict], Optional[str]]:
     return clean, None
 
 
+# Prose that asserts internet exposure. Matched against the rationale, which is
+# the field an operator actually reads, so a claim here is a claim made TO a
+# person rather than one buried in a signal nothing renders.
+_PROSE_INTERNET_RE = re.compile(
+    r"internet[- ]facing|internet facing|exposed to the internet|"
+    r"publicly (?:accessible|exposed)|\breachable from the internet|"
+    r"from the internet", re.I)
+
+# Words that turn the phrase above into its opposite. Checked in the run-up to
+# a match rather than baked into the pattern, because the negation is not
+# always adjacent ("internal only and unreachable from the internet") and a
+# regex that tried to enumerate the gap would either miss cases or swallow the
+# sentence after it.
+#
+# This matters more than it looks. "Not internet-facing, so exploitation needs
+# a foothold" is the model getting it RIGHT, and it contains every word the
+# naive match looks for. Flagging that would train an operator to ignore the
+# flag, which costs more than never having built it.
+_PROSE_NEGATORS = ("not ", "n't", "never", "no ", "non-", "unreachable",
+                   "unexposed", "isolated", "rather than", "instead of",
+                   "unlikely to be", "without")
+_NEGATION_WINDOW = 40
+
+
+def _denies(text: str, at: int) -> bool:
+    """True when the assertion at this offset is being denied, not made."""
+    window = text[max(0, at - _NEGATION_WINDOW):at].lower()
+    return any(word in window for word in _PROSE_NEGATORS)
+
+
+def _asserts_internet(text) -> bool:
+    """Whether the prose CLAIMS internet exposure, as opposed to ruling it out."""
+    text = str(text or "")
+    for match in _PROSE_INTERNET_RE.finditer(text):
+        if not _denies(text, match.start()):
+            return True
+    return False
+
+GROUND_EXPOSURE_SIGNAL = "exposure_signal contradicts the measured exposure zone"
+GROUND_EXPOSURE_PROSE = "the rationale calls this internet-facing and the measurement does not"
+GROUND_KEV_OVERCLAIM = "claims active exploitation with no KEV entry in evidence"
+GROUND_KEV_UNDERCLAIM = "calls a KEV-listed CVE unexploited"
+GROUND_VERSION_OVERCLAIM = ("calls the process match confirmed where the installed "
+                            "version is NOT in the affected range")
+
+
+def grounding_flags(cve: dict, result: dict) -> list:
+    """Where an answer contradicts a fact its own payload carried.
+
+    Not a quality score and not a second opinion: every check here compares the
+    model's answer against a value THIS APP measured and put in the prompt, so
+    a flag is a plain contradiction rather than a disagreement. Nothing needs a
+    referee and nothing depends on the model of the day.
+
+    Measured on 5,755 real verdicts before this existed: the model was told
+    "exposure zone: internal" and answered "internet-facing" 445 times, and
+    wrote a rationale asserting internet exposure on 1,087 of 5,746 internal
+    findings -- 18.9% of the text an operator reads. Never once in the other
+    direction. That asymmetry is why these are flags rather than corrections:
+    the model is not noisy about exposure, it is biased towards alarm, and a
+    number that only ever moves one way is worth showing rather than averaging
+    away.
+
+    Returns a list of human-readable strings, empty when the answer is
+    consistent with what it was given. Callers must not treat a flag as a
+    reason to discard the answer: the rationale is still the best explanation
+    available, and a reader who is told which sentence to distrust is better
+    served than one shown nothing.
+    """
+    flags = []
+    zone = str(cve.get("exposure_zone") or "").strip().lower()
+    kev = _bool(cve.get("kev"))
+
+    if zone in ("internal", "isolated"):
+        if result.get("exposure_signal") == "internet-facing":
+            flags.append(GROUND_EXPOSURE_SIGNAL)
+        if _asserts_internet(result.get("rationale")):
+            flags.append(GROUND_EXPOSURE_PROSE)
+
+    # The model's read on whether the running process really is the vulnerable
+    # thing, against the version evidence the payload handed it. "confirmed"
+    # on a version this app measured as OUTSIDE the affected range is the one
+    # direction that matters: it is the model talking a finding up past the
+    # single strongest piece of counter-evidence the app holds.
+    if str(cve.get("version_match") or "").strip().lower() == "no" \
+            and result.get("process_match_confidence") == "confirmed":
+        flags.append(GROUND_VERSION_OVERCLAIM)
+
+    signal = result.get("exploitability_signal")
+    if kev and signal in ("theoretical", "none"):
+        flags.append(GROUND_KEV_UNDERCLAIM)
+    if not kev and signal == "active-exploit":
+        flags.append(GROUND_KEV_OVERCLAIM)
+
+    return flags
+
+
 # ---------------------------------------------------------------------------
 # Prompts and the synthetic test finding
 # ---------------------------------------------------------------------------
@@ -484,6 +581,19 @@ Combine the CVE metadata, the running-process evidence and the asset context
 into one priority decision.
 
 Strict rules:
+- The MEASURED EVIDENCE block is this system's own measurement of the
+  customer's estate. It is authoritative and it is fresher than anything you
+  know. NEVER contradict it and never soften it. In particular: if the exposure
+  zone says "internal" or "isolated", the finding is NOT internet-facing, you
+  must not call it internet-facing, and your rationale must not say or imply
+  that it is reachable from the internet. If the exposure looks wrong to you,
+  say nothing about it: you cannot see this network and this system can.
+- exploitability_signal is a statement about EVIDENCE, not about your intuition.
+  KEV true means CISA has recorded exploitation in the wild: answer
+  "active-exploit". KEV false means nobody has given you evidence of
+  exploitation: answer "proof-of-concept" only when the description itself says
+  an exploit is public, and otherwise "theoretical", or "none" when even that
+  overstates it. Never answer "active-exploit" when KEV is false.
 - Respond with a single JSON object and nothing else. No prose, no markdown,
   no code fences.
 - The object must contain exactly these keys, in this order: "rationale"
@@ -568,23 +678,42 @@ SYNTHETIC_CVE = {
 
 
 def build_user_payload(cve: dict) -> str:
-    """Render one finding the way the pipeline's T2 prompt expects it."""
+    """Render one finding the way the pipeline's T2 prompt expects it.
+
+    TWO LABELLED BLOCKS, not one flat list, and the split is the point. The
+    first version ran the published CVE metadata and this app's own
+    measurements together as one run of key/value lines, so "exposure zone:
+    internal" arrived looking like one more hint from the feed rather than
+    like the thing this system went and measured. It was treated accordingly.
+
+    Measured on 5,755 real verdicts under the flat layout: told "internal",
+    the model answered "internet-facing" 445 times and wrote a rationale
+    asserting internet exposure on 1,087 of 5,746 internal findings, 18.9% of
+    the text an operator reads. Never once in the other direction.
+
+    Re-run on 40 of those same findings with the block labelled and declared
+    authoritative in the system prompt, and nothing else changed: the
+    contradicted signal went from 6 in 37 to 0 in 38, and the contradicted
+    prose from 10 to 1. The layout was doing the damage.
+    """
     return (
-        "CVE-ID: {cve_id}\n"
-        "CWE-ID: {cwe_id}\n"
-        "CVSS: {cvss_vector} (base {cvss_base_score}, severity {severity})\n"
-        "EPSS: {epss}\n"
-        "KEV: {kev}\n"
-        "CVE description: {cve_description}\n"
-        "Affected product: {affected_product} version {affected_version}\n"
-        "Running process evidence:\n"
-        "  - process: {process_name}\n"
-        "  - version: {process_version}\n"
-        "  - path: {process_path}\n"
-        "  - listening ports: {listening_ports}\n"
-        "  - asset: {asset_id} (criticality {asset_criticality})\n"
-        "  - exposure zone: {exposure_zone}\n"
-        "  - version match confidence: {version_match} ({confidence})\n"
+        "PUBLISHED CVE DATA (from the vulnerability feed):\n"
+        "  CVE-ID: {cve_id}\n"
+        "  CWE-ID: {cwe_id}\n"
+        "  CVSS: {cvss_vector} (base {cvss_base_score}, severity {severity})\n"
+        "  EPSS: {epss}\n"
+        "  KEV (CISA known exploited): {kev}\n"
+        "  Description: {cve_description}\n"
+        "  Affected product: {affected_product} version {affected_version}\n"
+        "\n"
+        "MEASURED EVIDENCE (measured on this customer's host, authoritative):\n"
+        "  Running process: {process_name} version {process_version}\n"
+        "  Path: {process_path}\n"
+        "  Listening ports: {listening_ports}\n"
+        "  Asset: {asset_id} (criticality {asset_criticality})\n"
+        "  EXPOSURE ZONE: {exposure_zone}\n"
+        "  Installed version is in the affected range: {version_match}\n"
+        "  Confidence in that version match: {confidence}\n"
         "\n"
         "Respond ONLY with a single JSON object matching the schema."
     ).format(**{k: cve.get(k, "") for k in
@@ -1066,6 +1195,12 @@ def analyze_finding(url: str, auth_type: str, username: str, secret: str,
     if error:
         return {"ok": False, "latency_ms": latency, "source": "T2",
                 "error": error, "raw": _clean_text(content, 300)}
+    # Score the answer against the facts this payload carried, here rather than
+    # in validate_result, because validate_result never sees the input. A
+    # contradiction is recorded and never used to reject: the rationale is
+    # still the best explanation available, and telling a reader which sentence
+    # to distrust beats showing them nothing.
+    clean["grounding"] = grounding_flags(cve, clean)
     return {"ok": True, "latency_ms": latency, "source": "T2", "result": clean}
 
 

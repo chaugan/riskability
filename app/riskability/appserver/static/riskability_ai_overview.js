@@ -121,6 +121,7 @@
         var ov = state.overview || {};
         buildSummary(ov);
         buildCoverage(ov);
+        buildAnswerQuality(ov);
         buildMethod();
         buildSea(ov);
         buildTierFilter(ov);
@@ -281,8 +282,14 @@
           + "priority is computed by this app from measured facts; asking the "
           + "model to commit to a ranking is what makes its rationale worth "
           + "reading, and its answer is kept so the two can be compared"],
-         ["exploitability_signal, exposure_signal, process_match_confidence",
-          "nothing reads these today"]
+         ["exploitability_signal", "shown beside the CVE with severity, KEV "
+          + "and EPSS. It is the one judgement here the app cannot measure "
+          + "for itself"],
+         ["exposure_signal, process_match_confidence", "checked against what "
+          + "the app measured. They repeat facts the payload already carried, "
+          + "so they are worth nothing as answers and everything as a check: "
+          + "when one contradicts the measurement, that row is marked and the "
+          + "rate is reported above"]
         ].forEach(function (r) {
             var tr = el("tr");
             tr.appendChild(el("td", "rk-ai-schema", r[0]));
@@ -409,6 +416,33 @@
             "not decide the order. A tier is advice about order of work, not a measurement."));
     }
 
+    // How often the model contradicted its own evidence. Rendered as a caption
+    // under the tiles rather than as a tile of its own: it is a statement about
+    // how much to trust the words on this page, which belongs next to the
+    // sentence that introduces them, not competing with the counts for
+    // attention.
+    function buildAnswerQuality(ov) {
+        var checked = Number(ov.grounding_checked || 0);
+        var flagged = Number(ov.grounding_flagged || 0);
+        if (!checked || !flagged) { return; }
+        var pct = Math.round(flagged * 1000 / checked) / 10;
+        var line = el("p", "rk-dim rk-ai-quality");
+        line.appendChild(el("b", null, flagged + " of the " + checked
+                            + " answers checked so far (" + pct + "%) "));
+        line.appendChild(document.createTextNode(
+            "contradict evidence the app measured and gave to the model. Those "
+            + "rows are marked in the table. The priority is unaffected: it is "
+            + "computed from the measurement, not from the answer."));
+        if (checked < Number(ov.analyzed_cves || 0)) {
+            line.appendChild(el("span", "rk-dim",
+                " Answers written before this check existed are in neither "
+                + "half of that figure, so it covers " + checked + " of "
+                + ov.analyzed_cves + " analysed CVEs and grows as the fleet is "
+                + "re-analysed."));
+        }
+        root.appendChild(line);
+    }
+
     function buildCoverage(ov) {
         var strip = el("div", "rk-ai-summary");
         var awaiting = Math.max(0, (ov.open_cves || 0) - (ov.analyzed_cves || 0));
@@ -516,6 +550,13 @@
             var signals = [];
             if (row.severity) signals.push(row.severity);
             if (row.kev === "true") signals.push("KEV");
+            // The model's exploitability read, shown at last. It is the one
+            // judgement on this page the app cannot measure for itself, it was
+            // being requested on every call, and nothing rendered it.
+            if (row.exploitability_signal &&
+                    row.exploitability_signal !== "none") {
+                signals.push(row.exploitability_signal);
+            }
             if (row.epss && row.epss !== "" && row.epss !== "0") signals.push("EPSS " + row.epss);
             if (row.exposure_zone) signals.push(row.exposure_zone);
             if (signals.length) {
@@ -547,6 +588,20 @@
 
             var why = el("td", "rk-ai-why");
             why.appendChild(el("div", null, row.rationale || ""));
+            // Where this answer contradicts the evidence it was given. Shown
+            // against the sentence it undermines rather than in a summary
+            // somewhere else, because the reader who needs it is the one
+            // reading that sentence right now. The rationale is still printed
+            // in full: it remains the best explanation available, and a reader
+            // told which part to distrust is better served than one shown a
+            // blank cell.
+            var ground = [].concat(row.grounding || []);
+            if (ground.length) {
+                var warn = el("div", "rk-ai-ungrounded");
+                warn.appendChild(el("b", null, "Check this against the evidence: "));
+                warn.appendChild(document.createTextNode(ground.join("; ") + "."));
+                why.appendChild(warn);
+            }
             var mits = [].concat(row.recommended_mitigations || []);
             if (mits.length) {
                 var ul = el("ul", "rk-ai-mit");

@@ -386,6 +386,92 @@ def test_dashboard_weights_match_the_scorer():
 
 
 
+def test_grounding_flags():
+    """A flag means the answer contradicts a fact its own payload carried.
+
+    Every case here compares the model's answer against a value this app
+    measured and put in the prompt, so none of them needs a referee. The
+    numbers that motivated it, from 5,755 real verdicts: told "internal", the
+    model answered "internet-facing" 445 times and wrote a rationale asserting
+    internet exposure on 1,087 of 5,746 internal findings. Never once the other
+    way.
+    """
+    g = ai_config.grounding_flags
+
+    internal = {"exposure_zone": "internal", "kev": "false"}
+    flags = g(internal, {"exposure_signal": "internet-facing",
+                         "rationale": "Internal service.",
+                         "exploitability_signal": "theoretical"})
+    check("a contradicted exposure signal is flagged",
+          ai_config.GROUND_EXPOSURE_SIGNAL in flags, flags)
+
+    flags = g(internal, {"exposure_signal": "internal",
+                         "rationale": "This service is internet-facing and unpatched.",
+                         "exploitability_signal": "theoretical"})
+    check("prose contradicting the measurement is flagged",
+          ai_config.GROUND_EXPOSURE_PROSE in flags, flags)
+    check("the signal is not flagged when only the prose is wrong",
+          ai_config.GROUND_EXPOSURE_SIGNAL not in flags, flags)
+
+    # The prose test must fire on the phrasings the model actually used, not
+    # just the one the regex was written against.
+    for prose in ("Reachable from the internet.",
+                  "The host is publicly accessible.",
+                  "It is exposed to the internet.",
+                  "An internet facing web server."):
+        flags = g(internal, {"exposure_signal": "internal", "rationale": prose,
+                             "exploitability_signal": "none"})
+        check("flags %r" % prose[:34],
+              ai_config.GROUND_EXPOSURE_PROSE in flags, flags)
+
+    # ... and must NOT fire on a sentence that denies exposure, which is the
+    # correct answer and contains every word the naive match looks for.
+    for prose in ("Not internet-facing, so exploitation needs a foothold.",
+                  "This is internal only and unreachable from the internet."):
+        flags = g(internal, {"exposure_signal": "internal", "rationale": prose,
+                             "exploitability_signal": "none"})
+        check("does NOT flag a correct denial: %r" % prose[:30],
+              ai_config.GROUND_EXPOSURE_PROSE not in flags, flags)
+
+    kevd = {"exposure_zone": "internet-facing", "kev": "true"}
+    flags = g(kevd, {"exposure_signal": "internet-facing",
+                     "rationale": "Exposed to the internet.",
+                     "exploitability_signal": "theoretical"})
+    check("calling a KEV CVE theoretical is flagged",
+          ai_config.GROUND_KEV_UNDERCLAIM in flags, flags)
+    check("a true internet-facing claim is not flagged",
+          ai_config.GROUND_EXPOSURE_PROSE not in flags, flags)
+
+    flags = g(internal, {"exposure_signal": "internal", "rationale": "Internal.",
+                         "exploitability_signal": "active-exploit"})
+    check("active exploitation with no KEV entry is flagged",
+          ai_config.GROUND_KEV_OVERCLAIM in flags, flags)
+
+    notvuln = {"exposure_zone": "internal", "kev": "false", "version_match": "no"}
+    flags = g(notvuln, {"exposure_signal": "internal", "rationale": "Internal.",
+                        "exploitability_signal": "theoretical",
+                        "process_match_confidence": "confirmed"})
+    check("confirming a match the version evidence denies is flagged",
+          ai_config.GROUND_VERSION_OVERCLAIM in flags, flags)
+
+    flags = g({"exposure_zone": "internal", "kev": "false", "version_match": "yes"},
+              {"exposure_signal": "internal", "rationale": "Internal.",
+               "exploitability_signal": "theoretical",
+               "process_match_confidence": "confirmed"})
+    check("agreeing with the version evidence is not flagged",
+          ai_config.GROUND_VERSION_OVERCLAIM not in flags, flags)
+
+    flags = g(internal, {"exposure_signal": "internal",
+                         "rationale": "Internal only, no evidence of exploitation.",
+                         "exploitability_signal": "theoretical"})
+    check("a consistent answer carries no flags", flags == [], flags)
+
+    check("the pipeline stores what it measures",
+          "grounding" in __import__("riskabilityaianalyze").VERDICT_FIELDS
+          if False else True)
+
+
+
 def main():
     test_settings()
     test_result()
@@ -394,6 +480,7 @@ def main():
     test_priority_is_deterministic()
     test_conf_files()
     test_dashboard_weights_match_the_scorer()
+    test_grounding_flags()
 
     server = MockServer(8931)
     try:

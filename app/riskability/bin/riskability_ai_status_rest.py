@@ -122,6 +122,39 @@ def _overview_from_kv(service) -> dict:
             if tier in tier_counts:
                 tier_counts[tier] += 1
         out["tier_counts"] = tier_counts
+
+        # How often an answer contradicted the evidence its own payload
+        # carried. Counted here, over the whole cache, because one flagged row
+        # is an anecdote and a rate is a measurement: an operator deciding
+        # whether to trust the Why column needs to know whether it is wrong
+        # once in a thousand times or once in five. Rows analysed before this
+        # existed carry no grounding field and are counted as clean, which
+        # UNDER-reports until the fleet has been re-analysed; that direction is
+        # deliberate, since inventing flags for answers never checked would be
+        # its own false claim.
+        flagged = 0
+        checked = 0
+        reasons = {}
+        for v in verdicts:
+            if "grounding" not in v:
+                # Analysed before the check existed. Counted in neither half:
+                # putting it in the denominator would report a reassuringly
+                # small rate built mostly out of answers nobody examined, which
+                # is a worse lie than a rate over a small honest sample.
+                continue
+            checked += 1
+            marks = v.get("grounding") or []
+            if isinstance(marks, str):
+                marks = [marks]
+            if not marks:
+                continue
+            flagged += 1
+            for mark in marks:
+                reasons[mark] = reasons.get(mark, 0) + 1
+        out["grounding_checked"] = checked
+        out["grounding_flagged"] = flagged
+        out["grounding_reasons"] = reasons
+
         scored.sort(key=lambda pair: -pair[0])
         out["results"] = [
             {k: _first(v.get(k)) for k in (
@@ -130,7 +163,7 @@ def _overview_from_kv(service) -> dict:
                 "attck_techniques", "exploitability_signal", "analysis_source",
                 "analysed_at", "title", "package", "vendor",
                 "installed_version", "severity", "epss", "kev",
-                "exposure_zone", "cwe_id")}
+                "exposure_zone", "cwe_id", "grounding")}
             for _, v in scored
         ]
     except Exception:
