@@ -32,7 +32,7 @@ SECRET_USER = "riskability_ai"
 #
 # One line, one place, deliberately. A version that has to be edited in two
 # files is a version that gets bumped in one of them.
-SIG_SCHEMA_VERSION = "v7"
+SIG_SCHEMA_VERSION = "v8"
 
 
 def load_config(service) -> dict:

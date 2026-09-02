@@ -41,6 +41,11 @@ What this endpoint deliberately cannot do:
 * It cannot run while AI analysis is switched off, and it re-reads that from
   the conf file rather than the mirrored KV row, because the conf is the
   authority and the row is a convenience for the page.
+* It is shared. The answer is written with the system token (restmap
+  passSystemAuth), so the reader who asked first pays the model call and
+  every later reader of that CVE, admin or analyst, gets the stored answer.
+  force=1 asks for a fresh answer and overwrites the stored one; it is
+  honoured only when there is a stored answer to replace.
 * It is not replayed for free WHEN the cache write succeeds. An explanation is
   stored against the verdict's signature, so a second click on an unchanged
   CVE costs no model call. When the write is denied the reply says
@@ -97,7 +102,11 @@ ended, because in six months that will be true of most of them. Do not recall
 anything about it. Do not infer from the identifier. Everything you write must
 come from the evidence block below.
 
-Write prose, not JSON, in this order:
+Write for a person, not JSON. Use light markdown and nothing more: one bold
+label line for each of the four parts below (for example **What the evidence
+establishes**), short paragraphs under it, and a bulleted list where you are
+listing checks or steps. No top-level headings, no tables, no code fences
+unless quoting a command. The four parts, in this order:
 - what the evidence establishes about the vulnerability. If a description is
   given, work from it. If none is given, say so, and read the CVSS vector
   instead: it states the attack vector, complexity, privileges required, user
@@ -115,7 +124,8 @@ Rules:
   description for this one, and the vector is absent, so what it does cannot be
   established from what we hold" is a genuinely useful sentence.
 - Never invent a version, a port, a host, a CWE or a CVE detail.
-- No preamble, no restating the question, no markdown headings."""
+- No preamble, no restating the question, no headings beyond the four bold
+  labels."""
 
 
 def _reply(status: int, payload: dict) -> dict:
@@ -189,9 +199,14 @@ class AIExplainHandler(PersistentServerConnectionApplication):
 
             cached = verdict.get("explanation")
             cached_sig = verdict.get("explanation_sig")
-            if cached and cached_sig and cached_sig == verdict.get("sig"):
+            force = str(body.get("force") or "").strip().lower() in ("1", "true", "yes")
+            if cached and cached_sig and cached_sig == verdict.get("sig") and not force:
                 return _reply(200, {"cve_id": cve_id, "explanation": cached,
-                                    "cached": True})
+                                    "cached": True, "stored": True,
+                                    "explained_at": verdict.get("explained_at")})
+            # force=1 is a person asking for a fresh answer over a stored one.
+            # It is honoured only when a stored one exists to replace, so it
+            # cannot be used to make the cache pointless by always sending it.
 
             secret = ai_settings.read_secret(service)
             answer = ai_config.explain_finding(
@@ -236,7 +251,12 @@ class AIExplainHandler(PersistentServerConnectionApplication):
                        if k == "_key" or not k.startswith("_")}
                 doc["explanation"] = text
                 doc["explanation_sig"] = current.get("sig") or ""
-                kv.batch_save(doc)
+                doc["explained_at"] = int(time.time())
+                # Written with the system token when splunkd passed one. The
+                # collection is admin-write, so the caller's own session would
+                # be refused for every analyst and the answer would never be
+                # shared: the next reader would pay for the same model call.
+                self._writer(request).kvstore[VERDICTS_COLLECTION].data.batch_save(doc)
                 cached_ok = True
             except Exception as exc:
                 # Worth returning the answer anyway, but NOT worth pretending
@@ -250,12 +270,27 @@ class AIExplainHandler(PersistentServerConnectionApplication):
                 cached_ok = False
             return _reply(200, {"cve_id": cve_id, "explanation": text,
                                 "cached": False, "stored": cached_ok,
+                                "explained_at": int(time.time()),
                                 "latency_ms": answer.get("latency_ms", 0)})
         except PermissionError as exc:
             return _reply(401, {"error": str(exc)})
         except Exception as exc:
             _log("unhandled error: %s" % exc)
             return _reply(500, {"error": "the explanation could not be produced"})
+
+    def _writer(self, request):
+        """The service that writes the cache: system auth when splunkd passed
+        it (restmap passSystemAuth), the caller otherwise, so a deployment
+        without the flag degrades to the old admin-only behaviour rather than
+        failing."""
+        token = request.get("system_authtoken")
+        if not token:
+            return self._service(request)
+        return client.connect(
+            token=token, owner="nobody", app="riskability",
+            host=request.get("server", {}).get("hostname") or "localhost",
+            port=request.get("server", {}).get("port") or 8089,
+            scheme="https")
 
     def _service(self, request):
         session_key = request.get("session", {}).get("authtoken")

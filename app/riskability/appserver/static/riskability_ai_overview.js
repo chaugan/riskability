@@ -46,14 +46,14 @@
         return path.slice(0, i);
     }
 
-    function explainCve(cveId) {
+    function explainCve(cveId, force) {
         return fetch(splunkRoot() + "/splunkd/__raw/services/riskability/ai_explain",
                      {method: "POST",
                       headers: {"Content-Type": "application/json",
                                 "X-Splunk-Form-Key": csrfToken(),
                                 "X-Requested-With": "XMLHttpRequest"},
                       credentials: "same-origin",
-                      body: JSON.stringify({cve_id: cveId})})
+                      body: JSON.stringify({cve_id: cveId, force: force ? "1" : "0"})})
             .then(function (r) {
                 return r.json().then(function (j) {
                     if (!r.ok) { throw new Error(j.error || ("HTTP " + r.status)); }
@@ -451,6 +451,101 @@
         root.appendChild(card);
     }
 
+    // Markdown to DOM, for the explanation. Built with createElement and
+    // textContent throughout, so nothing the model writes is ever parsed as
+    // HTML: a model answer is untrusted text that happens to have structure.
+    // Supports what the explain prompt produces and no more: headings,
+    // paragraphs, bulleted and numbered lists, fenced code, and inline bold,
+    // italic and code. Anything else renders as the literal characters, which
+    // is the right failure for a security page.
+    function renderMarkdown(text, into) {
+        // The model returns the whole answer on one line: bold labels inline,
+        // and two spaces where a paragraph break would be (measured: 3,042
+        // characters, zero newlines). Runs of two or more spaces are read as
+        // paragraph breaks before anything else, and a paragraph that is only
+        // a bold label is rendered as a heading rather than as a one-word
+        // paragraph. Fenced code is excluded from the space rule, since
+        // indentation inside it is content.
+        var src = String(text || "").replace(/\r\n?/g, "\n");
+        if (src.indexOf("```") < 0) {
+            src = src.replace(/[ \t]{2,}/g, "\n\n");
+            // List items written inline: "- **Label**: text - **Label**: text"
+            // and "1. **Label**: text 2. **Label**: text". Each marker that is
+            // followed by a bold label starts its own line, which the list
+            // rules below then pick up. Only the labelled form is split, so a
+            // hyphen or a number inside ordinary prose is left alone.
+            src = src.replace(/(^|[^\n])\s+-\s+(?=\*\*)/g, "$1\n- ");
+            src = src.replace(/(^|[^\n])\s+(\d{1,2})[.)]\s+(?=\*\*)/g, "$1\n$2. ");
+        }
+        var lines = src.split("\n");
+        var i = 0, para = [];
+
+        function inline(str, parent) {
+            var re = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
+            var last = 0, m;
+            while ((m = re.exec(str)) !== null) {
+                if (m.index > last) parent.appendChild(document.createTextNode(str.slice(last, m.index)));
+                var tok = m[0], node;
+                if (tok[0] === "`") { node = el("code", null, tok.slice(1, -1)); }
+                else if (tok.slice(0, 2) === "**" || tok.slice(0, 2) === "__") { node = el("strong", null, tok.slice(2, -2)); }
+                else { node = el("em", null, tok.slice(1, -1)); }
+                parent.appendChild(node);
+                last = m.index + tok.length;
+            }
+            if (last < str.length) parent.appendChild(document.createTextNode(str.slice(last)));
+        }
+        function flush() {
+            if (!para.length) return;
+            var joined = para.join(" ");
+            var label = /^\*\*([^*]{2,80})\*\*:?$/.exec(joined.trim());
+            var pnode = el(label ? "h4" : "p");
+            if (label) { pnode.textContent = label[1]; }
+            else { inline(joined, pnode); }
+            into.appendChild(pnode);
+            para = [];
+        }
+        while (i < lines.length) {
+            var line = lines[i];
+            var h = /^(#{1,6})\s+(.*)$/.exec(line);
+            var fence = /^```/.test(line);
+            var bullet = /^\s*[-*+]\s+(.*)$/.exec(line);
+            var number = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+            if (fence) {
+                flush();
+                var code = [];
+                i += 1;
+                while (i < lines.length && !/^```/.test(lines[i])) { code.push(lines[i]); i += 1; }
+                var pre = el("pre"); pre.appendChild(el("code", null, code.join("\n")));
+                into.appendChild(pre);
+                i += 1; continue;
+            }
+            if (h) {
+                flush();
+                var level = Math.min(6, h[1].length + 2);   // h1 in the model's answer is an h3 on the page
+                var hn = el("h" + level); inline(h[2], hn); into.appendChild(hn);
+                i += 1; continue;
+            }
+            if (bullet || number) {
+                flush();
+                var list = el(number ? "ol" : "ul");
+                while (i < lines.length) {
+                    var b = /^\s*[-*+]\s+(.*)$/.exec(lines[i]);
+                    var n = /^\s*\d+[.)]\s+(.*)$/.exec(lines[i]);
+                    var item = number ? n : b;
+                    if (!item) break;
+                    var li = el("li"); inline(item[1], li); list.appendChild(li);
+                    i += 1;
+                }
+                into.appendChild(list);
+                continue;
+            }
+            if (!line.trim()) { flush(); i += 1; continue; }
+            para.push(line.trim());
+            i += 1;
+        }
+        flush();
+    }
+
     function tile(value, label, cls) {
         var t = el("div", "rk-ai-tile " + (cls || ""));
         t.appendChild(el("div", "rk-ai-num", value));
@@ -674,29 +769,58 @@
             // Explain in depth, on demand, for the one row somebody stopped on.
             // The scheduled pass answers a closed schema in 400 tokens because
             // it is ranking thousands; this asks the same model to write for a
-            // person, and only when a person asked. The answer is cached with
-            // the verdict, so the second reader pays nothing.
+            // person, and only when a person asked. The answer is stored with
+            // the verdict and shared: whoever asks first pays the model call,
+            // everyone after reads the stored answer, and a re-run replaces it.
+            var out = el("div", "rk-ai-explanation");
             var explain = el("button", "rk-ai-explain", "Explain in depth");
             explain.type = "button";
-            var out = el("div", "rk-ai-explanation");
-            explain.addEventListener("click", function () {
+            var meta = el("div", "rk-dim rk-ai-explain-meta");
+
+            function showAnswer(text, when, cached) {
+                out.textContent = "";
+                renderMarkdown(text, out);
+                meta.textContent = (cached ? "stored answer" : "fresh answer")
+                    + (when ? ", " + humanAge(when) : "")
+                    + ". Re-run asks the model again and replaces it.";
+                explain.textContent = "Re-run explanation";
+                explain.disabled = false;
+            }
+            function ask(force) {
                 explain.disabled = true;
-                explain.textContent = "Asking the model…";
-                explainCve(row.cve_id).then(function (res) {
-                    out.textContent = res.explanation || "";
-                    explain.parentNode.removeChild(explain);
+                explain.textContent = "Asking the model\u2026";
+                explainCve(row.cve_id, force).then(function (res) {
+                    showAnswer(res.explanation || "", res.explained_at, res.cached === true);
+                    if (res.stored === false) {
+                        meta.textContent += " This answer could not be stored, so the next reader will ask again.";
+                    }
                 }).catch(function (e) {
                     out.textContent = "Could not explain: " + e.message;
                     explain.disabled = false;
-                    explain.textContent = "Try again";
+                    explain.textContent = row.explanation ? "Re-run explanation" : "Try again";
                 });
+            }
+            explain.addEventListener("click", function () {
+                ask(explain.textContent === "Re-run explanation");
             });
+            if (row.explanation) {
+                showAnswer(row.explanation, row.explained_at, true);
+            }
             why.appendChild(explain);
+            why.appendChild(meta);
             why.appendChild(out);
             tr.appendChild(why);
             tbl.appendChild(tr);
         });
-        card.appendChild(tbl);
+        // The table lives in its own scroll container. Splunk Web's header is
+        // 960px wide at minimum, so below that the PAGE scrolls sideways
+        // whatever this table does; above it the table must fit, and the
+        // column minimums below are chosen so it does at 960. The container is
+        // the backstop: if a future column pushes it wider, the table scrolls
+        // inside its card and the page does not.
+        var wrap = el("div", "rk-ai-table-wrap");
+        wrap.appendChild(tbl);
+        card.appendChild(wrap);
         if (pageCount > 1) {
             card.appendChild(pager(filtered.length, pageCount, start, pageRows.length));
         }

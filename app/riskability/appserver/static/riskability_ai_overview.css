@@ -45,7 +45,19 @@
 
 .rk-ai-table td { vertical-align: top; }
 
-.rk-ai-why { max-width: 460px; }
+/* WHY is the column people read, so it gets the width, and it gets it as a
+   share of the viewport rather than in pixels: a fixed 760px on a narrow
+   window pushes the table past the edge and the whole page grows a horizontal
+   scrollbar, which on a table of prose is unusable. clamp() gives it up to
+   ~70% more than it had on a wide screen and lets it shrink first on a small
+   one, with long tokens (paths, URLs) allowed to break rather than to widen
+   the cell. */
+.rk-ai-table { width: 100%; table-layout: auto; }
+.rk-ai-table td { overflow-wrap: anywhere; word-break: break-word; }
+.rk-ai-table-wrap { max-width: 100%; overflow-x: auto; }
+.rk-ai-why { max-width: clamp(320px, 46vw, 800px); min-width: 220px; }
+.rk-ai-cve { max-width: clamp(180px, 24vw, 400px); }
+.rk-ai-sw  { max-width: clamp(110px, 13vw, 220px); }
 
 .rk-ai-mit {
     margin: 6px 0 0 16px;
@@ -160,7 +172,7 @@
     word-break: break-word;
 }
 
-.rk-ai-cve { max-width: 440px; }
+
 
 /* On-demand explanation. The button sits in the Why cell and is replaced by
    the answer, so a row that has been explained stops offering to explain it. */
@@ -339,3 +351,21 @@ body.rk-help-off .rk-ai-method-card { display: none; }
 }
 
 .rk-ai-ungrounded b { color: #f8be34; }
+
+
+/* The rendered explanation. Markdown from the model, built as DOM. */
+.rk-ai-explanation h3, .rk-ai-explanation h4, .rk-ai-explanation h5 {
+    font-size: 12px; font-weight: 700; margin: 10px 0 4px; color: #f2f4f5;
+}
+.rk-ai-explanation p { margin: 6px 0; }
+.rk-ai-explanation ul, .rk-ai-explanation ol { margin: 4px 0 6px 18px; }
+.rk-ai-explanation li { margin: 2px 0; }
+.rk-ai-explanation code {
+    font-family: Consolas, "Liberation Mono", Menlo, monospace; font-size: 11px;
+    background: rgba(255,255,255,0.06); padding: 0 3px; border-radius: 3px;
+}
+.rk-ai-explanation pre {
+    background: rgba(255,255,255,0.05); padding: 6px 8px; border-radius: 4px;
+    overflow-x: auto; max-width: 100%;
+}
+.rk-ai-explain-meta { margin: 4px 0 0; font-size: 11px; }

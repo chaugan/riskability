@@ -156,16 +156,24 @@ def _overview_from_kv(service) -> dict:
         out["grounding_reasons"] = reasons
 
         scored.sort(key=lambda pair: -pair[0])
-        out["results"] = [
-            {k: _first(v.get(k)) for k in (
+        def _row(v):
+            row = {k: _first(v.get(k)) for k in (
                 "cve_id", "priority_tier", "priority_score", "confidence",
                 "rationale", "recommended_action", "recommended_mitigations",
                 "attck_techniques", "exploitability_signal", "analysis_source",
                 "analysed_at", "title", "package", "vendor",
                 "installed_version", "severity", "epss", "kev",
                 "exposure_zone", "cwe_id", "grounding")}
-            for _, v in scored
-        ]
+            # A stored explanation rides along only while it still describes
+            # this verdict. One written against an earlier signature is not
+            # served: the page would render a confident paragraph about inputs
+            # that have since moved.
+            if v.get("explanation") and v.get("explanation_sig") == v.get("sig"):
+                row["explanation"] = _first(v.get("explanation"))
+                row["explained_at"] = _first(v.get("explained_at"))
+            return row
+
+        out["results"] = [_row(v) for _, v in scored]
     except Exception:
         out["analyzed_cves"] = 0
         out["top"] = []
