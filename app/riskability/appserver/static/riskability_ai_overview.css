@@ -315,3 +315,12 @@ body.rk-help-off .rk-ai-method-card { display: none; }
     font-weight: 700;
     white-space: nowrap;
 }
+
+/* Schema key names in the "what comes back" table: they are literal JSON
+   keys, so they are set in the mono face rather than left to read as prose. */
+.rk-ai-schema {
+    font-family: Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 11px;
+    color: #d6dde4;
+    white-space: normal;
+}

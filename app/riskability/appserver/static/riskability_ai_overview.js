@@ -226,43 +226,76 @@
         card.appendChild(what);
 
         // --- the division of labour, which is the part people get wrong --------
-        var who = methodSection("What the model is asked, and what is done with each answer", false);
-        who.appendChild(el("p", null,
-            "The model returns one JSON object per finding, against a fixed "
-            + "schema. Not every field in it is treated the same way, and the "
-            + "difference is the whole design."));
-        var ul = el("ul", "rk-ai-method-list");
-        [["Kept and shown to you",
-          "the rationale in the Why column, the Action, the suggested "
-          + "mitigations, the ATT&CK technique ids and the confidence printed "
-          + "under each score. These are the model's, and they are what it is "
-          + "good at."],
-         ["Asked for, recorded, and then thrown away",
-          "a priority score and a tier. It is required to answer, because "
-          + "being made to commit to a ranking is what makes the rationale "
-          + "worth reading, and its answer is stored as model_score and "
-          + "model_tier so the gap between its opinion and the arithmetic can "
-          + "be measured rather than argued about. The score you see is not "
-          + "it."],
-         ["Never the model's at all",
-          "the priority score, the tier, the ordering of this table, and every "
-          + "exposure, version and KEV fact it was shown. No prompt, no "
-          + "advisory wording and no future model swap can inflate a "
-          + "priority."]
+        // Sent, received, used. Written in that order because that is the
+        // order a reader needs it in, and because the first question anybody
+        // asks about an app that calls a model is what left the building.
+        var sent = methodSection("What is sent to the model", false);
+        sent.appendChild(el("p", null,
+            "One request per finding. Everything the model is given about your "
+            + "estate is on this list, and nothing else leaves:"));
+        var ul0 = el("ul", "rk-ai-method-list");
+        [["From the CVE feed", "the CVE id, the CWE id, the CVSS vector with "
+          + "its base score and severity, the EPSS score, whether it is on "
+          + "CISA KEV, the advisory description, and the affected product and "
+          + "version."],
+         ["From your inventory", "the process name, its version and path, the "
+          + "ports it listens on, the asset id and its criticality, the "
+          + "exposure zone, and whether the installed version matches the "
+          + "affected range."],
+         ["Nothing else", "no host names, no addresses, no file contents, no "
+          + "user or account data, and no other finding. The model sees one "
+          + "finding at a time and never the fleet."]
         ].forEach(function (pair) {
             var li = el("li");
             li.appendChild(el("b", null, pair[0] + ": "));
             li.appendChild(document.createTextNode(pair[1]));
-            ul.appendChild(li);
+            ul0.appendChild(li);
         });
-        who.appendChild(ul);
-        who.appendChild(el("p", "rk-dim",
-            "Asked directly for a 0\u2013100 score on 1,020 real findings, the "
-            + "model returned seven distinct integers, 663 of them the value 85, "
-            + "and a tier that contradicted its own score on 842 of them. It is "
-            + "good at explaining and bad at ranking, so it is asked to do both "
-            + "and believed about only one."));
-        card.appendChild(who);
+        sent.appendChild(ul0);
+        sent.appendChild(el("p", "rk-dim",
+            "The model is told it has never heard of this CVE and must reason "
+            + "from the vector, the CWE and the description it was given, "
+            + "because in six months that will be true of most of them and a "
+            + "confident sentence about a CVE it was not told about is "
+            + "indistinguishable from a correct one."));
+        card.appendChild(sent);
+
+        var got = methodSection("What comes back, and how each answer is used", false);
+        got.appendChild(el("p", null,
+            "One JSON object per finding, against a fixed schema. This is where "
+            + "each field ends up:"));
+        var t3 = el("table", "rk-table rk-ai-weights");
+        var h3 = el("tr");
+        ["The model returns", "Where it is used"].forEach(function (x) {
+            h3.appendChild(el("th", null, x));
+        });
+        t3.appendChild(h3);
+        [["rationale", "the Why column, on this page and on every finding the "
+          + "verdict is expanded to"],
+         ["recommended_action", "the Action column"],
+         ["recommended_mitigations", "the bullets under Why"],
+         ["attck_techniques", "the ATT&CK line under Why"],
+         ["confidence", "the conf figure under each score, and carried onto "
+          + "each expanded finding"],
+         ["priority_score, priority_tier", "not used to order anything. The "
+          + "priority is computed by this app from measured facts; asking the "
+          + "model to commit to a ranking is what makes its rationale worth "
+          + "reading, and its answer is kept so the two can be compared"],
+         ["exploitability_signal, exposure_signal, process_match_confidence",
+          "nothing reads these today"]
+        ].forEach(function (r) {
+            var tr = el("tr");
+            tr.appendChild(el("td", "rk-ai-schema", r[0]));
+            tr.appendChild(el("td", null, r[1]));
+            t3.appendChild(tr);
+        });
+        got.appendChild(t3);
+        got.appendChild(el("p", "rk-dim",
+            "So the model writes what you read and this app decides what you "
+            + "read first. That split is deliberate: no prompt, no advisory "
+            + "wording and no future model swap can move a finding up the "
+            + "queue."));
+        card.appendChild(got);
 
         // Which rows the model never saw. The source is stamped on every row
         // and, until now, was printed as a bare "T0" or "T2" that the page
