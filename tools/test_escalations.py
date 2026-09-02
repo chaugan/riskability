@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -64,6 +65,8 @@ def stanza(name, when, enabled="0", bump="1", description="Worked example."):
 # ---------------------------------------------------------------------------
 # The allowlist table itself
 # ---------------------------------------------------------------------------
+
+RULES = Path(__file__).resolve().parents[1] / "app" / "riskability" / "default" / "riskability_escalations.conf"
 
 def test_allowlist():
     print("field allowlist:")
@@ -680,6 +683,69 @@ def test_no_silent_drift():
           "[riskability_escalation_rules_all]" in macros)
 
 
+def test_admin_handler_compiles_the_same_macro():
+    """The switch in the admin app and the build script must produce one macro.
+
+    The handler recompiles riskability_escalation_rules from the conf every
+    time a rule is switched; the build script compiles it into the repository.
+    Both call escalate.to_spl, and this proves the handler's one-line form is
+    the build script's multi-line form with the whitespace folded, so a rule
+    switched on from the page evaluates exactly as one enabled in the file.
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "esc_rest", str(Path(__file__).resolve().parents[1] / "app" / "riskability" /
+                        "bin" / "riskability_escalations_rest.py"))
+    # The handler imports Splunk's persistconn module, which is not on a dev
+    # box; stub it so the module's functions can be loaded and tested.
+    import types
+    fake = types.ModuleType("splunk.persistconn.application")
+    fake.PersistentServerConnectionApplication = object
+    sys.modules.setdefault("splunk", types.ModuleType("splunk"))
+    sys.modules.setdefault("splunk.persistconn", types.ModuleType("splunk.persistconn"))
+    sys.modules["splunk.persistconn.application"] = fake
+    sys.modules.setdefault("splunklib", types.ModuleType("splunklib"))
+    sys.modules.setdefault("splunklib.client", types.ModuleType("splunklib.client"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    rules, _ = escalate.load_rules(RULES.read_text(encoding="utf-8"))
+    from_handler = " ".join(mod.macro_definition(rules).split())
+    from_build = " ".join(escalate.to_spl(rules).split())
+    check("handler and build script compile the same enabled set",
+          from_handler == from_build)
+
+    # Entities back to conf text: what splunkd returns must parse to the same
+    # rules the file does.
+    class Ent:
+        def __init__(self, name, content): self.name, self.content = name, content
+    ents = []
+    for name, settings in escalate.parse_conf(RULES.read_text(encoding="utf-8")):
+        ents.append(Ent(name, dict(settings)))
+    again, problems_again = escalate.load_rules(mod.conf_text_from_entities(ents))
+    check("conf rebuilt from entities parses to the same rules",
+          [(r.name, r.when, r.bump, r.enabled) for r in again] ==
+          [(r.name, r.when, r.bump, r.enabled) for r in rules])
+
+    root = Path(__file__).resolve().parents[1] / "app"
+    restmap = (root / "riskability" / "default" / "restmap.conf").read_text()
+    auth = (root / "riskability" / "default" / "authorize.conf").read_text()
+    check("restmap routes /riskability/escalations to the handler",
+          "match = /riskability/escalations" in restmap and
+          "riskability_escalations_rest.EscalationsHandler" in restmap)
+    check("the capability exists and is granted to admin and sc_admin",
+          "[capability::riskability_escalations_admin]" in auth and
+          auth.count("riskability_escalations_admin = enabled") == 2)
+    web = (root / "riskability" / "default" / "web.conf").read_text()
+    check("Splunk Web exposes the endpoint to the browser (web.conf)",
+          "pattern = riskability/escalations" in web)
+    main_nav = (root / "riskability" / "default" / "data" / "ui" / "nav" / "default.xml").read_text()
+    admin_nav = (root / "riskability-config" / "default" / "data" / "ui" / "nav" / "default.xml").read_text()
+    check("the page lives in the admin app and not in the main app",
+          "riskability_escalations" in admin_nav and "riskability_escalations" not in main_nav
+          and not (root / "riskability" / "default" / "data" / "ui" / "views" / "riskability_escalations.xml").exists())
+
+
 def main():
     test_allowlist()
     test_accepts()
@@ -696,6 +762,7 @@ def main():
     test_shipped_conf()
     test_route_evidence()
     test_no_silent_drift()
+    test_admin_handler_compiles_the_same_macro()
 
     print()
     if FAILURES:

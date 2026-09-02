@@ -1,0 +1,11 @@
+.rk-esc-table td { vertical-align: top; }
+.rk-esc-name { font-family: Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; white-space: nowrap; }
+.rk-esc-when { font-family: Consolas, "Liberation Mono", Menlo, monospace; font-size: 11px; max-width: 520px; overflow-wrap: anywhere; }
+.rk-esc-desc { max-width: 520px; color: #b9c2cc; font-size: 12px; }
+.rk-esc-problem { font-size: 11px; max-width: 220px; margin-top: 4px; }
+.rk-esc-switch {
+    min-width: 46px; border-radius: 12px; border: 1px solid #3c4a57; padding: 2px 10px;
+    background: rgba(255,255,255,0.05); color: #b9c2cc; cursor: pointer; font-size: 12px;
+}
+.rk-esc-switch.is-on { background: #1f6b9c; border-color: #2a86c4; color: #fff; }
+.rk-esc-switch:disabled { opacity: 0.4; cursor: default; }

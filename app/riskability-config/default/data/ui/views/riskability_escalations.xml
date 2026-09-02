@@ -1,0 +1,62 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_escalations.js" stylesheet="application.css,riskability_admin.css,riskability_escalations.css">
+  <label>Escalation rules</label>
+  <description>Site rules that lift a finding above what the score alone would give it: what each would move, and the switch to turn it on.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px;">
+          <b>Every rule ships switched off, and this page is where you decide whether to switch one on.</b>
+          <span>An escalation rule re-orders the queue for the whole estate. It never
+          invents a finding, never changes a CVE's severity and never lowers anything:
+          a rule can only bump a finding up. The replay below runs every rule against
+          the fleet as it stands right now and reports what <i>would</i> move, without
+          moving anything. Read it before you touch a switch.</span>
+          <span>A switch here changes the rule's <tt>enabled</tt> flag and recompiles the
+          macro the evaluation search expands, both through Splunk's own configuration
+          service, so on a search head cluster every member sees the same rule set.
+          Conditions and bumps are not edited here on purpose: a predicate applied to
+          every finding in the estate is a change somebody should review as a diff, in
+          <tt>riskability_escalations.conf</tt>.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Rules</title>
+      <html>
+        <div id="riskability-escalation-rules"></div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What each rule would move, replayed against the fleet now</title>
+      <table>
+        <search>
+          <query>| savedsearch "Riskability - replay escalation rules"
+| eval Move = from_tier . " to " . to_tier
+| rename rule AS Rule, enabled AS "On", findings AS Findings, hosts AS Hosts, cves AS CVEs
+| table Rule, "On", Move, Findings, Hosts, CVEs</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:6px 0 0;">
+          <b>Read this before enabling anything.</b>
+          <span>A rule that would move thousands of findings is not thereby a good rule:
+          it is a rule that has stopped discriminating, and a queue where everything is
+          urgent is a queue with no order in it. The useful shape is a small number of
+          findings moved for a reason you can state in one sentence.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

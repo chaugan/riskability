@@ -1,5 +1,6 @@
 <nav search_view="search" color="#8B1A1A">
   <view name="riskability_admin" default="true"/>
   <view name="riskability_ai"/>
+  <view name="riskability_escalations"/>
   <view name="search"/>
 </nav>
