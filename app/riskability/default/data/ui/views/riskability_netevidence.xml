@@ -1,0 +1,254 @@
+<form version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+  <label>Network evidence</label>
+  <description>Whether a permitted flow to a listening port has ever actually been observed, and where the app refuses to say.</description>
+
+  <!-- Drilldown and filter state, set here rather than with hidden inputs.
+       Splunk 9 renders an <input type="hidden"> as an ordinary labelled text
+       box, which would put this page's internal filters in the filter bar as
+       editable fields. Every filter needs an "everything" value because a
+       search token cannot be conditional: the panels are malformed until the
+       token exists at all. -->
+  <init>
+    <set token="grade_filter">observed_grade=*</set>
+    <set token="grade_label"></set>
+  </init>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px;">
+          <b>Silence here is not safety.</b>
+          <span>A firewall logs a flow that happened. A permitted rule nobody has
+          used yet produces no log line at all, so this evidence under-reports by
+          construction: a port that reads <i>not observed</i> may simply be one
+          nobody has tried. This page never lowers a finding's priority, and
+          missing firewall data costs a finding confidence, never its place in
+          the queue.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <fieldset submitButton="false">
+    <input type="dropdown" token="grade_filter" searchWhenChanged="true">
+      <label>Grade</label>
+      <choice value="observed_grade=*">All grades</choice>
+      <choice value="observed_grade=&quot;confirmed observed&quot;">Confirmed observed</choice>
+      <choice value="observed_grade=&quot;historically observed&quot;">Historically observed</choice>
+      <choice value="observed_grade=&quot;not observed&quot;">Not observed</choice>
+      <choice value="observed_grade=&quot;unknown&quot;">Unknown</choice>
+      <default>observed_grade=*</default>
+      <change>
+        <set token="grade_label">$label$</set>
+      </change>
+    </input>
+    <input type="text" token="host_filter" searchWhenChanged="true">
+      <label>Host (blank for all)</label>
+      <default>*</default>
+      <initialValue>*</initialValue>
+    </input>
+  </fieldset>
+
+  <row>
+    <panel>
+      <title>What the firewall evidence says about the fleet</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <!-- Read from the ledger the assess job wrote, never recomputed here.
+               Exactly one place in the app decides a grade. -->
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$
+| stats count BY observed_grade
+| eval rk_order = case(observed_grade=="confirmed observed", 0,
+    observed_grade=="historically observed", 1,
+    observed_grade=="not observed", 2, 1=1, 3)
+| sort rk_order
+| fields observed_grade, count</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_chart.chartType">bar</option>
+        <option name="riskability.riskability_chart.colorScale">category</option>
+        <option name="riskability.riskability_chart.valueLabel">count</option>
+        <option name="riskability.riskability_chart.emptyText">The assess job has not run, or it found no open finding on a listening port. Nothing here is a statement about your network.</option>
+        <!-- Tall enough for the rotated category labels. The grade names are
+             two words and the axis rotates them 40 degrees, so at the default
+             height the container clipped them to their last few characters and
+             the chart read "-erved" and "-nown". -->
+        <option name="height">360</option>
+        <drilldown>
+          <set token="grade_filter">observed_grade="$row.observed_grade$"</set>
+          <set token="grade_label">$row.observed_grade$</set>
+        </drilldown>
+      </viz>
+    </panel>
+
+    <panel>
+      <title>Can this evidence say anything at all?</title>
+      <table>
+        <search>
+          <!-- coverage_state is the gate between "unknown" and any other
+               answer, so it is shown as its own count rather than left to be
+               inferred from the grades. A fleet that is entirely "no firewall
+               data" is a configuration fact, not a finding. -->
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$
+| stats count AS "Host and port rows", dc(hostname) AS Hosts BY coverage_state
+| rename coverage_state AS "Coverage state"
+| eval "What it means" = case(
+    'Coverage state'=="no firewall data", "No edges reached the app. Every row is unknown, and correctly so.",
+    'Coverage state'=="no entry point declared", "Edges exist, but nothing declares where an attacker starts, so no absence means anything.",
+    'Coverage state'=="firewall data stale", "The newest edge is older than the freshness window, so silence is about the feed, not the network.",
+    'Coverage state'=="host not in graph", "No edge resolved to this host, so the app cannot claim it is visible to the firewall.",
+    'Coverage state'=="covered", "The host resolved to at least one edge, so a silent port is evidence about the port.",
+    1=1, "")
+| table "Coverage state", "Host and port rows", Hosts, "What it means"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>The ledger $grade_label$</title>
+      <table>
+        <search>
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$ $grade_filter$
+| eval rk_order = case(observed_grade=="confirmed observed", 0,
+    observed_grade=="historically observed", 1,
+    observed_grade=="not observed", 2, 1=1, 3)
+| eval "Last edge" = if(isnotnull(edge_last_seen) AND edge_last_seen!="",
+    strftime(tonumber(edge_last_seen), "%Y-%m-%d %H:%M"), "never")
+| eval Sources = if(n_srcs > 0, srcs_text . " (" . n_srcs . ")", "")
+| sort rk_order, hostname, port
+| rename hostname AS Host, port AS Port, protocols_text AS Protocol,
+    observed_grade AS Grade, observed_reason AS Why, entry_text AS "Entry point",
+    entry_pressure AS Pressure, sessions AS Sessions
+| table Host, Port, Protocol, Grade, "Entry point", Pressure, Sources, Sessions,
+    "Last edge", Why</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">25</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Grade">
+          <colorPalette type="map">{"confirmed observed":#B3121F,"historically observed":#D2641F,"not observed":#3F6E8C,"unknown":#4A5560}</colorPalette>
+        </format>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Where the app refused to name a host</title>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 6px;">
+          <b>An address is only a host's for as long as something observed it holding one.</b>
+          <span>These rows had a permitted flow to an address the inventory could not
+          tie to exactly one machine at the moment it was logged, so the flow is
+          reported and deliberately not attributed. Refusing is the safe wrong
+          answer: a false attribution invents an attack path that nobody can find
+          and everybody has to chase.</span>
+        </div>
+      </html>
+      <table>
+        <search>
+          <query>| inputlookup riskability_netevidence_lookup
+| search hostname=$host_filter|s$
+| where identity_state!="resolved"
+| stats count AS Rows, values(hostname) AS Hosts BY identity_state
+| eval "What it means" = case(
+    identity_state=="shared", "More than one host has held this address, so a flow to it belongs to no one host.",
+    identity_state=="stale", "The address claim does not cover the moment the flow was logged.",
+    identity_state=="outside estate", "No host in the inventory has ever been seen holding this address. Expected for an internet entry point.",
+    identity_state=="malformed address", "The firewall record's destination could not be parsed as an address.",
+    identity_state=="no edge to resolve", "No permitted flow reached this host and port, so there was nothing to attribute.",
+    1=1, "")
+| eval Hosts = mvjoin(mvdedup(Hosts), " ")
+| rename identity_state AS "Identity"
+| sort - Rows
+| table Identity, Rows, "What it means", Hosts</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">10</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Address coverage, and whether the collector could report it</title>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 6px;">
+          <b>No row for a host means never assessed, not "holds no addresses".</b>
+          <span>A host showing zero addresses may sit on a segment nothing logs, or
+          every one of its listeners may bind a wildcard, which the bind-derived
+          source cannot see at all. Those look identical here and are completely
+          different facts, and only the second is a limit of this app rather than
+          of the site. The collector and schema columns answer the "could it even
+          have reported them" half.</span>
+        </div>
+      </html>
+      <table>
+        <search>
+          <query>| inputlookup riskability_hostaddr_hoststate_lookup
+| search hostname=$host_filter|s$
+| eval "Identity stable" = if(contested_addresses > 0,
+    "no, " . contested_addresses . " address(es) claimed by another host", "yes")
+| rename hostname AS Host, addresses AS Addresses, ipv4_addresses AS IPv4,
+    ipv6_addresses AS IPv6, addr_source AS Source, swinv_version AS "Collector",
+    schema_version AS Schema
+| sort - Addresses, Host
+| table Host, Addresses, IPv4, IPv6, "Identity stable", Source, Collector, Schema</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How to wire this up</title>
+      <html>
+        <div class="rk-status" style="margin:0;">
+          <b>Two macros, both shipped resolving to nothing.</b>
+          <span>With neither wired, every row reads <i>unknown</i>, which is the
+          correct answer when no firewall data has arrived.</span>
+          <span>
+          <ul>
+            <li><b>riskability_fw_edges</b> — reduce your firewall index to
+            unique permitted edges: <tt>src_ip</tt>, <tt>dest_ip</tt>,
+            <tt>port</tt>, <tt>protocol</tt>, <tt>sessions</tt>,
+            <tt>edge_first_seen</tt>, <tt>edge_last_seen</tt>.</li>
+            <li><b>riskability_fw_entry_points</b> — declare where an
+            attacker plausibly starts: <tt>entry_cidr</tt>, <tt>entry_name</tt>,
+            <tt>entry_scan_pressure</tt>. Only a <i>constant</i> pressure entry
+            point can ever produce a <i>not observed</i> grade, because only
+            there does the absence of a flow mean anything.</li>
+          </ul>
+          </span>
+          <span>A range matches on containment alone, so declaring
+          <tt>0.0.0.0/0</tt> as the internet also matches every private address
+          and will report internal traffic as arriving from outside. List the
+          ranges that actually face the boundary. The reasoning, the failure
+          directions and what this is deliberately not are in
+          <tt>docs/ROUTE-EVIDENCE.md</tt>.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</form>

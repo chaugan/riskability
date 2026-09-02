@@ -1,0 +1,125 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+  <label>Escalation rules</label>
+  <description>Site rules that lift a finding above what the score alone would give it, and what each one would move before you switch it on.</description>
+
+  <row>
+    <panel>
+      <html>
+        <div class="rk-status rk-warn" style="margin:0 0 4px;">
+          <b>Every rule ships switched off, and this page is how you decide whether to switch one on.</b>
+          <span>An escalation rule re-orders the queue. It never invents a finding,
+          never changes a CVE's severity and never lowers anything: a rule can only
+          bump a finding up. The replay below runs every rule against the fleet as
+          it stands right now and reports what <i>would</i> move, without moving
+          anything.</span>
+          <span>A rule that names a fact the app does not compute cannot fire. It is
+          not an error and it is not silently ignored either: the validator refuses
+          it, and it shows here as moving nothing at all. Read "would move nothing"
+          as either "no finding matches today" or "this rule is waiting on a
+          measurement that does not exist yet" — the condition column tells you
+          which.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>What each rule would move, replayed against the fleet now</title>
+      <table>
+        <search>
+          <!-- The replay is a saved search rather than SPL copied into this
+               page. One definition, one behaviour: a dashboard that reimplements
+               the thing it reports on will drift from it, and the drift will be
+               invisible because both halves keep returning rows. -->
+          <query>| savedsearch "Riskability - replay escalation rules"
+| eval Move = from_tier . " to " . to_tier
+| rename rule AS Rule, enabled AS "On", findings AS Findings, hosts AS Hosts,
+    cves AS CVEs
+| table Rule, "On", Move, Findings, Hosts, CVEs</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:6px 0 0;">
+          <b>Read this before enabling anything.</b>
+          <span>A rule that would move thousands of findings is not thereby a good
+          rule: it is a rule that has stopped discriminating, and a queue where
+          everything is urgent is a queue with no order in it. The useful shape is
+          a small number of findings moved for a reason you can state in one
+          sentence.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>The rule catalogue</title>
+      <table>
+        <search>
+          <!-- Rules are read from the conf file rather than a lookup because the
+               conf file IS the interface: a site edits
+               local/riskability_escalations.conf, and anything this page showed
+               from a cached copy would disagree with what the engine reads. -->
+          <query>| rest /servicesNS/nobody/riskability/configs/conf-riskability_escalations splunk_server=local
+| search title!="default"
+| rename title AS rule
+| eval rk_on = if(enabled="1", "yes", "no")
+| fields rule, rk_on, bump, when
+| append
+    [ | savedsearch "Riskability - replay escalation rules"
+      | stats sum(findings) AS rk_moves BY rule ]
+| stats values(rk_on) AS "On", values(bump) AS Bump, values(when) AS Condition,
+    sum(rk_moves) AS rk_moves BY rule
+| eval "Would move" = if(coalesce(rk_moves, 0) > 0, rk_moves . " findings", "nothing today")
+| rename rule AS Rule
+| sort - rk_moves, Rule
+| table Rule, "On", Bump, "Would move", Condition</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:6px 0 0;">
+          <b>Bump is a number of tiers, not a score.</b>
+          <span>A rule moves a finding up that many tiers from wherever the
+          deterministic score put it. It does not add points, so two rules firing
+          on the same finding do not compound into an arbitrary number; the
+          escalation cap and floor macros bound the result.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>How to add one</title>
+      <html>
+        <div class="rk-status" style="margin:0;">
+          <b>Rules live in a conf file, not in this page.</b>
+          <span>Add a stanza to
+          <tt>local/riskability_escalations.conf</tt> with a <tt>when</tt>
+          condition, a <tt>bump</tt>, and <tt>enabled = 0</tt> until the replay
+          above tells you what it does. The fields a condition may name are
+          allowlisted and typed, and the spec file
+          <tt>README/riskability_escalations.conf.spec</tt> lists every one of
+          them along with whether the app actually computes it today.</span>
+          <span>Graded fields are strings on purpose, so a condition can only name
+          the grade it means. Ordering comparisons are refused on them: "unknown"
+          is the absence of a measurement, not a low value on the same scale as
+          the real grades, and a rule allowed to write
+          <tt>&gt;</tt> against it would be placing absence somewhere on a scale
+          it does not belong to.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

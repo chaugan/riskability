@@ -7,6 +7,8 @@
   <view name="riskability_exposure"/>
   <view name="riskability_hosts"/>
   <view name="riskability_host"/>
+  <view name="riskability_netevidence"/>
+  <view name="riskability_escalations"/>
   <view name="riskability_coverage"/>
   <view name="riskability_exceptions"/>
   <view name="riskability_cve"/>
