@@ -229,31 +229,28 @@
 
   <row>
     <panel>
-      <title>How to wire this up</title>
+      <title>What to do with a grade</title>
       <html>
         <div class="rk-status" style="margin:0;">
-          <b>Two macros, both shipped resolving to nothing.</b>
-          <span>With neither wired, every row reads <i>unknown</i>, which is the
-          correct answer when no firewall data has arrived.</span>
-          <span>
-          <ul>
-            <li><b>riskability_fw_edges</b> — reduce your firewall index to
-            unique permitted edges: <tt>src_ip</tt>, <tt>dest_ip</tt>,
-            <tt>port</tt>, <tt>protocol</tt>, <tt>sessions</tt>,
-            <tt>edge_first_seen</tt>, <tt>edge_last_seen</tt>.</li>
-            <li><b>riskability_fw_entry_points</b> — declare where an
-            attacker plausibly starts: <tt>entry_cidr</tt>, <tt>entry_name</tt>,
-            <tt>entry_scan_pressure</tt>. Only a <i>constant</i> pressure entry
-            point can ever produce a <i>not observed</i> grade, because only
-            there does the absence of a flow mean anything.</li>
-          </ul>
-          </span>
-          <span>A range matches on containment alone, so declaring
-          <tt>0.0.0.0/0</tt> as the internet also matches every private address
-          and will report internal traffic as arriving from outside. List the
-          ranges that actually face the boundary. The reasoning, the failure
-          directions and what this is deliberately not are in
-          <tt>docs/ROUTE-EVIDENCE.md</tt>.</span>
+          <b>Read a grade as a question about the finding, not a verdict on the host.</b>
+          <span><i>Confirmed observed</i> means a permitted flow from a declared
+          entry point reached this address and port recently: treat the finding
+          on that port as reachable from where an attacker starts, and check
+          the source addresses listed against what you expect to see there.
+          <i>Historically observed</i> is the same evidence, older than the
+          freshness window: the path existed, and may still.</span>
+          <span><i>Not observed</i> means the firewall was watching this host and
+          logged no permitted flow to this port from any entry point. That is
+          evidence about the port and it is weaker than it looks: a permitted
+          rule nobody has used yet produces no log line at all. Use it to order
+          work, never to accept a risk.</span>
+          <span><i>Unknown</i> means this page cannot say, and the reason column
+          says why: no firewall data has been onboarded, no entry point has been
+          declared, the data is stale, or the host never appeared in it. None of
+          those is a statement about the network. If every row on this page
+          reads unknown, the firewall feed has not been connected to Riskability
+          yet; that is set up by an administrator in Riskability Configuration,
+          and the details are in the app's documentation under network evidence.</span>
         </div>
       </html>
     </panel>
