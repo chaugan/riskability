@@ -33,6 +33,7 @@ CAPTIONS = {
  "mitigation-coverage":    ("Mitigation coverage", "MITRE mitigations ranked by how many of the fleet's reachable techniques each would address, split by reach, so the highest leverage control is first. A mitigation reduces the technique; the CVEs still need fixing."),
  "config-surface":         ("Configuration surface", "What each host is configured to run: cron, systemd timers and services, SUID and SGID binaries, each carrying the ATT&CK technique it is the surface for. The half of ATT&CK a CVE feed cannot reach, counted in mechanisms rather than CVEs."),
  "exposure":               ("Exposure", "The priority matrix, open findings by network reach against exploitation likelihood, the most exposed hosts, and the chain the network takes: edge, listening process, container, package, CVE."),
+ "host-detail":            ("Host detail", "Everything known about one machine, as a dossier: identity and four clocks, what has been measured and what has not, what to do first, its findings, configuration surface, exposure, patch level and unsupported software."),
  "hosts":                  ("Hosts", "Every host at a glance, split by filesystem root, so a package inside a container is never confused with the same package on the host."),
  "coverage":               ("Coverage", "The honest page. What the imported feed cannot assess and why, whether everything the collector found actually arrived, Windows patch level against Microsoft's own build data, and the support timeline."),
  "end-of-support":         ("End of support", "Software on the fleet that has run out of supported releases, placed on a timeline at the date support ends, with how much evidence there is that it runs. Who ships a copy decides whether it is really unsupported."),
@@ -41,7 +42,6 @@ CAPTIONS = {
  "cve-encyclopaedia":      ("CVE encyclopaedia", "What any vulnerability the feed carries actually is, and where it sits in this fleet. Entirely offline."),
  "feed-administration":    ("Feed administration (admin)", "Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. In the Riskability Configuration app, administrators only."),
  "feed-import-progress":   ("Feed import in progress (admin)", "An import runs on the server and does not need the page kept open. The active feed stays searchable throughout, so importing never blinds the fleet."),
- "escalations":            ("Escalation rules (earlier, main app)", "The rules page as it first shipped in the main app, before it moved to the configuration app and gained switches."),
 }
 # The section at the top. Edit when a batch of pages changes.
 RECENT_TITLE = "Changed on 2026-09-03"
