@@ -246,6 +246,7 @@
           <latest>now</latest>
         </search>
         <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.fitContent">Tier,Score,Severity,KEV,Host,Fix,Action</option>
         <option name="riskability.riskability_grid.emptyText">No open finding sits behind this point. For a host that means nothing open is behind a port traffic was observed to reach; for a port, nothing open on the software listening there.</option>
         <option name="height">420</option>
         <!-- A CVE cell opens the encyclopaedia entry; any other cell does

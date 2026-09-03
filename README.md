@@ -821,6 +821,11 @@ Twelve views, in nav order, and thirteen when AI analysis is switched on.
 
 ## AI analysis (optional)
 
+Every capture, with captions and a filter, is browsable as a gallery at
+**https://chaugan.github.io/riskability/** — served by GitHub Pages from
+`docs/screenshots/`, so a screenshot committed there is on the web with no
+build step. The pages that changed most recently are listed first.
+
 Riskability's promise is that nothing leaves *unintentionally*, and that is
 three statements rather than one.
 

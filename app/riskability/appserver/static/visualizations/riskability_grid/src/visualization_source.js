@@ -82,6 +82,37 @@ var MIN_COL_WIDTH = 80;
  * genuinely does not fit, and those must keep their scrollbar. */
 var HAIRLINE_OVERFLOW = 16;
 
+/* The width a column needs to show its widest value whole, measured in the
+ * table's font on a canvas rather than guessed from character counts: "P0" and
+ * "mitigate" are both short and differ by a factor of three. The header counts
+ * too, since a title wider than every value would otherwise be the thing that
+ * wraps. Padding covers the cell's own, the sort arrow and the filter menu
+ * glyph; the cap stops a stray long value in a "short" column from taking the
+ * whole table, which is the reader's cue that the column was mis-declared. */
+var _measureCtx = null;
+function contentWidth(rows, i, title) {
+    if (!_measureCtx) {
+        var c = document.createElement('canvas');
+        _measureCtx = c.getContext('2d');
+    }
+    var font = '';
+    try {
+        var probe = document.querySelector('.tabulator .tabulator-cell') ||
+                    document.querySelector('.rk-grid-host') || document.body;
+        var cs = window.getComputedStyle(probe);
+        font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+    } catch (e) { font = '12px sans-serif'; }
+    _measureCtx.font = font;
+    var widest = _measureCtx.measureText(String(title)).width + 26;   // sort + menu glyphs
+    for (var r = 0; r < rows.length; r++) {
+        var v = rows[r][i];
+        if (v === null || v === undefined) { continue; }
+        var w = _measureCtx.measureText(String(v)).width;
+        if (w > widest) { widest = w; }
+    }
+    return Math.min(360, Math.ceil(widest) + 22);   // 22: cell padding both sides
+}
+
 function columnFloor(available, count) {
     if (!available || available < 0 || !count) { return PREF_COL_WIDTH; }
     return Math.max(MIN_COL_WIDTH,
@@ -464,6 +495,18 @@ export default SplunkVisualizationBase.extend({
 
         var wrapText = String(this._opt(config, 'wrap') || 'no') === 'yes';
         if (wrapText) { host.classList.add('rk-grid-wrap'); }
+
+        // Columns to size to their content, by title. Under fitColumns every
+        // column gets an equal share of the panel, which gives a tier badge
+        // the same width as a sentence of prose: the badge sits in a field of
+        // nothing and the sentence is cut short. A column named here takes
+        // exactly the width its widest value needs (widthGrow 0, no floor)
+        // and the rest divide what remains. The floor is dropped on purpose:
+        // it is there to stop a squeezed column vanishing, and a column sized
+        // to its content cannot be squeezed.
+        var fitContent = String(this._opt(config, 'fitContent') || '')
+            .split(',').map(function (x) { return x.trim().toLowerCase(); })
+            .filter(Boolean);
         var columns = fields.map(function (f, i) {
             var title = f.name;
             var numeric = looksNumeric(rows, i);
@@ -515,6 +558,14 @@ export default SplunkVisualizationBase.extend({
             }
             if (numeric) { col.hozAlign = 'right'; }
             if (hidden.indexOf(title.toLowerCase()) !== -1) { col.visible = false; }
+            if (fitContent.indexOf(title.toLowerCase()) !== -1) {
+                col.width = contentWidth(rows, i, title);
+                col.widthGrow = 0;
+                col.widthShrink = 0;
+                col.minWidth = 0;
+            } else if (fitContent.length) {
+                col.widthGrow = 1;
+            }
             // Prose needs to wrap. Every other table in this app holds short
             // values where truncating with an ellipsis is the right call, but
             // a CVE description truncated at the column edge is useless, and

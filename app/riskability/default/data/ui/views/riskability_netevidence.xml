@@ -92,7 +92,7 @@
 
     <panel>
       <title>Can this evidence say anything at all?</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <!-- coverage_state is the gate between "unknown" and any other
                answer, so it is shown as its own count rather than left to be
@@ -113,17 +113,20 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">10</option>
-        <option name="drilldown">none</option>
-        <option name="wrap">true</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+      
+        <option name="riskability.riskability_grid.fitContent">Coverage state,Host and port rows,Hosts</option>
+        <option name="riskability.riskability_grid.emptyText">The assess job has not run yet.</option>
+        <option name="height">260</option>
+      </viz>
     </panel>
   </row>
 
   <row>
     <panel>
       <title>The ledger $grade_label$</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_netevidence_lookup
 | search hostname=$host_filter|s$ $grade_filter$
@@ -142,13 +145,14 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">25</option>
-        <option name="drilldown">none</option>
-        <option name="wrap">true</option>
-        <format type="color" field="Grade">
-          <colorPalette type="map">{"confirmed observed":#B3121F,"historically observed":#D2641F,"not observed":#3F6E8C,"unknown":#4A5560}</colorPalette>
-        </format>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+      
+        <option name="riskability.riskability_grid.fitContent">Host,Port,Protocol,Grade,Pressure,Sessions,Last edge</option>
+        <option name="riskability.riskability_grid.filterNote">$grade_label$</option>
+        <option name="riskability.riskability_grid.emptyText">No row matches this grade and host.</option>
+        <option name="height">460</option>
+      </viz>
     </panel>
   </row>
 
@@ -185,10 +189,13 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">10</option>
-        <option name="drilldown">none</option>
-        <option name="wrap">true</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+      
+        <option name="riskability.riskability_grid.fitContent">Identity,Rows</option>
+        <option name="riskability.riskability_grid.emptyText">Every edge that reached a host resolved to exactly one. Nothing was refused.</option>
+        <option name="height">260</option>
+      </viz>
     </panel>
   </row>
 
@@ -220,10 +227,13 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">20</option>
-        <option name="drilldown">none</option>
-        <option name="wrap">true</option>
-      </table>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+      
+        <option name="riskability.riskability_grid.fitContent">Host,Addresses,IPv4,IPv6,Source,Collector,Schema</option>
+        <option name="riskability.riskability_grid.emptyText">No host has been assessed for addresses yet. The address snapshot job runs hourly.</option>
+        <option name="height">300</option>
+      </viz>
     </panel>
   </row>
 
