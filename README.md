@@ -200,12 +200,20 @@ even with a feed imported, because clearing that gate is itself a write:
 chown -R splunk:splunk $SPLUNK_HOME/etc/apps/riskability
 ```
 
-**The Splunkbase download is one archive, `riskability-<version>.tar.gz`, and
-it is the whole app.** Install it on the search head. On a single instance -
-one Splunk that is both search head and indexer, which is the usual shape for
-an air-gapped deployment - that is the entire installation. The four indexes
-and the index-time parsing ship inside it, so it works on install rather than
-after a manual step.
+**Since 1.3.0 the app is two archives, and the Splunkbase listing carries only
+one of them.** `riskability-<version>.tar.gz` is the app. `riskability-config-
+<version>.tar.gz` is the configuration app, readable by administrators only,
+and it is required: feed administration lives there, so an installation
+without it has no way to import a feed and its setup page points at a page
+that does not exist. A Splunkbase listing takes exactly one archive, so take
+`riskability-config` from the [GitHub release](https://github.com/chaugan/riskability/releases)
+alongside the main app, or build both with `tools/package.sh`. Install both on
+the search head. On a single instance - one Splunk that is both search head and
+indexer, which is the usual shape for an air-gapped deployment - that is the
+entire installation. The five indexes and the index-time parsing ship inside
+the main app, so it works on install rather than after a manual step. A third
+archive, `TA-riskability-ai`, carries the three indexes the optional AI
+pipeline writes to and is needed only if you switch that on.
 
 A **distributed** deployment needs two small additions, because a universal
 forwarder cannot run this app: it has no Python for the modular input, and
@@ -215,14 +223,15 @@ below.
 
 | Role | What it needs |
 |---|---|
-| Search head | The app. Nothing else |
-| Indexer | The app's `default/indexes.conf`. From 0.1.30 the forwarder parses locally, so the `[riskability:swinv]` parsing is no longer required here, but keep it: it is what protects anything reaching the indexers by another route, such as a heavy forwarder, HEC, or a forwarder still on an older add-on. `TA-riskability-indexes` carries both |
+| Search head | The app and `riskability-config`. Nothing else |
+| Indexer | The app's `default/indexes.conf`, and `TA-riskability-ai` if AI analysis will be switched on. From 0.1.30 the forwarder parses locally, so the `[riskability:swinv]` parsing is no longer required here, but keep it: it is what protects anything reaching the indexers by another route, such as a heavy forwarder, HEC, or a forwarder still on an older add-on. `TA-riskability-indexes` carries both |
 | Universal forwarder | `inputs.conf`, and the `[riskability:swinv]` stanza from `props.conf`. From 0.1.30 the forwarder parses the inventory itself, which is what stops the parsing depending on a tier you may not own. `TA-riskability` carries both |
 
 The repository also carries `TA-riskability` and `TA-riskability-indexes`,
 prebuilt for those two roles if you would rather install an archive than paste
-a stanza. They are not on Splunkbase - a listing takes one archive - so build
-them with `tools/package.sh` or take them from the GitHub release.
+a stanza. Like `riskability-config`, they are not on Splunkbase - a listing
+takes one archive - so build them with `tools/package.sh` or take them from
+the GitHub release, which carries every archive and a `SHA256SUMS.txt`.
 
 Everything the app needs at runtime is inside those archives - the KV Store
 collections and their indexes, the search commands, the modular input and its
