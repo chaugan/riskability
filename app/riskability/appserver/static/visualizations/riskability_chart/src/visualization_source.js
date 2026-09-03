@@ -1358,6 +1358,16 @@ function chainSchema(config) {
         kinds[kind] = { layer: layers.length, color: palette[layers.length % palette.length] };
         layers.push((bits[1] || kind).trim());
     });
+    // A row may name its column outright as "N:kind" (see place() in
+    // buildChainGraph). Then the kind decides only the colour, and a kind
+    // that is not a column of its own still needs one: the built-in names
+    // get their usual colours so a routes page can say "3:port" and have the
+    // port colour in column 3 without declaring a port column.
+    var builtin = { entry: '#dc4e41', host: '#f8be34', port: '#7cc0ec', package: '#6e9c4f', cve: '#708794',
+                    'cve-kev': '#a4302a', listener: '#f8be34', edge: '#dc4e41' };
+    Object.keys(builtin).forEach(function (k) {
+        if (!kinds[k]) { kinds[k] = { layer: layers.length - 1, color: builtin[k] }; }
+    });
     return layers.length ? { kinds: kinds, layers: layers }
                          : { kinds: CHAIN_KIND, layers: CHAIN_LAYERS };
 }
@@ -1368,12 +1378,26 @@ function buildChainGraph(rows, t, config) {
     var KINDS = schema.kinds;
     var LAYERS = schema.layers;
 
+    // A kind written as "3:host" puts the node in column 3 with the colour
+    // of "host". The chain's own contract is one column per KIND, which is
+    // right for the exposure page (edge, listener, package, CVE are a fixed
+    // order) and wrong for a route, where the question is how many hops out
+    // a host sits: two hosts reached at hop 1 and hop 3 must not share a
+    // column. The dashboard decides the column, the kind decides the colour,
+    // and the layer labels come from chainKinds by position as before.
+    function place(kind) {
+        var m = /^(\d+):(.*)$/.exec(String(kind || ''));
+        var base = m ? m[2] : kind;
+        var k = KINDS[base] || { layer: LAYERS.length - 1, color: '#6b5a2a', dashed: true };
+        var layer = m ? Math.min(parseInt(m[1], 10), LAYERS.length - 1) : k.layer;
+        return { layer: layer, color: k.color, dashed: !!k.dashed, kind: base };
+    }
     function touch(name, kind, v) {
-        var k = KINDS[kind] || { layer: LAYERS.length - 1, color: '#6b5a2a', dashed: true };
+        var k = place(kind);
         var id = k.layer + RK_SEP + name;
         if (!nodes[id]) {
-            nodes[id] = { id: id, name: name, layer: k.layer, kind: kind,
-                          color: k.color, dashed: !!k.dashed, v: 0 };
+            nodes[id] = { id: id, name: name, layer: k.layer, kind: k.kind,
+                          color: k.color, dashed: k.dashed, v: 0 };
         }
         if (v > nodes[id].v) { nodes[id].v = v; }
         return id;
