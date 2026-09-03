@@ -203,7 +203,7 @@
   <row depends="$fw_ready$ $sel_node$">
     <panel>
       <title>Findings at the clicked point: $sel_kind$ $sel_node$</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <!-- What the click selected decides the scope. A host: every open
                finding on it that sits behind an observed port. A port: the
@@ -245,22 +245,20 @@
           <earliest>0</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">20</option>
-        <option name="drilldown">cell</option>
-        <option name="wrap">true</option>
-        <format type="color" field="Tier">
-          <colorPalette type="map">{"P0":#B3121F,"P1":#D2641F,"P2":#B08C1A,"P3":#3F6E8C,"P4":#4A5560}</colorPalette>
-        </format>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.emptyText">No open finding sits behind this point. For a host that means nothing open is behind a port traffic was observed to reach; for a port, nothing open on the software listening there.</option>
+        <option name="height">420</option>
         <!-- A CVE cell opens the encyclopaedia entry; any other cell does
              nothing rather than the default, which abandons the page for a
-             raw search. -->
+             raw search. The grid reports the clicked column's title as
+             click.name and the row's CVE as row.CVE. -->
         <drilldown>
-          <condition field="CVE">
-            <link target="_blank">/app/riskability/riskability_cve?form.cve_tok=$click.value2|u$</link>
+          <condition match="$click.name$ == &quot;CVE&quot;">
+            <link target="_blank">/app/riskability/riskability_cve?form.cve_tok=$row.CVE|u$</link>
           </condition>
           <condition></condition>
         </drilldown>
-      </table>
+      </viz>
       <html>
         <div class="rk-status" style="margin:6px 0 0;">
           <b>Every row is an open finding the app already holds; nothing here is computed from the firewall.</b>
@@ -279,7 +277,7 @@
   <row depends="$fw_ready$">
     <panel>
       <title>The jumps, listed</title>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_netevidence_lookup
 | search hostname=$host_filter|s$
@@ -308,10 +306,11 @@
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
-        <option name="count">25</option>
-        <option name="drilldown">none</option>
-        <option name="wrap">true</option>
-      </table>
+        <option name="riskability.riskability_grid.wrap">yes</option>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">No jump has been observed from a declared entry point, and no permitted host-to-host flow resolved to two inventory hosts.</option>
+        <option name="height">360</option>
+      </viz>
     </panel>
   </row>
 </form>
