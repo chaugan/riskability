@@ -19,6 +19,7 @@ CAPTIONS = {
  "netevidence-grades":     ("Network evidence, grades", "The grade donut: no green anywhere, because none of these grades means safe."),
  "routes":                 ("Routes", "The jumps a permitted flow has been seen to make: entry point, host reached, port, software listening, open findings."),
  "routes-drilldown":       ("Routes, drill-down", "Clicking a point on the route opens the findings behind it on the same page."),
+ "routes-host-filter":     ("Routes, one host", "Filtered to one host: only the chains through it, at the hops the unfiltered graph gives them. Red edges land on software with a known-exploited or EPSS 50%+ finding open."),
  "admin-escalation-rules": ("Escalation rules (admin)", "Every rule with a switch, the replay of what each would move, and locked rules with the reason they cannot be enabled."),
  "admin-firewall-source":  ("Firewall data source (admin)", "Index or accelerated data model, field mapping, entry points, freshness; Test and top-100 preview before Save."),
  "escalations":            ("Escalation rules (earlier, main app)", "Before the page moved to the admin app."),
@@ -34,7 +35,7 @@ CAPTIONS = {
 # The section at the top. Edit when a batch of pages changes.
 RECENT_TITLE = "Changed on 2026-09-03"
 RECENT = ["ai-prioritization", "ai-explain-rendered", "network-evidence", "netevidence-grades",
-          "routes", "routes-drilldown", "admin-escalation-rules", "admin-firewall-source"]
+          "routes", "routes-host-filter", "routes-drilldown", "admin-escalation-rules", "admin-firewall-source"]
 
 
 def when(name):

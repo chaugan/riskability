@@ -216,7 +216,7 @@ var CONTRACTS = {
     // x = how likely the world is to exploit it, y = whether this copy answers
     // the network, value = findings, tier = what to do about it.
     prioritymatrix: ['x', 'y', 'value', 'tier'],
-    chaingraph: ['source', 'source_kind', 'target', 'target_kind', 'value'],
+    chaingraph: ['source', 'source_kind', 'target', 'target_kind', 'value', 'edge_label', 'edge_class'],
     // technique on the long Y axis, reach class on the fixed X axis, value =
     // known-exploited CVEs in that cell. tier colours the cell by reach so one
     // internet-facing finding is drawn exactly as loud as a thousand loopback
@@ -1413,8 +1413,20 @@ function buildChainGraph(rows, t, config) {
         if (v === null) { v = 0; }
         if (v > vmax) { vmax = v; }
         var sid = touch(sName, sKind, v), tid = touch(tName, tKind, v);
+        // Optional: what to say about THIS edge, and how loudly. edge_label
+        // is drawn on the edge and in its tooltip ("tcp/5432 · 120 sessions"
+        // on a route). edge_class colours the line: "exploitable" is a jump
+        // that lands on software with a known-exploited or high-EPSS finding
+        // open, which is the one kind of edge on a route page an attacker
+        // could take rather than merely traverse; "critical" is a jump onto
+        // a service whose worst finding is P0 or P1; anything else keeps the
+        // quiet default. Nothing here changes what a route IS: a permitted
+        // flow that happened. It changes what the reader is told about it.
+        var eLabel = rows[i].length > 5 && rows[i][5] !== null && rows[i][5] !== undefined ? String(rows[i][5]) : '';
+        var eClass = rows[i].length > 6 && rows[i][6] !== null && rows[i][6] !== undefined ? String(rows[i][6]).toLowerCase() : '';
         links.push({ source: sid, target: tid, value: v,
-                     targetKind: tKind, sourceKind: sKind });
+                     targetKind: tKind, sourceKind: sKind,
+                     rkLabel: eLabel, rkClass: eClass });
     }
 
     // Lay each column out top to bottom, busiest first, then two barycentre
@@ -1515,7 +1527,20 @@ function buildChainGraph(rows, t, config) {
         return {
             source: l.source, target: l.target, value: l.value,
             targetKind: l.targetKind,
-            lineStyle: { width: vmax > 0 ? 1 + 2.4 * (l.value / vmax) : 1.4 },
+            lineStyle: {
+                width: vmax > 0 ? 1 + 2.4 * (l.value / vmax) : 1.4,
+                // The class overrides the source colour: a red edge is the
+                // one thing on the page that says "this jump can be taken".
+                color: l.rkClass === 'exploitable' ? '#dc4e41'
+                     : l.rkClass === 'critical' ? '#f8be34' : 'source',
+                opacity: l.rkClass ? 0.85 : 0.45,
+                type: l.rkClass === 'exploitable' ? 'solid' : undefined,
+            },
+            label: (l.rkLabel && /:host$/.test(l.sourceKind) && /:host$/.test(l.targetKind))
+                ? { show: true, formatter: shorten(l.rkLabel, 22), fontSize: 9,
+                    color: t.muted, position: 'middle',
+                    backgroundColor: t.tooltipBg, padding: [1, 3], borderRadius: 2 }
+                : undefined,
         };
     });
 
@@ -1549,9 +1574,14 @@ function buildChainGraph(rows, t, config) {
             },
             formatter: function (p) {
                 if (p.dataType === 'edge') {
-                    return escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
-                        escapeHtml(chainNodeLabel(p.data.target)) + ' &#183; <b>' +
-                        p.data.value + '</b> CVEs through this hop';
+                    var head = escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
+                        escapeHtml(chainNodeLabel(p.data.target));
+                    if (p.data.rkLabel) {
+                        var cls = p.data.rkClass === 'exploitable' ? ' &#183; <b>an open finding here is known-exploited or high-EPSS</b>'
+                                : p.data.rkClass === 'critical' ? ' &#183; <b>worst open finding here is P0 or P1</b>' : '';
+                        return head + ' &#183; ' + escapeHtml(p.data.rkLabel) + cls;
+                    }
+                    return head + ' &#183; <b>' + p.data.value + '</b> CVEs through this hop';
                 }
                 return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b> &#183; ' +
                     escapeHtml(LAYERS[p.value[0]] || 'unclassified');
