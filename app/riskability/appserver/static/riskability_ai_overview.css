@@ -383,3 +383,11 @@ body.rk-help-off .rk-ai-method-card { display: none; }
     color: #d6dde4; padding: 5px 9px; font-size: 12px;
 }
 .rk-ai-filter-input:focus { outline: none; border-color: #2a86c4; }
+
+
+/* A saved explanation exists for this row. Green is used nowhere else on this
+   page, and here it means exactly one thing: an answer is already stored, so
+   opening it costs no model call. */
+.rk-ai-explain-controls { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.rk-ai-saved { background: #2f7d32; border-color: #3fa145; color: #fff; }
+.rk-ai-saved:hover { background: #3a9440; }

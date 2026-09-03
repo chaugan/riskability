@@ -814,37 +814,67 @@
             var explain = el("button", "rk-ai-explain", "Explain in depth");
             explain.type = "button";
             var meta = el("div", "rk-dim rk-ai-explain-meta");
+            var rerun = el("button", "rk-ai-explain rk-ai-rerun", "Re-run");
+            rerun.type = "button";
+            rerun.title = "Ask the model again and replace the saved answer";
+            rerun.hidden = true;
 
-            function showAnswer(text, when, cached) {
+            // A saved answer is not shown until asked for. A page of 25 rows
+            // with a rendered essay under each is unreadable, so a row with a
+            // saved explanation shows a green button saying one exists, and
+            // the answer opens under it on click. Re-run sits beside it once
+            // the answer is open.
+            var shown = false;
+            var saved = null;   // {text, when}
+
+            function showAnswer() {
                 out.textContent = "";
-                renderMarkdown(text, out);
-                meta.textContent = (cached ? "stored answer" : "fresh answer")
-                    + (when ? ", " + humanAge(when) : "")
+                renderMarkdown(saved.text, out);
+                out.hidden = false;
+                shown = true;
+                meta.textContent = "saved" + (saved.when ? ", " + humanAge(saved.when) : "")
                     + ". Re-run asks the model again and replaces it.";
-                explain.textContent = "Re-run explanation";
-                explain.disabled = false;
+                explain.textContent = "Hide explanation";
+                explain.className = "rk-ai-explain";
+                rerun.hidden = false;
+            }
+            function hideAnswer() {
+                out.hidden = true;
+                shown = false;
+                meta.textContent = "";
+                explain.textContent = "Saved explanation available";
+                explain.className = "rk-ai-explain rk-ai-saved";
+                rerun.hidden = true;
             }
             function ask(force) {
-                explain.disabled = true;
+                explain.disabled = true; rerun.disabled = true;
                 explain.textContent = "Asking the model\u2026";
                 explainCve(row.cve_id, force).then(function (res) {
-                    showAnswer(res.explanation || "", res.explained_at, res.cached === true);
+                    saved = {text: res.explanation || "", when: res.explained_at};
+                    showAnswer();
                     if (res.stored === false) {
                         meta.textContent += " This answer could not be stored, so the next reader will ask again.";
                     }
                 }).catch(function (e) {
                     out.textContent = "Could not explain: " + e.message;
-                    explain.disabled = false;
-                    explain.textContent = row.explanation ? "Re-run explanation" : "Try again";
-                });
+                    out.hidden = false;
+                    explain.textContent = saved ? "Hide explanation" : "Try again";
+                }).then(function () { explain.disabled = false; rerun.disabled = false; });
             }
             explain.addEventListener("click", function () {
-                ask(explain.textContent === "Re-run explanation");
+                if (saved && shown) { hideAnswer(); }
+                else if (saved) { showAnswer(); }
+                else { ask(false); }
             });
+            rerun.addEventListener("click", function () { ask(true); });
             if (row.explanation) {
-                showAnswer(row.explanation, row.explained_at, true);
+                saved = {text: row.explanation, when: row.explained_at};
+                hideAnswer();
             }
-            why.appendChild(explain);
+            var controls = el("div", "rk-ai-explain-controls");
+            controls.appendChild(explain);
+            controls.appendChild(rerun);
+            why.appendChild(controls);
             why.appendChild(meta);
             why.appendChild(out);
             tr.appendChild(why);
