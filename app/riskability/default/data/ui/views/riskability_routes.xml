@@ -36,8 +36,6 @@
   </search>
 
   <init>
-    <set token="host_filter">*</set>
-    <set token="entry_filter">*</set>
     <set token="chain_labels">c0:entry point,c1:hop 1,c2:software listening,c3:open findings</set>
   </init>
 
