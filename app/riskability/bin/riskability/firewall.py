@@ -36,6 +36,13 @@ import re
 # ---------------------------------------------------------------------------
 
 FIELDS = {
+    # "index" reads raw events and reduces them; "datamodel" runs tstats over an
+    # accelerated data model, which is how a site with a real firewall volume
+    # does this: the reduction is already summarised on the indexers and a
+    # search that took minutes takes seconds. The fields below are grouped by
+    # which mode reads them; the page shows one group at a time.
+    "mode":         {"default": "index", "kind": "enum",   "max": 16,
+                     "values": ("index", "datamodel")},
     "index":        {"default": "",      "kind": "name",   "max": 128},
     "sourcetype":   {"default": "",      "kind": "text",   "max": 128},
     "extra_filter": {"default": "",      "kind": "filter", "max": 500},
@@ -45,6 +52,18 @@ FIELDS = {
     "proto_field":  {"default": "transport", "kind": "field", "max": 64},
     "action_field": {"default": "action", "kind": "field", "max": 64},
     "action_allowed": {"default": "allowed", "kind": "text", "max": 128},
+    # Data model mode. The CIM Network_Traffic model is the default and its
+    # field names are the defaults below; a site with its own model names it
+    # and the fields under it. Fields are written as the model exposes them,
+    # so "All_Traffic.src" not "src".
+    "datamodel":    {"default": "Network_Traffic", "kind": "name", "max": 128},
+    "dm_object":    {"default": "All_Traffic", "kind": "name", "max": 128},
+    "dm_src_field": {"default": "All_Traffic.src", "kind": "dmfield", "max": 96},
+    "dm_dest_field": {"default": "All_Traffic.dest", "kind": "dmfield", "max": 96},
+    "dm_port_field": {"default": "All_Traffic.dest_port", "kind": "dmfield", "max": 96},
+    "dm_proto_field": {"default": "All_Traffic.transport", "kind": "dmfield", "max": 96},
+    "dm_action_field": {"default": "All_Traffic.action", "kind": "dmfield", "max": 96},
+    "dm_where":     {"default": "",      "kind": "filter", "max": 500},
     "entry_points": {"default": "",      "kind": "entries", "max": 8000},
     "fresh_days":   {"default": "7",     "kind": "days",   "max": 5},
     "stale_days":   {"default": "2",     "kind": "days",   "max": 5},
@@ -55,6 +74,9 @@ PRESSURES = ("constant", "occasional")
 
 _NAME_RE = re.compile(r"^[A-Za-z0-9_\-*]{1,128}$")
 _FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:\-{}]{0,63}$")
+# A data model field: Object.field, dotted, nothing that could close a quote
+# or open a subsearch.
+_DMFIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$")
 # What a filter may contain: field=value terms, quoted values, AND/OR/NOT,
 # parentheses. No pipes, no subsearch brackets, no backticks: a filter is a
 # where-clause, not a search.
@@ -79,6 +101,10 @@ def validate(raw: dict) -> dict:
         if len(value) > spec["max"]:
             raise SettingsError("%s is longer than %d characters" % (key, spec["max"]))
         kind = spec["kind"]
+        if kind == "enum" and value not in spec["values"]:
+            raise SettingsError("%s must be one of %s" % (key, ", ".join(spec["values"])))
+        if kind == "dmfield" and value and not _DMFIELD_RE.match(value):
+            raise SettingsError("%s must be a data model field such as All_Traffic.src" % key)
         if kind == "name" and value and not _NAME_RE.match(value):
             raise SettingsError("%s must be an index name (letters, digits, _ - *)" % key)
         if kind == "field" and value and not _FIELD_RE.match(value):
@@ -135,7 +161,11 @@ def parse_entries(text: str) -> list:
 
 def configured(settings: dict) -> bool:
     """Whether the edges source is set at all. Entry points and days alone do
-    not make a configuration: with no edges every row is unknown regardless."""
+    not make a configuration: with no edges every row is unknown regardless.
+    In data model mode the model name is what has to be present; the default
+    names the CIM model, so a site that picks the mode is configured."""
+    if settings.get("mode") == "datamodel":
+        return bool(settings.get("datamodel")) and bool(settings.get("dm_object"))
     return bool(settings.get("index"))
 
 
@@ -159,6 +189,8 @@ def edges_definition(s: dict) -> str:
     if not configured(s):
         return ('makeresults | eval src_ip = "", dest_ip = "", port = 0, protocol = "", '
                 'sessions = 0, edge_first_seen = 0, edge_last_seen = 0 | where 1=0')
+    if s.get("mode") == "datamodel":
+        return _dm_edges(s)
     terms = ["index=%s" % s["index"]]
     if s.get("sourcetype"):
         terms.append("sourcetype=%s" % _q(s["sourcetype"]))
@@ -174,6 +206,40 @@ def edges_definition(s: dict) -> str:
         + " | where isnotnull(src_ip) AND isnotnull(dest_ip) AND isnotnull(port)"
         + " | stats count AS sessions, min(_time) AS edge_first_seen, max(_time) AS edge_last_seen"
           " BY src_ip, dest_ip, port, protocol"
+        + " | fields src_ip, dest_ip, port, protocol, sessions, edge_first_seen, edge_last_seen"
+    )
+
+
+def _dm_edges(s: dict) -> str:
+    """tstats over an accelerated model, to the same field contract.
+
+    summariesonly=true, on purpose. A tstats that falls back to raw events
+    when the acceleration is behind returns the right answer slowly, and on a
+    firewall index "slowly" is the difference between an hourly job that
+    finishes and one that runs into the next hour. A site whose acceleration
+    lags sees fewer edges, which grades more rows unknown, which is the safe
+    direction; the newest_edge the test reports is how they would notice.
+
+    Only permitted flows are edges, so the action is a where clause on the
+    model's action field, the CIM value for which is "allowed".
+    """
+    model = "%s.%s" % (s["datamodel"], s["dm_object"])
+    fields = (s["dm_src_field"], s["dm_dest_field"], s["dm_port_field"], s["dm_proto_field"])
+    where = []
+    if s.get("dm_action_field") and s.get("action_allowed"):
+        where.append("%s=%s" % (s["dm_action_field"], _q(s["action_allowed"])))
+    if s.get("dm_where"):
+        where.append("(%s)" % s["dm_where"])
+    return (
+        "tstats summariesonly=true count AS sessions, min(_time) AS edge_first_seen, "
+        "max(_time) AS edge_last_seen FROM datamodel=%s%s BY %s"
+        % (model, (" WHERE " + " ".join(where)) if where else "", ", ".join(fields))
+        + " | rename %s AS src_ip, %s AS dest_ip, %s AS port, %s AS protocol" % fields
+        + " | eval src_ip = lower(src_ip), dest_ip = lower(dest_ip), port = tonumber(port),"
+          " protocol = lower(coalesce(protocol, \"tcp\"))"
+        + " | where isnotnull(src_ip) AND isnotnull(dest_ip) AND isnotnull(port)"
+        + " | stats sum(sessions) AS sessions, min(edge_first_seen) AS edge_first_seen,"
+          " max(edge_last_seen) AS edge_last_seen BY src_ip, dest_ip, port, protocol"
         + " | fields src_ip, dest_ip, port, protocol, sessions, edge_first_seen, edge_last_seen"
     )
 
@@ -206,6 +272,6 @@ def macros(s: dict) -> dict:
 
 def test_search(s: dict) -> str:
     """A bounded search a person can run to see whether the source yields edges."""
-    return "| " + edges_definition(s).replace("search ", "search ", 1) \
+    return "| " + edges_definition(s) \
         + " | stats count AS edges, dc(src_ip) AS sources, dc(dest_ip) AS destinations, " \
           "max(edge_last_seen) AS newest_edge"

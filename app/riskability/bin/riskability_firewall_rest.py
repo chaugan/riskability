@@ -132,12 +132,21 @@ class FirewallHandler(PersistentServerConnectionApplication):
         if not firewall.configured(clean):
             raise ValueError("name an index before testing")
         query = firewall.test_search(clean)
-        job = service.jobs.create(query, earliest_time="-1d", latest_time="now",
-                                  exec_mode="blocking", max_count=10)
         rows = []
-        for item in results.JSONResultsReader(job.results(output_mode="json", count=10)):
-            if isinstance(item, dict):
-                rows.append(item)
+        try:
+            job = service.jobs.create(query, earliest_time="-1d", latest_time="now",
+                                      exec_mode="blocking", max_count=10)
+            for item in results.JSONResultsReader(job.results(output_mode="json", count=10)):
+                if isinstance(item, dict):
+                    rows.append(item)
+        except Exception as exc:
+            # splunkd refuses the search for a model that does not exist or is
+            # not accelerated, and for an index that cannot be read. splunklib
+            # raises that at whichever call first talks to the job, so both
+            # are inside the guard. It is an answer about the settings, not a
+            # server fault, so it is a 400 with the reason in plain words
+            # rather than a 500 wrapping the raw HTTP body.
+            raise ValueError(_search_refusal(exc, clean))
         row = rows[0] if rows else {}
         edges = int(row.get("edges") or 0)
         return _reply(200, {
@@ -171,6 +180,21 @@ class FirewallHandler(PersistentServerConnectionApplication):
         except Exception:
             return {}
         return parsed if isinstance(parsed, dict) else {}
+
+
+def _search_refusal(exc, clean) -> str:
+    text = str(exc)
+    if "was not found" in text and "Data model" in text:
+        return ("data model %s was not found on this search head. In accelerated "
+                "mode the model must exist and be accelerated; the CIM add-on "
+                "provides Network_Traffic" % clean.get("datamodel"))
+    if "summariesonly" in text or "not accelerated" in text.lower():
+        return ("data model %s is not accelerated, and tstats runs summaries-only "
+                "here so that a firewall volume never falls back to a raw scan"
+                % clean.get("datamodel"))
+    import re as _re
+    m = _re.search(r'"text":"([^"]{1,200})', text)
+    return "the test search was refused: %s" % (m.group(1) if m else text[:200])
 
 
 def _norm(text) -> str:

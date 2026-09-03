@@ -87,6 +87,37 @@ def main():
     check("days pass through as integers",
           firewall.macros(s)["riskability_fw_fresh_days"] == "10")
 
+    # --- data model mode ----------------------------------------------------------
+    refuses({"mode": "tstats"}, "an unknown mode")
+    refuses({"mode": "datamodel", "dm_src_field": "src"}, "an unprefixed data model field")
+    refuses({"mode": "datamodel", "dm_src_field": 'All_Traffic.src" OR 1=1'}, "a quote in a data model field")
+    refuses({"mode": "datamodel", "dm_where": "x | delete"}, "a pipe in the data model where")
+    dm = firewall.validate({"mode": "datamodel"})
+    check("data model mode with defaults is configured (CIM Network_Traffic)", firewall.configured(dm))
+    check("index mode with defaults is still not configured", not firewall.configured(firewall.validate({"mode": "index"})))
+    e = firewall.macros(dm)["riskability_fw_edges"]
+    for want in ("tstats summariesonly=true", "FROM datamodel=Network_Traffic.All_Traffic",
+                 'WHERE All_Traffic.action="allowed"',
+                 "BY All_Traffic.src, All_Traffic.dest, All_Traffic.dest_port, All_Traffic.transport",
+                 "rename All_Traffic.src AS src_ip", "sum(sessions) AS sessions",
+                 "fields src_ip, dest_ip, port, protocol, sessions, edge_first_seen, edge_last_seen"):
+        check("tstats macro carries %s" % want, want in e)
+    check("tstats macro is a generating search with no leading pipe",
+          e.startswith("tstats ") and not e.startswith("|"))
+    custom = firewall.validate({"mode": "datamodel", "datamodel": "Site_FW", "dm_object": "Flows",
+                                "dm_src_field": "Flows.s", "dm_dest_field": "Flows.d",
+                                "dm_port_field": "Flows.p", "dm_proto_field": "Flows.t",
+                                "dm_action_field": "", "dm_where": 'Flows.dvc="fw1"'})
+    e2 = firewall.macros(custom)["riskability_fw_edges"]
+    check("a site model and its fields are used verbatim",
+          "FROM datamodel=Site_FW.Flows" in e2 and "BY Flows.s, Flows.d, Flows.p, Flows.t" in e2)
+    check("no action term when no action field is named, but the where survives",
+          "action" not in e2 and 'WHERE (Flows.dvc="fw1")' in e2)
+    check("index settings do not leak into the tstats macro",
+          "index=" not in e and "sourcetype" not in e)
+    check("the test search works for tstats too",
+          firewall.test_search(dm).startswith("| tstats "))
+
     # --- the test search is bounded and reads the same reduction ------------------
     t = firewall.test_search(s)
     check("test search starts with a pipe and ends in a stats", t.startswith("| search ")

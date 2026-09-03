@@ -37,7 +37,14 @@
     var root = document.getElementById("riskability-firewall-admin");
     if (!root) return;
 
-    var FIELDS = [
+    // Fields are grouped by which source mode reads them. The mode dropdown
+    // shows one group at a time, so an administrator on a data model never
+    // sees an index box and wonders whether to fill it in. Both groups are
+    // saved regardless; the mode decides which one the macro is generated
+    // from, and switching back later finds the old values still there.
+    var MODE = ["mode", "Source", "Where edges come from. Index: raw events, reduced on every run. Accelerated data model: tstats over a model that is already summarised on the indexers; the right choice for a real firewall volume.", "select",
+                [["index", "Index (raw events)"], ["datamodel", "Accelerated data model (tstats)"]]];
+    var INDEX_FIELDS = [
         ["index", "Index", "The index holding the firewall's flow events. Empty = not configured.", "text"],
         ["sourcetype", "Sourcetype (optional)", "Restrict to one sourcetype, for example pan:traffic.", "text"],
         ["extra_filter", "Extra filter (optional)", "Search terms ANDed in, for example dvc=edge-fw-1. A filter, not a search.", "text"],
@@ -45,8 +52,20 @@
         ["dest_field", "Destination address field", "CIM default dest_ip.", "text"],
         ["port_field", "Destination port field", "CIM default dest_port.", "text"],
         ["proto_field", "Protocol field", "CIM default transport.", "text"],
-        ["action_field", "Action field", "Only permitted flows are edges. Empty skips the filter.", "text"],
-        ["action_allowed", "Value meaning permitted", "For example allowed, or allow.", "text"],
+        ["action_field", "Action field", "Only permitted flows are edges. Empty skips the filter.", "text"]
+    ];
+    var DM_FIELDS = [
+        ["datamodel", "Data model", "Must be accelerated: tstats runs summariesonly, so an unaccelerated model yields no edges rather than a slow search. CIM default Network_Traffic.", "text"],
+        ["dm_object", "Dataset", "The dataset within the model. CIM default All_Traffic.", "text"],
+        ["dm_src_field", "Source address field", "As the model exposes it, dataset-prefixed. CIM default All_Traffic.src.", "text"],
+        ["dm_dest_field", "Destination address field", "CIM default All_Traffic.dest.", "text"],
+        ["dm_port_field", "Destination port field", "CIM default All_Traffic.dest_port.", "text"],
+        ["dm_proto_field", "Protocol field", "CIM default All_Traffic.transport.", "text"],
+        ["dm_action_field", "Action field", "Only permitted flows are edges. Empty skips the filter. CIM default All_Traffic.action.", "text"],
+        ["dm_where", "Extra WHERE (optional)", "Extra tstats WHERE terms, for example All_Traffic.dvc=\"edge-fw-1\". A filter, not a search.", "text"]
+    ];
+    var COMMON_FIELDS = [
+        ["action_allowed", "Value meaning permitted", "For example allowed, or allow. Used by both modes.", "text"],
         ["entry_points", "Entry points", "One per line: cidr | name | constant or occasional. Only a constant entry point can produce \"not observed\". Do not declare 0.0.0.0/0 unless internal ranges really are the internet to you: containment is all a range means.", "textarea"],
         ["fresh_days", "Fresh for (days)", "An edge newer than this grades confirmed observed.", "number"],
         ["stale_days", "Feed stale after (days)", "No edge newer than this and the whole feed is stale.", "number"],
@@ -84,18 +103,28 @@
                 + "Saving regenerates all five from the settings."));
         } else {
             root.appendChild(status("rk-good", "Configured.",
-                "Edges are read from index " + cfg.index + (cfg.sourcetype ? ", sourcetype " + cfg.sourcetype : "")
-                + ". The five macros match these settings."));
+                (cfg.mode === "datamodel"
+                    ? "Edges come from tstats over " + cfg.datamodel + "." + cfg.dm_object + " (accelerated)."
+                    : "Edges are read from index " + cfg.index + (cfg.sourcetype ? ", sourcetype " + cfg.sourcetype : "") + ".")
+                + " The five macros match these settings."));
         }
 
-        var form = el("div", "rk-fw-form");
-        FIELDS.forEach(function (f) {
-            var key = f[0], label = f[1], help = f[2], type = f[3];
+        function field(f, into) {
+            var key = f[0], label = f[1], help = f[2], type = f[3], choices = f[4];
             var row = el("div", "rk-fw-row" + (type === "textarea" ? " rk-fw-wide" : ""));
             var lab = el("label", "rk-fw-label", label);
-            var input = el(type === "textarea" ? "textarea" : "input", "rk-fw-input");
-            if (type !== "textarea") { input.type = type; if (type === "number") { input.min = 1; input.max = 3650; } }
-            else { input.rows = 5; }
+            var input;
+            if (type === "select") {
+                input = el("select", "rk-fw-input");
+                choices.forEach(function (c) {
+                    var o = el("option", null, c[1]); o.value = c[0]; input.appendChild(o);
+                });
+            } else if (type === "textarea") {
+                input = el("textarea", "rk-fw-input"); input.rows = 5;
+            } else {
+                input = el("input", "rk-fw-input"); input.type = type;
+                if (type === "number") { input.min = 1; input.max = 3650; }
+            }
             input.value = cfg[key] !== undefined ? cfg[key] : "";
             input.id = "rk-fw-" + key;
             lab.htmlFor = input.id;
@@ -103,9 +132,34 @@
             row.appendChild(lab);
             row.appendChild(input);
             row.appendChild(el("div", "rk-dim rk-fw-help", help));
-            form.appendChild(row);
-        });
-        root.appendChild(form);
+            into.appendChild(row);
+            return input;
+        }
+
+        var modeForm = el("div", "rk-fw-form");
+        var modeInput = field(MODE, modeForm);
+        root.appendChild(modeForm);
+
+        var indexGroup = el("div", "rk-fw-form rk-fw-group");
+        indexGroup.id = "rk-fw-group-index";
+        INDEX_FIELDS.forEach(function (f) { field(f, indexGroup); });
+        var dmGroup = el("div", "rk-fw-form rk-fw-group");
+        dmGroup.id = "rk-fw-group-datamodel";
+        DM_FIELDS.forEach(function (f) { field(f, dmGroup); });
+        root.appendChild(indexGroup);
+        root.appendChild(dmGroup);
+
+        function showMode() {
+            var dm = modeInput.value === "datamodel";
+            indexGroup.hidden = dm;
+            dmGroup.hidden = !dm;
+        }
+        modeInput.addEventListener("change", showMode);
+        showMode();
+
+        var common = el("div", "rk-fw-form");
+        COMMON_FIELDS.forEach(function (f) { field(f, common); });
+        root.appendChild(common);
 
         var bar = el("div", "rk-fw-actions");
         var test = el("button", "rk-fw-btn", "Test source");

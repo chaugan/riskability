@@ -4,6 +4,12 @@
 # the macros, or the page will report the macros as out of step.
 
 [settings]
+mode = index | datamodel
+* Where edges come from. "index" reads raw events from the index below and
+  reduces them to unique permitted edges. "datamodel" runs tstats over an
+  accelerated data model, which is the right choice for a real firewall
+  volume: the reduction is already summarised on the indexers. Default index.
+
 index = <string>
 * The index holding the firewall's permitted-flow events. Empty means not
   configured, and the network evidence pipeline grades everything unknown.
@@ -28,6 +34,26 @@ action_allowed = <string>
 * Only permitted flows are edges. Events are kept where action_field equals
   action_allowed. Leave action_field empty to skip the filter, only if the
   source already contains permitted flows and nothing else.
+
+datamodel = <string>
+dm_object = <string>
+* Data model mode only. The model and the dataset within it. Defaults to
+  the CIM Network_Traffic model and its All_Traffic dataset. The model must
+  be accelerated: tstats runs with summariesonly=true, so an unaccelerated
+  model yields no edges rather than a slow search.
+
+dm_src_field = <Object.field>
+dm_dest_field = <Object.field>
+dm_port_field = <Object.field>
+dm_proto_field = <Object.field>
+dm_action_field = <Object.field>
+* Data model mode only. Fields as the model exposes them, dataset-prefixed
+  (All_Traffic.src, not src). Permitted flows are those where the action
+  field equals action_allowed.
+
+dm_where = <string>
+* Data model mode only. Optional extra tstats WHERE terms, for example
+  All_Traffic.dvc="edge-fw-1". A filter, not a search.
 
 entry_points = <text>
 * One per line:  cidr | name | pressure.  A bare address is /32 or /128.
