@@ -295,7 +295,7 @@
       | lookup riskability_hostaddr_lookup address AS dest_ip OUTPUT hostname AS rk_dst_host, claimants AS rk_dst_claim
       | where isnotnull(rk_src_host) AND isnotnull(rk_dst_host) AND rk_src_host != rk_dst_host
       | where mvcount(rk_src_host) == 1 AND mvcount(rk_dst_host) == 1
-      | where coalesce(tonumber(rk_src_claim), 1) &amp;lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &amp;lt;= 1
+      | where coalesce(tonumber(rk_src_claim), 1) &lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &lt;= 1
       | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
       | stats sum(sessions) AS sessions, max(edge_last_seen) AS edge_last_seen, values(src_ip) AS srcs_text BY rk_src_host, rk_dst_host, port
       | eval From = rk_src_host, To = rk_dst_host . ":" . port, Kind = "host to host", observed_grade = "lateral, permitted"
