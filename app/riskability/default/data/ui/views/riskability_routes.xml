@@ -145,7 +145,7 @@
             | stats dc(cve_id) AS rk_cves, min(rk_tier) AS rk_top BY hostname, rk_pkg ]
       | eval rk_cves = coalesce(rk_cves, 0)
       | eval rk_rows = mvappend(rk_portnode . "|port|" . rk_pkg . "|package|" . rk_cves,
-                                if(rk_cves &gt; 0, rk_pkg . "|package|" . rk_cves . " open, worst " . rk_top . "|cve|" . rk_cves, null()))
+                                if(rk_cves &gt; 0, rk_pkg . "|package|" . rk_cves . " open, worst " . rk_top . " @ " . hostname . " › " . rk_pkg . "|cve|" . rk_cves, null()))
       | fields rk_rows
       | mvexpand rk_rows ]
 | where isnotnull(rk_rows)
@@ -164,8 +164,26 @@
         <option name="riskability.riskability_chart.valueLabel">sessions or CVEs</option>
         <option name="riskability.riskability_chart.emptyText">Edges exist, but none from a declared entry point has resolved to a host and port in the inventory. Either no entry point is declared, or the addresses the firewall logged are not ones the inventory has seen a host hold. The Network evidence page's "where the app refused to name a host" panel says which.</option>
         <option name="height">640</option>
+        <!-- A click selects a point and opens the findings behind it in the
+             panel below, on this page. It deliberately does NOT rewrite the
+             host filter: the first version did, and a click on the findings
+             node set the host filter to "8 open, worst P2", which matched
+             nothing and emptied the whole graph. -->
         <drilldown>
-          <set token="host_filter">$row.node$</set>
+          <!-- An entry point has no findings; the question it raises is
+               "what does this boundary reach", and the answer is the graph
+               narrowed to it, which is what the dropdown does. Every other
+               kind opens the findings behind the point below. -->
+          <condition match="$row.node_kind$ == &quot;entry&quot;">
+            <set token="entry_filter">$row.node$</set>
+            <set token="form.entry_filter">$row.node$</set>
+            <unset token="sel_node"></unset>
+            <unset token="sel_kind"></unset>
+          </condition>
+          <condition>
+            <set token="sel_node">$row.node$</set>
+            <set token="sel_kind">$row.node_kind$</set>
+          </condition>
         </drilldown>
       </viz>
       <html>
@@ -177,6 +195,82 @@
           columns as "and this is what was listening there, with these findings
           open". Widths are sessions on the left and open CVEs on the right; a
           thin edge is still a path.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row depends="$fw_ready$ $sel_node$">
+    <panel>
+      <title>Findings at the clicked point: $sel_kind$ $sel_node$</title>
+      <table>
+        <search>
+          <!-- What the click selected decides the scope. A host: every open
+               finding on it that sits behind an observed port. A port: the
+               software listening on it, and their findings. A package: its
+               findings on every host in the graph. The findings node names
+               its host and package outright. An entry point selects nothing
+               here, since findings live on hosts, and the panel says so. -->
+          <query>| inputlookup riskability_findings_state_lookup where status="open"
+| eval rk_sel = $sel_node|s$, rk_kind = $sel_kind|s$
+| eval rk_host_of_port = if(rk_kind == "port", mvindex(split(rk_sel, ":"), 0), null())
+| eval rk_port_of_port = if(rk_kind == "port", mvindex(split(rk_sel, ":"), 1), null())
+| eval rk_cve_host = if(rk_kind == "cve", trim(mvindex(split(mvindex(split(rk_sel, " @ "), 1), " › "), 0)), null())
+| eval rk_cve_pkg = if(rk_kind == "cve", trim(mvindex(split(mvindex(split(rk_sel, " @ "), 1), " › "), 1)), null())
+| where case(rk_kind == "host", hostname == rk_sel,
+             rk_kind == "package", package == rk_sel,
+             rk_kind == "cve", hostname == rk_cve_host AND package == rk_cve_pkg,
+             rk_kind == "port", hostname == rk_host_of_port,
+             1=1, false())
+| lookup riskability_exposure_lookup hostname, package OUTPUT port AS rk_ports
+| where rk_kind != "port" OR mvfind(rk_ports, "^" . rk_port_of_port . "$") &gt;= 0
+| join type=left hostname
+    [ | inputlookup riskability_netevidence_lookup
+      | where observed_grade IN ("confirmed observed", "historically observed")
+      | stats values(port) AS rk_observed_ports BY hostname ]
+| eval rk_port_one = if(rk_kind == "host", rk_ports, "n/a")
+| mvexpand rk_port_one
+| eval rk_behind_observed = if(rk_kind != "host", 1,
+      if(isnotnull(rk_observed_ports) AND isnotnull(mvfind(rk_observed_ports, "^" . rk_port_one . "$")), 1, 0))
+| where rk_behind_observed == 1
+| dedup finding_key
+| lookup riskability_aiverdicts_lookup cve_id OUTPUT priority_tier, priority_score, recommended_action, rationale
+| eval Tier = coalesce(priority_tier, "P" . case(severity=="critical", 1, severity=="high", 2, severity=="medium", 3, 1=1, 4))
+| eval Score = coalesce(priority_score, ""), KEV = if(isnotnull(kev_added) AND kev_added != "", "yes", "")
+| eval Fix = coalesce(fixed_version, "")
+| eval "Why" = coalesce(rationale, "not analysed by the pipeline yet; tier from severity")
+| sort 0 Tier, - Score
+| rename hostname AS Host, package AS Software, current_version AS Installed, cve_id AS CVE, severity AS Severity, recommended_action AS Action
+| table Tier, Score, CVE, Severity, KEV, Host, Software, Installed, Fix, Action, "Why"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">20</option>
+        <option name="drilldown">cell</option>
+        <option name="wrap">true</option>
+        <format type="color" field="Tier">
+          <colorPalette type="map">{"P0":#B3121F,"P1":#D2641F,"P2":#B08C1A,"P3":#3F6E8C,"P4":#4A5560}</colorPalette>
+        </format>
+        <!-- A CVE cell opens the encyclopaedia entry; any other cell does
+             nothing rather than the default, which abandons the page for a
+             raw search. -->
+        <drilldown>
+          <condition field="CVE">
+            <link target="_blank">/app/riskability/riskability_cve?form.cve_tok=$click.value2|u$</link>
+          </condition>
+          <condition></condition>
+        </drilldown>
+      </table>
+      <html>
+        <div class="rk-status" style="margin:6px 0 0;">
+          <b>Every row is an open finding the app already holds; nothing here is computed from the firewall.</b>
+          <span>The route says traffic was permitted to this point. These are the
+          findings that were open on the software listening there, with the
+          pipeline's tier where it has analysed them and a tier from severity
+          where it has not. A host click lists only the findings behind ports
+          traffic was observed to reach, not everything open on the machine.
+          Clicking an entry point narrows the graph to it instead, since an
+          entry point has no findings of its own.</span>
         </div>
       </html>
     </panel>
@@ -201,7 +295,7 @@
       | lookup riskability_hostaddr_lookup address AS dest_ip OUTPUT hostname AS rk_dst_host, claimants AS rk_dst_claim
       | where isnotnull(rk_src_host) AND isnotnull(rk_dst_host) AND rk_src_host != rk_dst_host
       | where mvcount(rk_src_host) == 1 AND mvcount(rk_dst_host) == 1
-      | where coalesce(tonumber(rk_src_claim), 1) &lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &lt;= 1
+      | where coalesce(tonumber(rk_src_claim), 1) &amp;lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &amp;lt;= 1
       | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
       | stats sum(sessions) AS sessions, max(edge_last_seen) AS edge_last_seen, values(src_ip) AS srcs_text BY rk_src_host, rk_dst_host, port
       | eval From = rk_src_host, To = rk_dst_host . ":" . port, Kind = "host to host", observed_grade = "lateral, permitted"
