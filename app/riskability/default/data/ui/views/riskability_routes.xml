@@ -126,8 +126,10 @@
       | where coalesce(tonumber(rk_src_claim), 1) &lt;= 1 AND coalesce(tonumber(rk_dst_claim), 1) &lt;= 1
       | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
       | stats sum(sessions) AS rk_v BY rk_src_host, rk_dst_host, port
-      | eval rk_rows = rk_src_host . "|host|" . rk_dst_host . ":" . port . "|port|" . rk_v
-      | fields rk_rows ]
+      | eval rk_rows = mvappend(rk_src_host . "|host|" . rk_dst_host . ":" . port . "|port|" . rk_v,
+                                rk_dst_host . ":" . port . "|port|" . rk_dst_host . "|host|" . rk_v)
+      | fields rk_rows
+      | mvexpand rk_rows ]
 | append
     [ | inputlookup riskability_netevidence_lookup
       | where observed_grade IN ("confirmed observed", "historically observed")
