@@ -472,6 +472,34 @@ def test_grounding_flags():
 
 
 
+def test_verdict_lookup_lists_every_field_a_handler_writes():
+    """A field a handler writes but the lookup does not list is a field that
+    outputlookup silently strips. That is how every on-demand explanation was
+    lost, hourly, for as long as the verdict GC rewrote the collection through
+    the lookup. This reads the writers and the field list and fails on the
+    first gap, and it checks the GC deletes by key rather than rewriting."""
+    root = Path(__file__).resolve().parents[1] / "app" / "riskability"
+    transforms = (root / "default" / "transforms.conf").read_text(encoding="utf-8")
+    m = re.search(r"\[riskability_aiverdicts_lookup\]\n(?:.*\n)*?fields_list = ([^\n]*)", transforms)
+    listed = {f.strip() for f in m.group(1).split(",")} if m else set()
+    check("the verdict lookup has a field list", bool(listed))
+    written = set()
+    for name in ("riskability_ai_explain_rest.py", "riskabilityaianalyze.py"):
+        src = (root / "bin" / name).read_text(encoding="utf-8")
+        written |= set(re.findall(r'doc\["([a-z_]+)"\]\s*=', src))
+    vf = re.search(r"VERDICT_FIELDS = \((.*?)\)", (root / "bin" / "riskabilityaianalyze.py").read_text(), re.S)
+    written |= set(re.findall(r'"([a-z_]+)"', vf.group(1))) if vf else set()
+    written.discard("_key")
+    missing = sorted(f for f in written if f not in listed)
+    check("every field a verdict writer sets is in the lookup field list"
+          + ((": missing " + ", ".join(missing)) if missing else ""), not missing)
+    searches = (root / "default" / "savedsearches.conf").read_text(encoding="utf-8")
+    gc = searches[searches.index("[Riskability AI - drop verdicts with no open finding]"):]
+    gc = gc[:gc.index("\n[", 1)]
+    check("the verdict GC deletes by key rather than rewriting the collection",
+          "riskabilitykvdelete" in gc and "outputlookup riskability_aiverdicts_lookup" not in gc)
+
+
 def main():
     test_settings()
     test_result()
@@ -481,6 +509,7 @@ def main():
     test_conf_files()
     test_dashboard_weights_match_the_scorer()
     test_grounding_flags()
+    test_verdict_lookup_lists_every_field_a_handler_writes()
 
     server = MockServer(8931)
     try:
