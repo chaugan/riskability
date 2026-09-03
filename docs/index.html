@@ -15,6 +15,7 @@
   header p { margin:0; color:var(--dim); max-width:90ch; }
   h2 { font-size:15px; margin:28px 32px 10px; color:var(--amber); text-transform:uppercase; letter-spacing:.04em; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(420px, 1fr)); gap:18px; padding:0 32px 32px; }
+  .card:target { outline:2px solid var(--amber); scroll-margin-top:16px; }
   .card { margin:0; background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; }
   .card img { display:block; width:100%; height:auto; aspect-ratio:16/10; object-fit:cover; object-position:top; border-bottom:1px solid var(--line); }
   .card figcaption { padding:10px 12px 12px; font-size:13px; }
@@ -34,126 +35,126 @@
 <div class="search"><input type="search" id="q" placeholder="Filter by name or caption" aria-label="Filter screenshots"></div>
 <h2>Changed on 2026-09-03</h2>
 <div class="grid" id="today">
-      <figure class="card" data-name="ai-prioritization">
+      <figure class="card" id="ai-prioritization" data-name="ai-prioritization">
         <a href="screenshots/ai-prioritization.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-prioritization.png" alt="AI prioritization"></a>
         <figcaption><b>AI prioritization</b> <span class="dim">The sea of CVEs banded by exploit likelihood, the few lifted above the waterline, and the paged, sortable, filterable work queue with the model&#x27;s reasoning beside each row.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="ai-explain-rendered">
+      <figure class="card" id="ai-explain-rendered" data-name="ai-explain-rendered">
         <a href="screenshots/ai-explain-rendered.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-explain-rendered.png" alt="Explain in depth, rendered"></a>
         <figcaption><b>Explain in depth, rendered</b> <span class="dim">A saved explanation opened from its green button: headings, paragraphs and lists built from the model&#x27;s markdown, with Re-run beside it.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="network-evidence">
+      <figure class="card" id="network-evidence" data-name="network-evidence">
         <a href="screenshots/network-evidence.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/network-evidence.png" alt="Network evidence"></a>
         <figcaption><b>Network evidence</b> <span class="dim">Whether a permitted flow to a listening port has been observed, the coverage state that gates every grade, and where the app refused to name a host.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="netevidence-grades">
+      <figure class="card" id="netevidence-grades" data-name="netevidence-grades">
         <a href="screenshots/netevidence-grades.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/netevidence-grades.png" alt="Network evidence, grades"></a>
         <figcaption><b>Network evidence, grades</b> <span class="dim">The grade donut: no green anywhere, because none of these grades means safe.</span><span class="date">2026-09-02</span></figcaption>
       </figure>
-      <figure class="card" data-name="routes">
+      <figure class="card" id="routes" data-name="routes">
         <a href="screenshots/routes.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes.png" alt="Routes"></a>
         <figcaption><b>Routes</b> <span class="dim">The jumps a permitted flow has been seen to make: entry point, host reached, port, software listening, open findings.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="routes-host-filter">
+      <figure class="card" id="routes-host-filter" data-name="routes-host-filter">
         <a href="screenshots/routes-host-filter.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-host-filter.png" alt="Routes, one host"></a>
         <figcaption><b>Routes, one host</b> <span class="dim">Filtered to one host: only the chains through it, at the hops the unfiltered graph gives them. Red edges land on software with a known-exploited or EPSS 50%+ finding open.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="routes-drilldown">
+      <figure class="card" id="routes-drilldown" data-name="routes-drilldown">
         <a href="screenshots/routes-drilldown.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-drilldown.png" alt="Routes, drill-down"></a>
         <figcaption><b>Routes, drill-down</b> <span class="dim">Clicking a point on the route opens the findings behind it on the same page.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="admin-escalation-rules">
+      <figure class="card" id="admin-escalation-rules" data-name="admin-escalation-rules">
         <a href="screenshots/admin-escalation-rules.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/admin-escalation-rules.png" alt="Escalation rules (admin)"></a>
         <figcaption><b>Escalation rules (admin)</b> <span class="dim">Every rule with a switch, the replay of what each would move, and locked rules with the reason they cannot be enabled.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
-      <figure class="card" data-name="admin-firewall-source">
+      <figure class="card" id="admin-firewall-source" data-name="admin-firewall-source">
         <a href="screenshots/admin-firewall-source.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/admin-firewall-source.png" alt="Firewall data source (admin)"></a>
         <figcaption><b>Firewall data source (admin)</b> <span class="dim">Index or accelerated data model, field mapping, entry points, freshness; Test and top-100 preview before Save.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
 </div>
 <h2>Everything else</h2>
 <div class="grid" id="rest">
-      <figure class="card" data-name="attack-matrix-fuller">
+      <figure class="card" id="attack-matrix-fuller" data-name="attack-matrix-fuller">
         <a href="screenshots/attack-matrix-fuller.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/attack-matrix-fuller.png" alt="ATT&amp;CK matrix"></a>
         <figcaption><b>ATT&amp;CK matrix</b><span class="date">2026-08-27</span></figcaption>
       </figure>
-      <figure class="card" data-name="capec-attack-patterns">
+      <figure class="card" id="capec-attack-patterns" data-name="capec-attack-patterns">
         <a href="screenshots/capec-attack-patterns.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/capec-attack-patterns.png" alt="CAPEC attack patterns"></a>
         <figcaption><b>CAPEC attack patterns</b><span class="date">2026-08-26</span></figcaption>
       </figure>
-      <figure class="card" data-name="config-surface">
+      <figure class="card" id="config-surface" data-name="config-surface">
         <a href="screenshots/config-surface.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/config-surface.png" alt="Configuration surface"></a>
         <figcaption><b>Configuration surface</b><span class="date">2026-08-27</span></figcaption>
       </figure>
-      <figure class="card" data-name="coverage">
+      <figure class="card" id="coverage" data-name="coverage">
         <a href="screenshots/coverage.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/coverage.png" alt="Coverage"></a>
         <figcaption><b>Coverage</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="cve-encyclopaedia">
+      <figure class="card" id="cve-encyclopaedia" data-name="cve-encyclopaedia">
         <a href="screenshots/cve-encyclopaedia.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/cve-encyclopaedia.png" alt="CVE encyclopaedia"></a>
         <figcaption><b>CVE encyclopaedia</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="end-of-support">
+      <figure class="card" id="end-of-support" data-name="end-of-support">
         <a href="screenshots/end-of-support.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/end-of-support.png" alt="End of support"></a>
         <figcaption><b>End of support</b><span class="date">2026-08-29</span></figcaption>
       </figure>
-      <figure class="card" data-name="end-of-support-hosts">
+      <figure class="card" id="end-of-support-hosts" data-name="end-of-support-hosts">
         <a href="screenshots/end-of-support-hosts.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/end-of-support-hosts.png" alt="End of support, hosts"></a>
         <figcaption><b>End of support, hosts</b><span class="date">2026-08-29</span></figcaption>
       </figure>
-      <figure class="card" data-name="escalations">
+      <figure class="card" id="escalations" data-name="escalations">
         <a href="screenshots/escalations.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/escalations.png" alt="Escalation rules (earlier, main app)"></a>
         <figcaption><b>Escalation rules (earlier, main app)</b> <span class="dim">Before the page moved to the admin app.</span><span class="date">2026-09-02</span></figcaption>
       </figure>
-      <figure class="card" data-name="exposure">
+      <figure class="card" id="exposure" data-name="exposure">
         <a href="screenshots/exposure.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/exposure.png" alt="Exposure"></a>
         <figcaption><b>Exposure</b> <span class="dim">The priority matrix and the reachability chain.</span><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="feed-administration">
+      <figure class="card" id="feed-administration" data-name="feed-administration">
         <a href="screenshots/feed-administration.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/feed-administration.png" alt="Feed administration (admin)"></a>
         <figcaption><b>Feed administration (admin)</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="feed-import-progress">
+      <figure class="card" id="feed-import-progress" data-name="feed-import-progress">
         <a href="screenshots/feed-import-progress.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/feed-import-progress.png" alt="Feed import progress (admin)"></a>
         <figcaption><b>Feed import progress (admin)</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="findings">
+      <figure class="card" id="findings" data-name="findings">
         <a href="screenshots/findings.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/findings.png" alt="Findings"></a>
         <figcaption><b>Findings</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="fleet-overview">
+      <figure class="card" id="fleet-overview" data-name="fleet-overview">
         <a href="screenshots/fleet-overview.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/fleet-overview.png" alt="Fleet overview"></a>
         <figcaption><b>Fleet overview</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="hosts">
+      <figure class="card" id="hosts" data-name="hosts">
         <a href="screenshots/hosts.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/hosts.png" alt="Hosts"></a>
         <figcaption><b>Hosts</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="kev-bridge">
+      <figure class="card" id="kev-bridge" data-name="kev-bridge">
         <a href="screenshots/kev-bridge.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/kev-bridge.png" alt="KEV bridge"></a>
         <figcaption><b>KEV bridge</b><span class="date">2026-08-26</span></figcaption>
       </figure>
-      <figure class="card" data-name="mitigation-coverage">
+      <figure class="card" id="mitigation-coverage" data-name="mitigation-coverage">
         <a href="screenshots/mitigation-coverage.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/mitigation-coverage.png" alt="Mitigation coverage"></a>
         <figcaption><b>Mitigation coverage</b><span class="date">2026-08-26</span></figcaption>
       </figure>
-      <figure class="card" data-name="mitre-attack">
+      <figure class="card" id="mitre-attack" data-name="mitre-attack">
         <a href="screenshots/mitre-attack.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/mitre-attack.png" alt="MITRE ATT&amp;CK"></a>
         <figcaption><b>MITRE ATT&amp;CK</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="netevidence">
+      <figure class="card" id="netevidence" data-name="netevidence">
         <a href="screenshots/netevidence.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/netevidence.png" alt="Netevidence"></a>
         <figcaption><b>Netevidence</b><span class="date">2026-09-02</span></figcaption>
       </figure>
-      <figure class="card" data-name="remediation">
+      <figure class="card" id="remediation" data-name="remediation">
         <a href="screenshots/remediation.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/remediation.png" alt="Remediation"></a>
         <figcaption><b>Remediation</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="risk-exceptions">
+      <figure class="card" id="risk-exceptions" data-name="risk-exceptions">
         <a href="screenshots/risk-exceptions.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/risk-exceptions.png" alt="Risk exceptions"></a>
         <figcaption><b>Risk exceptions</b><span class="date">2026-08-23</span></figcaption>
       </figure>
-      <figure class="card" data-name="start-here">
+      <figure class="card" id="start-here" data-name="start-here">
         <a href="screenshots/start-here.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/start-here.png" alt="Start here"></a>
         <figcaption><b>Start here</b><span class="date">2026-08-23</span></figcaption>
       </figure>

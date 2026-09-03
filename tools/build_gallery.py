@@ -55,10 +55,10 @@ def when(name):
 def card(name):
     title, cap = CAPTIONS.get(name, (name.replace("-", " ").capitalize(), ""))
     capx = (' <span class="dim">%s</span>' % html.escape(cap)) if cap else ""
-    return ('      <figure class="card" data-name="%s">\n'
+    return ('      <figure class="card" id="%s" data-name="%s">\n'
             '        <a href="screenshots/%s.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/%s.png" alt="%s"></a>\n'
             '        <figcaption><b>%s</b>%s<span class="date">%s</span></figcaption>\n'
-            '      </figure>' % (html.escape(name), name, name, html.escape(title), html.escape(title), capx, when(name)))
+            '      </figure>' % (html.escape(name), html.escape(name), name, name, html.escape(title), html.escape(title), capx, when(name)))
 
 
 def main():

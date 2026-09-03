@@ -5,6 +5,10 @@
 **Know which vulnerabilities your fleet actually has, on a Splunk search head
 with no route to the internet.**
 
+**See it first:** every page, captured from a live instance with captions, at
+**[chaugan.github.io/riskability](https://chaugan.github.io/riskability/)**. The pages that changed most recently
+are at the top.
+
 Riskability correlates the software [`swinv`](https://github.com/chaugan/swinv)
 finds on every host (including inside containers, snap bases and unpacked
 images) against CVE data you carry in by hand. On a default installation no
@@ -53,7 +57,7 @@ organisation.
 
 ## Contents
 
-**Start here** &nbsp; [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong) · [Installing](#installing)
+**Start here** &nbsp; [Screenshot gallery](https://chaugan.github.io/riskability/) · [What it does that most scanners get wrong](#what-it-does-that-most-scanners-get-wrong) · [Installing](#installing)
 
 **Getting data in** &nbsp; [What the app reads from the collector](#what-the-app-reads-from-the-collector) · [Getting vulnerability data in](#getting-vulnerability-data-in)
 
@@ -810,7 +814,9 @@ hosts × packages.
 
 ## Dashboards
 
-Twelve views, in nav order, and thirteen when AI analysis is switched on.
+Fourteen views, in nav order, and fifteen when AI analysis is switched on. Every
+one is captured in the [screenshot gallery](https://chaugan.github.io/riskability/); the name of each page below
+links to its capture.
 
 | View | Answers |
 |---|---|
@@ -829,6 +835,8 @@ Twelve views, in nav order, and thirteen when AI analysis is switched on.
 | **Feed administration** | Build, upload and import bundles, now in the separate **Riskability Configuration** app, together with the AI settings, where only administrators can reach it |
 
 ## AI analysis (optional)
+
+See it: [AI prioritization](https://chaugan.github.io/riskability/#ai-prioritization) and the [rendered explanation](https://chaugan.github.io/riskability/#ai-explain-rendered) in the gallery.
 
 Riskability's promise is that nothing leaves *unintentionally*, and that is
 three statements rather than one.
@@ -992,17 +1000,27 @@ build step. The pages that changed most recently are listed first.
 ### Start here
 ![Start here](docs/screenshots/start-here.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#start-here)
+
 ### Fleet overview
 ![Fleet overview](docs/screenshots/fleet-overview.png)
+
+[Open in the gallery](https://chaugan.github.io/riskability/#fleet-overview)
 
 ### Findings
 ![Findings](docs/screenshots/findings.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#findings)
+
 ### Remediation
 ![Remediation](docs/screenshots/remediation.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#remediation)
+
 ### MITRE ATT&CK
 ![MITRE ATT&CK](docs/screenshots/mitre-attack.png)
+
+[Open in the gallery](https://chaugan.github.io/riskability/#mitre-attack)
 
 ### The configuration surface, the half of ATT&CK a CVE feed cannot reach
 
@@ -1100,20 +1118,32 @@ mitigation reduces the technique; the CVEs still need fixing.
 ### Exposure
 ![Exposure](docs/screenshots/exposure.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#exposure)
+
 ### Hosts
 ![Hosts](docs/screenshots/hosts.png)
+
+[Open in the gallery](https://chaugan.github.io/riskability/#hosts)
 
 ### Coverage
 ![Coverage](docs/screenshots/coverage.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#coverage)
+
 ### Risk exceptions
 ![Risk exceptions](docs/screenshots/risk-exceptions.png)
+
+[Open in the gallery](https://chaugan.github.io/riskability/#risk-exceptions)
 
 ### CVE encyclopaedia
 ![CVE encyclopaedia](docs/screenshots/cve-encyclopaedia.png)
 
+[Open in the gallery](https://chaugan.github.io/riskability/#cve-encyclopaedia)
+
 ### Feed administration
 ![Feed administration](docs/screenshots/feed-administration.png)
+
+[Open in the gallery](https://chaugan.github.io/riskability/#feed-administration)
 
 An import runs on the server and does not need the page kept open. The active
 feed stays searchable throughout, so importing does not blind the fleet:
@@ -1141,6 +1171,8 @@ without anyone remembering to do it.
 ---
 
 ## Escalation rules
+
+See it: [Escalation rules (admin)](https://chaugan.github.io/riskability/#admin-escalation-rules) in the gallery, with every rule's switch and the replay of what it would move.
 
 **A site can now express a risk its own fleet has that the scoring signals
 cannot see.** A finding's priority is computed from five measured signals:
@@ -1205,6 +1237,8 @@ mutation test a rule should face before anyone lives with it are in
 ---
 
 ## Observed permitted traffic evidence (optional)
+
+See it: [Network evidence](https://chaugan.github.io/riskability/#network-evidence), [Routes](https://chaugan.github.io/riskability/#routes) and the [firewall data source page](https://chaugan.github.io/riskability/#admin-firewall-source) in the gallery.
 
 **How exposure is determined today, and the one layer the collector cannot
 see.** Every exposure label on every page comes from how a process bound its
