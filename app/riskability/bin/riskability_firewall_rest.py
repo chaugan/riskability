@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__))))
 
@@ -135,13 +136,54 @@ class FirewallHandler(PersistentServerConnectionApplication):
         if not firewall.configured(clean):
             raise ValueError("name an index before testing")
         query = firewall.test_search(clean)
-        rows = []
+        # The window is the feed's own staleness setting, not a fixed day. The
+        # assess job calls the feed stale when its newest edge is older than
+        # stale_days, so that is the window in which edges have to exist for
+        # the pipeline to use them, and it is what a test should look at. A
+        # fixed day reported "0 edges, check your field names" on a source
+        # whose mapping was right and whose newest event was six days old.
+        days = int(clean["stale_days"])
+        row = self._run_one(service, query, "-%dd" % days, clean)
+        edges = int(row.get("edges") or 0)
+        out = {"query": query, "window_days": days, "edges": edges,
+               "sources": int(row.get("sources") or 0),
+               "destinations": int(row.get("destinations") or 0),
+               "newest_edge": row.get("newest_edge")}
+        if edges:
+            out["verdict"] = "the source yields permitted edges within the last %d days" % days
+            return _reply(200, out)
+        # Nothing in the window. Before blaming the mapping, look further back:
+        # if edges exist at all, the mapping is right and the DATA is old, which
+        # is a different problem with a different fix.
+        wide = self._run_one(service, query, "-90d", clean)
+        older = int(wide.get("edges") or 0)
+        out["edges_90d"] = older
+        if older:
+            newest = wide.get("newest_edge")
+            out["newest_edge"] = newest
+            try:
+                age = (time.time() - float(newest)) / 86400.0
+                age_text = "%.1f days old" % age
+            except (TypeError, ValueError):
+                age_text = "older than %d days" % days
+            out["verdict"] = ("the mapping works: %d edges exist in the last 90 days, but the newest "
+                              "is %s, outside the %d day staleness window. Either the source has "
+                              "stopped receiving flows, or raise \"feed stale after\" if this feed "
+                              "is expected to be that quiet. The field names are not the problem."
+                              % (older, age_text, days))
+        else:
+            out["verdict"] = ("no permitted edges in the last 90 days. Check the index or model, "
+                              "the sourcetype, the action value and the field names; Show top "
+                              "100 edges will list what the reduction sees.")
+        return _reply(200, out)
+
+    def _run_one(self, service, query, earliest, clean) -> dict:
         try:
-            job = service.jobs.create(query, earliest_time="-1d", latest_time="now",
+            job = service.jobs.create(query, earliest_time=earliest, latest_time="now",
                                       exec_mode="blocking", max_count=10)
             for item in results.JSONResultsReader(job.results(output_mode="json", count=10)):
                 if isinstance(item, dict):
-                    rows.append(item)
+                    return item
         except Exception as exc:
             # splunkd refuses the search for a model that does not exist or is
             # not accelerated, and for an index that cannot be read. splunklib
@@ -150,18 +192,7 @@ class FirewallHandler(PersistentServerConnectionApplication):
             # server fault, so it is a 400 with the reason in plain words
             # rather than a 500 wrapping the raw HTTP body.
             raise ValueError(_search_refusal(exc, clean))
-        row = rows[0] if rows else {}
-        edges = int(row.get("edges") or 0)
-        return _reply(200, {
-            "query": query,
-            "edges": edges,
-            "sources": int(row.get("sources") or 0),
-            "destinations": int(row.get("destinations") or 0),
-            "newest_edge": row.get("newest_edge"),
-            "verdict": ("the source yields permitted edges" if edges
-                        else "no edges in the last day: check the index, the "
-                             "sourcetype, the action value and the field names"),
-        })
+        return {}
 
     def _preview(self, service, config, limit):
         """Top edges over the last day, as the reduction produces them."""
@@ -175,7 +206,8 @@ class FirewallHandler(PersistentServerConnectionApplication):
         query = firewall.preview_search(clean, n)
         rows = []
         try:
-            job = service.jobs.create(query, earliest_time="-1d", latest_time="now",
+            job = service.jobs.create(query, earliest_time="-%dd" % int(clean["stale_days"]),
+                                      latest_time="now",
                                       exec_mode="blocking", max_count=n)
             for item in results.JSONResultsReader(job.results(output_mode="json", count=n)):
                 if isinstance(item, dict):
@@ -185,7 +217,7 @@ class FirewallHandler(PersistentServerConnectionApplication):
         except Exception as exc:
             raise ValueError(_search_refusal(exc, clean))
         return _reply(200, {"query": query, "limit": n, "rows": rows,
-                            "returned": len(rows)})
+                            "returned": len(rows), "window_days": int(clean["stale_days"])})
 
     # -- plumbing ----------------------------------------------------------
     def _service(self, request):

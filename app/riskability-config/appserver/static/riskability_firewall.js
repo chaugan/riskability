@@ -172,9 +172,12 @@
         test.addEventListener("click", function () {
             test.disabled = true; test.textContent = "Testing…"; out.textContent = "";
             call("POST", {action: "test", config: values()}).then(function (r) {
-                out.appendChild(status(r.edges ? "rk-good" : "rk-warn",
-                    r.edges + " permitted edges in the last day, from " + r.sources + " sources to "
-                    + r.destinations + " destinations.", r.verdict));
+                var kind = r.edges ? "rk-good" : (r.edges_90d ? "rk-warn" : "rk-bad");
+                var title = r.edges
+                    ? r.edges + " permitted edges in the last " + r.window_days + " days, from " + r.sources + " sources to " + r.destinations + " destinations."
+                    : (r.edges_90d ? "The mapping works, but the data is older than the staleness window."
+                                   : "No permitted edges found.");
+                out.appendChild(status(kind, title, r.verdict));
                 var q = el("pre", "rk-fw-query", r.query);
                 out.appendChild(q);
             }).catch(function (e) {
@@ -185,11 +188,11 @@
             preview.disabled = true; preview.textContent = "Running\u2026"; out.textContent = "";
             call("POST", {action: "preview", config: values(), limit: 100}).then(function (r) {
                 if (!r.rows.length) {
-                    out.appendChild(status("rk-warn", "No edges in the last day.",
-                        "The reduction ran and produced nothing. Check the index or model, the action value and the field names; Test source says the same with a count."));
+                    out.appendChild(status("rk-warn", "No edges in the last " + r.window_days + " days.",
+                        "The reduction ran and produced nothing in the staleness window. Test source looks back 90 days and says whether the mapping or the data age is the problem."));
                     return;
                 }
-                out.appendChild(status("rk-good", r.returned + " busiest edges of the last day, as the app will read them.",
+                out.appendChild(status("rk-good", r.returned + " busiest edges of the last " + r.window_days + " days, as the app will read them.",
                     "Read the columns, not just the count: a port column holding source ports, or addresses that are host names, "
                     + "means the field mapping is wrong even though the count looks healthy. Nothing has been saved."));
                 var tbl = el("table", "rk-table rk-fw-preview");
