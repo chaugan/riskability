@@ -821,11 +821,6 @@ Twelve views, in nav order, and thirteen when AI analysis is switched on.
 
 ## AI analysis (optional)
 
-Every capture, with captions and a filter, is browsable as a gallery at
-**https://chaugan.github.io/riskability/** — served by GitHub Pages from
-`docs/screenshots/`, so a screenshot committed there is on the web with no
-build step. The pages that changed most recently are listed first.
-
 Riskability's promise is that nothing leaves *unintentionally*, and that is
 three statements rather than one.
 
@@ -979,6 +974,11 @@ above it is the panel that does.
 Screenshots below are from a two-host test fleet - one Linux, one Windows - built
 from nothing by `tools/build_demo_instance.sh`, with a feed carrying 793,058
 advisories. The numbers in them are the ones this README quotes.
+
+Every capture, with captions and a filter, is browsable as a gallery at
+**https://chaugan.github.io/riskability/**, served by GitHub Pages from
+`docs/screenshots/`, so a screenshot committed there is on the web with no
+build step. The pages that changed most recently are listed first.
 
 ### Start here
 ![Start here](docs/screenshots/start-here.png)

@@ -169,7 +169,7 @@
           and everybody has to chase.</span>
         </div>
       </html>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_netevidence_lookup
 | search hostname=$host_filter|s$
@@ -213,7 +213,7 @@
           have reported them" half.</span>
         </div>
       </html>
-      <table>
+      <viz type="riskability.riskability_grid">
         <search>
           <query>| inputlookup riskability_hostaddr_hoststate_lookup
 | search hostname=$host_filter|s$

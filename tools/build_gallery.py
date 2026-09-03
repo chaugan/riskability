@@ -40,7 +40,15 @@ RECENT = ["ai-prioritization", "ai-explain-rendered", "network-evidence", "netev
 def when(name):
     out = subprocess.run(["git", "log", "-1", "--format=%cs", "--", "%s/%s.png" % (SHOTS, name)],
                          cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    return out or "uncommitted"
+    # A capture not yet in git gets today's date rather than the word
+    # "uncommitted": this page is public, and a build run before the commit
+    # once shipped that word under four captures. Run the build AFTER staging
+    # the captures and the dates are exact; run it before and they are today's,
+    # which is at worst a day out and never a wrong claim about the repo.
+    if out:
+        return out
+    import datetime
+    return datetime.date.today().isoformat()
 
 
 def card(name):
