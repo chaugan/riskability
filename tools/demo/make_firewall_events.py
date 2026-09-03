@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """Turn the FW Route Explorer sample edges into firewall events for a demo index.
 
-    python3 tools/demo/make_firewall_events.py [--days 7] > events.json
+    python3 tools/demo/make_firewall_events.py [--days 7 | --minutes 45] [--end EPOCH] > events.json
+
+--end pins the newest event to a moment rather than to now. It exists because
+the identity guard is strict on purpose: a flow is attributed to a host only
+if a scan saw the host holding the destination address in a window around
+the flow, and a demo generated "now" against an inventory last scanned days
+ago resolves nothing. Point --end at the hosts' last scan and the demo
+resolves; that is the guard working, not a limitation to route around.
 
 The sample (tools/demo/sample_firewall_edges.csv, from
 github.com/chaugan/Find-Route) is a topology: unique src, dest, port edges
@@ -45,8 +52,18 @@ def main():
     days = DAYS
     if "--days" in sys.argv:
         days = int(sys.argv[sys.argv.index("--days") + 1])
+    # --minutes spans the events over minutes rather than days. The identity
+    # guard attributes a flow to a host only when a scan saw the host holding
+    # the address in a window around the flow, and on a fleet scanned once
+    # that window is the length of one scan: on the dev fleet, fifty minutes.
+    # A demo has to land inside it to resolve at all.
+    minutes = None
+    if "--minutes" in sys.argv:
+        minutes = int(sys.argv[sys.argv.index("--minutes") + 1])
     now = int(time.time())
-    span = days * 86400
+    if "--end" in sys.argv:
+        now = int(sys.argv[sys.argv.index("--end") + 1])
+    span = minutes * 60 if minutes else days * 86400
     edges = []
     with open(SAMPLE, newline="") as fh:
         for row in csv.DictReader(fh):
@@ -57,7 +74,7 @@ def main():
     n = 0
     for src, dst, port, count, note in edges:
         for _ in range(count):
-            t = now - random.randint(60, span)
+            t = now - random.randint(1, span)
             ev = {"time": t, "src_ip": src, "dest_ip": dst, "dest_port": port,
                   "transport": "udp" if port in (53, 123, 514) else "tcp",
                   "action": "allowed", "bytes": random.randint(200, 90000),

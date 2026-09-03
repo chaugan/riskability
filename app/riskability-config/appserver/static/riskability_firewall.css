@@ -16,3 +16,6 @@ textarea.rk-fw-input { font-family: Consolas, "Liberation Mono", Menlo, monospac
 .rk-fw-query { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; background: rgba(255,255,255,0.04); padding: 6px 8px; border-radius: 4px; margin-top: 6px; }
 .rk-fw-group { border-top: 1px solid #2f3a44; padding-top: 10px; }
 select.rk-fw-input { max-width: 360px; }
+.rk-fw-preview-wrap { max-height: 520px; overflow: auto; margin-top: 8px; border: 1px solid #2f3a44; border-radius: 4px; }
+.rk-fw-preview td, .rk-fw-preview th { font-size: 11px; white-space: nowrap; padding: 3px 8px; }
+.rk-fw-preview th { position: sticky; top: 0; background: #1a1d21; }

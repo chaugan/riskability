@@ -121,12 +121,19 @@ def validate(raw: dict) -> dict:
     if int(clean["stale_days"]) > int(clean["fresh_days"]):
         raise SettingsError("stale_days cannot exceed fresh_days: an edge is fresh "
                             "before it is stale")
+    # Stored in the shape a person typed it, normalised: one entry per line,
+    # "cidr | name | pressure" with spaces, the CIDR canonical, the pressure
+    # filled in, and a name left blank when none was given rather than the
+    # CIDR copied into it. The first version packed the line as
+    # cidr|cidr|occasional and handed that back to the form, which read as
+    # the app having rewritten what the administrator typed.
     clean["entry_points"] = "\n".join(
-        "%s|%s|%s" % e for e in parse_entries(clean["entry_points"]))
+        "%s | %s | %s" % (cidr, name, pressure)
+        for cidr, name, pressure in parse_entries(clean["entry_points"], keep_blank_name=True))
     return clean
 
 
-def parse_entries(text: str) -> list:
+def parse_entries(text: str, keep_blank_name: bool = False) -> list:
     """Entry points, one per line as  cidr | name | pressure.
 
     A bare address is accepted and becomes /32 or /128. The pressure is
@@ -143,7 +150,7 @@ def parse_entries(text: str) -> list:
             continue
         parts = [p.strip() for p in line.split("|")]
         cidr = parts[0]
-        name = parts[1] if len(parts) > 1 and parts[1] else cidr
+        name = parts[1] if len(parts) > 1 and parts[1] else ("" if keep_blank_name else cidr)
         pressure = (parts[2] if len(parts) > 2 and parts[2] else "occasional").lower()
         try:
             net = ipaddress.ip_network(cidr, strict=False)
@@ -245,18 +252,28 @@ def _dm_edges(s: dict) -> str:
 
 
 def entry_points_definition(s: dict) -> str:
+    """One row per entry point, built without mvappend.
+
+    mvappend() with a single argument is a hard error in Splunk ("the
+    arguments to the mvappend function are invalid"), so a site that declared
+    exactly one entry point, which is the common case (the internet), got a
+    macro that failed to parse, and with it the entry point dropdown, the
+    assess job and the routes page. Caught by a user, not by the test, which
+    had two entries. Each entry is now its own makeresults row and the rows
+    are appended, which is valid for one entry and for fifty.
+    """
     entries = parse_entries(s.get("entry_points", ""))
     if not entries:
         return ('makeresults | eval entry_cidr = "", entry_name = "", '
                 'entry_scan_pressure = "" | where 1=0')
-    packed = ", ".join(_q("%s|%s|%s" % e) for e in entries)
-    return (
-        "makeresults | eval rk_e = mvappend(%s) | mvexpand rk_e"
-        " | eval entry_cidr = mvindex(split(rk_e, \"|\"), 0),"
-        " entry_name = mvindex(split(rk_e, \"|\"), 1),"
-        " entry_scan_pressure = mvindex(split(rk_e, \"|\"), 2)"
-        " | fields entry_cidr, entry_name, entry_scan_pressure" % packed
-    )
+    def row(e):
+        return ('makeresults | eval entry_cidr = %s, entry_name = %s, entry_scan_pressure = %s'
+                % (_q(e[0]), _q(e[1]), _q(e[2])))
+    first, rest = entries[0], entries[1:]
+    spl = row(first)
+    for e in rest:
+        spl += " | append [| %s]" % row(e)
+    return spl + " | fields entry_cidr, entry_name, entry_scan_pressure"
 
 
 def macros(s: dict) -> dict:
@@ -268,6 +285,22 @@ def macros(s: dict) -> dict:
         "riskability_fw_stale_days": str(int(s["stale_days"])),
         "riskability_fw_identity_grace_days": str(int(s["identity_grace_days"])),
     }
+
+
+def preview_search(s: dict, limit: int = 100) -> str:
+    """The top edges the reduction yields, for a person to read before saving.
+
+    The count the test reports says whether the mapping works; the rows say
+    whether it maps the RIGHT things, which a count cannot: a port field that
+    actually holds the source port produces a plausible count and a useless
+    graph. Sorted by sessions so the busiest edges, the ones most likely to
+    matter, come first.
+    """
+    return ("| " + edges_definition(s)
+            + " | sort %d - sessions" % int(limit)
+            + " | eval first_seen = strftime(edge_first_seen, \"%Y-%m-%d %H:%M\"),"
+              " last_seen = strftime(edge_last_seen, \"%Y-%m-%d %H:%M\")"
+            + " | table src_ip, dest_ip, port, protocol, sessions, first_seen, last_seen")
 
 
 def test_search(s: dict) -> str:

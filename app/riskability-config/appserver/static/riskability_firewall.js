@@ -162,6 +162,9 @@
         root.appendChild(common);
 
         var bar = el("div", "rk-fw-actions");
+        var preview = el("button", "rk-fw-btn", "Show top 100 edges");
+        preview.type = "button";
+        preview.title = "Run the reduction over the last day and list the busiest edges it yields, without saving";
         var test = el("button", "rk-fw-btn", "Test source");
         var save = el("button", "rk-fw-btn rk-fw-primary", "Save");
         test.type = "button"; save.type = "button";
@@ -178,6 +181,33 @@
                 out.appendChild(status("rk-bad", "The test could not run.", e.message));
             }).then(function () { test.disabled = false; test.textContent = "Test source"; });
         });
+        preview.addEventListener("click", function () {
+            preview.disabled = true; preview.textContent = "Running\u2026"; out.textContent = "";
+            call("POST", {action: "preview", config: values(), limit: 100}).then(function (r) {
+                if (!r.rows.length) {
+                    out.appendChild(status("rk-warn", "No edges in the last day.",
+                        "The reduction ran and produced nothing. Check the index or model, the action value and the field names; Test source says the same with a count."));
+                    return;
+                }
+                out.appendChild(status("rk-good", r.returned + " busiest edges of the last day, as the app will read them.",
+                    "Read the columns, not just the count: a port column holding source ports, or addresses that are host names, "
+                    + "means the field mapping is wrong even though the count looks healthy. Nothing has been saved."));
+                var tbl = el("table", "rk-table rk-fw-preview");
+                var head = el("tr");
+                ["Source", "Destination", "Port", "Protocol", "Sessions", "First seen", "Last seen"].forEach(function (x) { head.appendChild(el("th", null, x)); });
+                tbl.appendChild(head);
+                r.rows.forEach(function (row) {
+                    var tr = el("tr");
+                    [row.src_ip, row.dest_ip, row.port, row.protocol, row.sessions, row.first_seen, row.last_seen]
+                        .forEach(function (v, i) { tr.appendChild(el("td", i === 2 || i === 4 ? "rk-num" : null, v === null || v === undefined ? "" : v)); });
+                    tbl.appendChild(tr);
+                });
+                var wrap = el("div", "rk-fw-preview-wrap"); wrap.appendChild(tbl); out.appendChild(wrap);
+                out.appendChild(el("pre", "rk-fw-query", r.query));
+            }).catch(function (e) {
+                out.appendChild(status("rk-bad", "The preview could not run.", e.message));
+            }).then(function () { preview.disabled = false; preview.textContent = "Show top 100 edges"; });
+        });
         save.addEventListener("click", function () {
             save.disabled = true; save.textContent = "Saving…"; out.textContent = "";
             call("POST", {action: "set", config: values()}).then(function () {
@@ -187,7 +217,7 @@
                 save.disabled = false; save.textContent = "Save";
             });
         });
-        bar.appendChild(test); bar.appendChild(save);
+        bar.appendChild(test); bar.appendChild(preview); bar.appendChild(save);
         root.appendChild(bar);
         root.appendChild(out);
     }

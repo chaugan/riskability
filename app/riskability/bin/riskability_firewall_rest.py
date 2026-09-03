@@ -64,6 +64,9 @@ class FirewallHandler(PersistentServerConnectionApplication):
                     return self._set(service, body.get("config") or {})
                 if action == "test":
                     return self._test(service, body.get("config") or {})
+                if action == "preview":
+                    return self._preview(service, body.get("config") or {},
+                                         body.get("limit"))
                 raise ValueError("unknown action %r" % action)
             return _reply(405, {"error": "%s is not supported" % method})
         except PermissionError as exc:
@@ -159,6 +162,30 @@ class FirewallHandler(PersistentServerConnectionApplication):
                         else "no edges in the last day: check the index, the "
                              "sourcetype, the action value and the field names"),
         })
+
+    def _preview(self, service, config, limit):
+        """Top edges over the last day, as the reduction produces them."""
+        clean = firewall.validate(config)
+        if not firewall.configured(clean):
+            raise ValueError("name a source before previewing")
+        try:
+            n = max(1, min(int(limit or 100), 500))
+        except (TypeError, ValueError):
+            n = 100
+        query = firewall.preview_search(clean, n)
+        rows = []
+        try:
+            job = service.jobs.create(query, earliest_time="-1d", latest_time="now",
+                                      exec_mode="blocking", max_count=n)
+            for item in results.JSONResultsReader(job.results(output_mode="json", count=n)):
+                if isinstance(item, dict):
+                    rows.append({k: item.get(k) for k in
+                                 ("src_ip", "dest_ip", "port", "protocol", "sessions",
+                                  "first_seen", "last_seen")})
+        except Exception as exc:
+            raise ValueError(_search_refusal(exc, clean))
+        return _reply(200, {"query": query, "limit": n, "rows": rows,
+                            "returned": len(rows)})
 
     # -- plumbing ----------------------------------------------------------
     def _service(self, request):

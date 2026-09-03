@@ -81,9 +81,21 @@ def main():
     check("pressure defaults to the weaker claim", entries[1][2] == "occasional")
     check("comments and blank lines are ignored", len(entries) == 2)
     ep = firewall.macros(s)["riskability_fw_entry_points"]
-    check("entry macro packs cidr|name|pressure", '"0.0.0.0/0|internet|constant"' in ep
-          and "entry_scan_pressure" in ep)
+    check("entry macro sets cidr, name and pressure per row",
+          'entry_cidr = "0.0.0.0/0", entry_name = "internet", entry_scan_pressure = "constant"' in ep)
     check("entry macro has no leading pipe", ep.startswith("makeresults"))
+    check("entry macro never uses mvappend (invalid with one argument)", "mvappend" not in ep)
+    one = firewall.validate({"index": "fw", "entry_points": "10.0.45.0/24"})
+    ep1 = firewall.macros(one)["riskability_fw_entry_points"]
+    check("a single entry point generates a valid macro",
+          ep1.startswith("makeresults | eval entry_cidr = \"10.0.45.0/24\"") and "append" not in ep1)
+    check("saved entry text is readable and a blank name stays blank",
+          one["entry_points"] == "10.0.45.0/24 |  | occasional", repr(one["entry_points"]))
+    check("saved entry text keeps a given name",
+          s["entry_points"].splitlines()[0] == "0.0.0.0/0 | internet | constant", repr(s["entry_points"]))
+    three = firewall.validate({"index": "fw", "entry_points": "1.1.1.0/24|a|constant\n2.2.2.0/24|b\n3.3.3.0/24"})
+    check("three entries append two rows",
+          firewall.macros(three)["riskability_fw_entry_points"].count("| append [|") == 2)
     check("days pass through as integers",
           firewall.macros(s)["riskability_fw_fresh_days"] == "10")
 
@@ -117,6 +129,14 @@ def main():
           "index=" not in e and "sourcetype" not in e)
     check("the test search works for tstats too",
           firewall.test_search(dm).startswith("| tstats "))
+
+    # --- the preview reads the same reduction and is bounded ----------------------
+    pv = firewall.preview_search(s, 100)
+    check("preview starts from the same reduction", pv.startswith("| search index=firewall"))
+    check("preview is bounded and sorted busiest first", "| sort 100 - sessions" in pv)
+    check("preview returns the seven edge columns",
+          "table src_ip, dest_ip, port, protocol, sessions, first_seen, last_seen" in pv)
+    check("preview works for tstats too", firewall.preview_search(dm, 50).startswith("| tstats "))
 
     # --- the test search is bounded and reads the same reduction ------------------
     t = firewall.test_search(s)
