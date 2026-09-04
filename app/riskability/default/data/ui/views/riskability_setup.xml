@@ -6,20 +6,20 @@
     <panel>
       <html>
         <div class="rk-card">
-          <h3>Configuration has moved</h3>
+          <h3>Configuration is for administrators</h3>
           <p>
-            Riskability is configured from the <b>Riskability Configuration</b> app,
-            which only administrators can open. It holds the feed administration
-            page and the AI analysis settings.
+            Riskability is configured under the <b>Administration</b> menu, which
+            only administrators see. It holds feed administration, the AI
+            analysis settings, the escalation rules and the firewall data source.
           </p>
           <p>
-            <a href="../riskability-config/riskability_admin">Open Feed administration</a>
+            <a href="riskability_admin">Open Feed administration</a>
             &#160;·&#160;
-            <a href="../riskability-config/riskability_ai">Open AI analysis settings</a>
+            <a href="riskability_ai_settings">Open AI analysis settings</a>
           </p>
           <p class="rk-dim">
-            If those links do not resolve, the riskability-config package has not been
-            installed on this search head. Install it from the same release as this app.
+            Both pages are in this app, under Administration in the navigation bar,
+            and only administrators can see them.
           </p>
         </div>
       </html>

@@ -113,8 +113,49 @@ class FirewallHandler(PersistentServerConnectionApplication):
             state[name] = (_norm(have) == _norm(definition)) if have is not None else None
         return state
 
+    # -- the Network analysis menu follows the settings ---------------------
+    NET_VIEWS = ("riskability_netevidence", "riskability_routes")
+
+    def _view_open(self, service, view):
+        """True if everyone may read the view, False if admins only, None if
+        the ACL could not be read."""
+        try:
+            body = service.get("/servicesNS/nobody/riskability/data/ui/views/" + view,
+                               output_mode="json").body.read()
+            perms = json.loads(body)["entry"][0]["acl"].get("perms") or {}
+            return "*" in (perms.get("read") or [])
+        except Exception:
+            return None
+
+    def _mirror_configured(self, service, configured: bool):
+        """Open the two Network analysis views to everyone while a firewall
+        source is configured, admins only otherwise. Splunk filters the nav
+        bar by view permission on the server, so for a user the whole menu
+        is absent until an administrator names a source, instead of two
+        pages saying "not configured". The path is absolute and the fields
+        travel as the body: splunklib namespaces a relative path twice, and
+        swallows owner/sharing as its own arguments (see riskability_ai_rest)."""
+        for view in self.NET_VIEWS:
+            service.post("/servicesNS/nobody/riskability/data/ui/views/%s/acl" % view,
+                         body={"perms.read": "*" if configured else "admin,sc_admin",
+                               "owner": "nobody", "sharing": "app"})
+
+    def _heal_mirror(self, service, settings):
+        """Re-assert the two ACLs from the settings when they disagree, on
+        every admin read of the settings; costs two reads when they agree."""
+        want = firewall.configured(settings)
+        for view in self.NET_VIEWS:
+            state = self._view_open(service, view)
+            if state is not None and state != want:
+                try:
+                    self._mirror_configured(service, want)
+                except Exception:
+                    pass
+                return
+
     def _get(self, service):
         settings = self._read(service)
+        self._heal_mirror(service, settings)
         return _reply(200, {
             "config": settings,
             "configured": firewall.configured(settings),
@@ -128,8 +169,15 @@ class FirewallHandler(PersistentServerConnectionApplication):
         service.confs[CONF][STANZA].update(**clean)
         for name, definition in firewall.macros(clean).items():
             service.confs["macros"][name].update(definition=definition)
+        mirror_error = ""
+        try:
+            self._mirror_configured(service, firewall.configured(clean))
+        except Exception as exc:
+            mirror_error = ("saved, but the Network analysis pages could not be %s: %s"
+                            % ("opened to users" if firewall.configured(clean) else "closed", exc))
         return _reply(200, {"config": clean, "configured": firewall.configured(clean),
-                            "macros": self._macro_state(service, clean)})
+                            "macros": self._macro_state(service, clean),
+                            "mirror_error": mirror_error})
 
     def _test(self, service, config):
         clean = firewall.validate(config)

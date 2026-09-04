@@ -14,7 +14,7 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 DIST="$ROOT/dist"
 VERSION=$(awk -F'= *' '/^version/{print $2; exit}' "$ROOT/app/riskability/default/app.conf")
-APPS=(riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai)
+APPS=(riskability TA-riskability TA-riskability-indexes TA-riskability-ai)
 
 # Rebuild the downloadable feed builder first, so the archive in the package is
 # always built from the tree being packaged. It shipped stale once already --
@@ -205,6 +205,12 @@ structure "$ROOT/app/riskability"
 
 need riskability "riskability/static/appIcon.png"                  "36px app icon; Splunk Web shows a placeholder without it"
 need riskability "riskability/static/appIcon_2x.png"               "72px app icon for high-DPI displays"
+need riskability "riskability/default/data/ui/views/riskability_admin.xml"       "feed administration, admin-only view"
+need riskability "riskability/default/data/ui/views/riskability_ai_settings.xml" "the AI analysis settings, admin-only view"
+need riskability "riskability/default/data/ui/views/riskability_escalations.xml" "escalation rule switches, admin-only view"
+need riskability "riskability/default/data/ui/views/riskability_firewall.xml"    "firewall data source, admin-only view"
+need riskability "riskability/appserver/static/riskability_admin.js"             "the feed page script"
+need riskability "riskability/appserver/static/riskability_ai.js"                "the AI settings script"
 need riskability "riskability/default/app.conf"                    "app identity"
 need riskability "riskability/default/collections.conf"            "KV Store collections and their indexes"
 need riskability "riskability/default/transforms.conf"             "lookup definitions"
@@ -243,18 +249,6 @@ need riskability "riskability/default/authorize.conf"                "defines ri
 need riskability "riskability/appserver/static/scripts/riskability-feedbuilder.zip" \
      "the self-contained feed builder the admin page offers"
 
-need riskability-config "riskability-config/default/app.conf"                        "app identity"
-need riskability-config "riskability-config/metadata/default.meta"                   "the app-level admin-only grant"
-need riskability-config "riskability-config/default/data/ui/nav/default.xml"         "nav with the two configuration pages"
-need riskability-config "riskability-config/default/data/ui/views/riskability_admin.xml" "feed administration (moved from the main app)"
-need riskability-config "riskability-config/default/data/ui/views/riskability_ai.xml"    "the AI analysis settings page"
-need riskability-config "riskability-config/appserver/static/riskability_admin.js"   "the feed page script (cross-references the main app's builder zip)"
-need riskability-config "riskability-config/appserver/static/riskability_admin.css"  "shared admin styles"
-need riskability-config "riskability-config/appserver/static/riskability_ai.js"      "the AI settings script"
-need riskability-config "riskability-config/appserver/static/riskability_ai.css"     "AI page styles"
-need riskability-config "riskability-config/appserver/static/riskability_help.js"    "the help toggle the admin views reference"
-need riskability-config "riskability-config/static/appIcon.png"                      "app icon"
-need riskability-config "riskability-config/README.txt"                              "install note"
 need riskability "riskability/default/visualizations.conf"                "declares the custom visualization"
 need riskability "riskability/appserver/static/visualizations/riskability_chart/visualization.js" \
      "the built ECharts bundle; without it every chart panel is blank"

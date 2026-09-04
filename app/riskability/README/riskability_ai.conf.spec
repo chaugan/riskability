@@ -1,5 +1,5 @@
-# Configuration for the AI analysis pipeline. Written by the admin UI in the
-# Riskability Configuration app; editable by hand, validated against the
+# Configuration for the AI analysis pipeline. Written by the AI analysis page
+# under Administration; editable by hand, validated against the
 # schema in bin/riskability/ai_config.py.
 
 [connection]

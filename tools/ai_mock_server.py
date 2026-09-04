@@ -11,7 +11,7 @@ uses:
     GET  /health                 BERT sidecar health
     POST /classify               BERT sidecar tactic tagging
 
-Point the Riskability Configuration page at http://127.0.0.1:<port> and every
+Point the AI analysis page under Administration at http://127.0.0.1:<port> and every
 button on it works: Test connection, Test analysis, Test classifier. That
 exercises the whole Splunk side of the pipeline — validation, auth header,
 answer parsing, schema check — with no GPU, no model and no network beyond

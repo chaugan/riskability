@@ -204,20 +204,16 @@ even with a feed imported, because clearing that gate is itself a write:
 chown -R splunk:splunk $SPLUNK_HOME/etc/apps/riskability
 ```
 
-**Since 1.3.0 the app is two archives, and the Splunkbase listing carries only
-one of them.** `riskability-<version>.tar.gz` is the app. `riskability-config-
-<version>.tar.gz` is the configuration app, readable by administrators only,
-and it is required: feed administration lives there, so an installation
-without it has no way to import a feed and its setup page points at a page
-that does not exist. A Splunkbase listing takes exactly one archive, so take
-`riskability-config` from the [GitHub release](https://github.com/chaugan/riskability/releases)
-alongside the main app, or build both with `tools/package.sh`. Install both on
-the search head. On a single instance - one Splunk that is both search head and
-indexer, which is the usual shape for an air-gapped deployment - that is the
-entire installation. The five indexes and the index-time parsing ship inside
-the main app, so it works on install rather than after a manual step. A third
-archive, `TA-riskability-ai`, carries the three indexes the optional AI
-pipeline writes to and is needed only if you switch that on.
+**The Splunkbase download is one archive, `riskability-<version>.tar.gz`, and
+it is the whole app.** Install it on the search head. On a single instance -
+one Splunk that is both search head and indexer, which is the usual shape for
+an air-gapped deployment - that is the entire installation. All eight indexes
+and the index-time parsing ship inside it, so it works on install rather than
+after a manual step. The configuration pages (feed administration, AI
+analysis, escalation rules, the firewall data source) are views of this same
+app under the **Administration** menu, readable by administrators only: Splunk
+filters the navigation bar by view permission on the server, so for everyone
+else that menu does not exist and a typed URL answers Splunk's own 404.
 
 A **distributed** deployment needs two small additions, because a universal
 forwarder cannot run this app: it has no Python for the modular input, and
@@ -227,15 +223,16 @@ below.
 
 | Role | What it needs |
 |---|---|
-| Search head | The app and `riskability-config`. Nothing else |
+| Search head | The app. Nothing else |
 | Indexer | The app's `default/indexes.conf`, and `TA-riskability-ai` if AI analysis will be switched on. From 0.1.30 the forwarder parses locally, so the `[riskability:swinv]` parsing is no longer required here, but keep it: it is what protects anything reaching the indexers by another route, such as a heavy forwarder, HEC, or a forwarder still on an older add-on. `TA-riskability-indexes` carries both |
 | Universal forwarder | `inputs.conf`, and the `[riskability:swinv]` stanza from `props.conf`. From 0.1.30 the forwarder parses the inventory itself, which is what stops the parsing depending on a tier you may not own. `TA-riskability` carries both |
 
 The repository also carries `TA-riskability` and `TA-riskability-indexes`,
 prebuilt for those two roles if you would rather install an archive than paste
-a stanza. Like `riskability-config`, they are not on Splunkbase - a listing
-takes one archive - so build them with `tools/package.sh` or take them from
-the GitHub release, which carries every archive and a `SHA256SUMS.txt`.
+a stanza, and `TA-riskability-ai` for the indexing tier of a site that switches
+AI analysis on. They are not on Splunkbase - a listing takes one archive - so
+build them with `tools/package.sh` or take them from the GitHub release, which
+carries every archive and a `SHA256SUMS.txt`.
 
 Everything the app needs at runtime is inside those archives - the KV Store
 collections and their indexes, the search commands, the modular input and its
@@ -826,13 +823,13 @@ links to its capture.
 | **Remediation** | What was actually fixed, and what merely stopped being reported |
 | **MITRE ATT&CK** | Which adversary techniques the open findings could enable. Context, not evidence |
 | **Exposure** | Which findings the network can reach, and which sit inside containers |
-| **Hosts** | Every host at a glance, split by filesystem root |
+| **Host overview** | Every host at a glance, split by filesystem root. Under the Hosts menu with Host detail |
 | **Host detail** | Everything known about one machine: what has been measured on it and what has not, what it is configured to run, its Windows patch level, and what on it is no longer supported |
 | **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
 | **AI prioritization** | Only present when an administrator has switched the AI analysis pipeline on. The tiers, scores, rationales and mitigations the GPU pipeline produced, newest per CVE per asset |
-| **Feed administration** | Build, upload and import bundles, now in the separate **Riskability Configuration** app, together with the AI settings, where only administrators can reach it |
+| **Feed administration** | Build, upload and import bundles. Under the **Administration** menu with the AI, escalation and firewall settings, which only administrators can see |
 
 ## AI analysis (optional)
 
@@ -852,8 +849,8 @@ message about anything missing, and `/riskability/ai_status` answering one
 silent `false`.
 
 **Setting AI up is a deliberate act, and it is the act that causes egress.** An
-administrator opens the **Riskability Configuration** app, types the URL of a
-model endpoint and its credential, and from that moment the *Test connection*
+administrator opens **AI analysis** under the Administration menu, types the URL
+of a model endpoint and its credential, and from that moment the *Test connection*
 and *Test analysis* buttons on that page reach that endpoint, with the master
 switch still off. That is the correct behaviour rather than a leak: you have to
 be able to prove an endpoint answers before you trust the fleet's data to it.
@@ -911,8 +908,8 @@ because closing the mismatch by renaming the field is a one-line change and
 the intended design is the one to review against.
 
 Everything about it, the endpoint, the secret (Splunk's encrypted password
-store, never a browser) and the hardware profile, is configured in the
-**Riskability Configuration** app, which only `admin` and `sc_admin` can open.
+store, never a browser) and the hardware profile, is configured on the
+**AI analysis** page under Administration, which only `admin` and `sc_admin` see.
 Full documentation, including how to test against hosted model hubs before the
 hardware exists, is in [docs/AI-MOD.md](docs/AI-MOD.md).
 
@@ -1239,6 +1236,13 @@ mutation test a rule should face before anyone lives with it are in
 ## Observed permitted traffic evidence (optional)
 
 See it: [Network evidence](https://chaugan.github.io/riskability/#network-evidence), [Routes](https://chaugan.github.io/riskability/#routes) and the [firewall data source page](https://chaugan.github.io/riskability/#admin-firewall-source) in the gallery.
+
+The two pages sit under the **Network analysis** menu, which a user sees only
+once an administrator has named a firewall source on the Firewall data source
+page: the settings open the two views to everyone when a source is configured
+and close them again when it is removed, the same way the AI prioritization
+page follows its switch. Until then the menu is absent rather than two pages
+saying "not configured".
 
 **How exposure is determined today, and the one layer the collector cannot
 see.** Every exposure label on every page comes from how a process bound its

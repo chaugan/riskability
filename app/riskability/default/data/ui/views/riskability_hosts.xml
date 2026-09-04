@@ -1,5 +1,5 @@
 <form version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
-  <label>Hosts</label>
+  <label>Host overview</label>
   <description>Per-host inventory and findings, split by the filesystem root each component came from.</description>
   <fieldset submitButton="false" autoRun="true">
     <input type="dropdown" token="hostname" searchWhenChanged="true">

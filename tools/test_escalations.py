@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import re
 import sys
 from pathlib import Path
 
@@ -740,10 +741,12 @@ def test_admin_handler_compiles_the_same_macro():
     check("Splunk Web exposes the endpoint to the browser (web.conf)",
           "pattern = riskability/escalations" in web)
     main_nav = (root / "riskability" / "default" / "data" / "ui" / "nav" / "default.xml").read_text()
-    admin_nav = (root / "riskability-config" / "default" / "data" / "ui" / "nav" / "default.xml").read_text()
-    check("the page lives in the admin app and not in the main app",
-          "riskability_escalations" in admin_nav and "riskability_escalations" not in main_nav
-          and not (root / "riskability" / "default" / "data" / "ui" / "views" / "riskability_escalations.xml").exists())
+    meta = (root / "riskability" / "metadata" / "default.meta").read_text()
+    check("the page is an admin-only view of the main app, in the Administration menu",
+          "riskability_escalations" in main_nav
+          and '<collection label="Administration">' in main_nav
+          and re.search(r"\[views/riskability_escalations\]\s*\naccess = read : \[ admin, sc_admin \]", meta)
+          and not (root / "riskability-config").exists())
 
 
 def main():

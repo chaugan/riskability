@@ -34,13 +34,13 @@ CAPTIONS = {
  "config-surface":         ("Configuration surface", "What each host is configured to run: cron, systemd timers and services, SUID and SGID binaries, each carrying the ATT&CK technique it is the surface for. The half of ATT&CK a CVE feed cannot reach, counted in mechanisms rather than CVEs."),
  "exposure":               ("Exposure", "The priority matrix, open findings by network reach against exploitation likelihood, the most exposed hosts, and the chain the network takes: edge, listening process, container, package, CVE."),
  "host-detail":            ("Host detail", "Everything known about one machine, as a dossier: identity and four clocks, what has been measured and what has not, what to do first, its findings, configuration surface, exposure, patch level and unsupported software."),
- "hosts":                  ("Hosts", "Every host at a glance, split by filesystem root, so a package inside a container is never confused with the same package on the host."),
+ "hosts":                  ("Host overview", "Every host at a glance, split by filesystem root, so a package inside a container is never confused with the same package on the host."),
  "coverage":               ("Coverage", "The honest page. What the imported feed cannot assess and why, whether everything the collector found actually arrived, Windows patch level against Microsoft's own build data, and the support timeline."),
  "end-of-support":         ("End of support", "Software on the fleet that has run out of supported releases, placed on a timeline at the date support ends, with how much evidence there is that it runs. Who ships a copy decides whether it is really unsupported."),
  "end-of-support-hosts":   ("End of support, by host", "Where each end of support product is installed, so the timeline above can be turned into a list of machines."),
  "risk-exceptions":        ("Risk exceptions", "Findings someone accepted, why, until when, and who said so. Written to an audit index that is appended to and never rewritten."),
  "cve-encyclopaedia":      ("CVE encyclopaedia", "What any vulnerability the feed carries actually is, and where it sits in this fleet. Entirely offline."),
- "feed-administration":    ("Feed administration (admin)", "Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. In the Riskability Configuration app, administrators only."),
+ "feed-administration":    ("Feed administration (admin)", "Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. Under the Administration menu of the app, drawn for administrators only."),
  "feed-import-progress":   ("Feed import in progress (admin)", "An import runs on the server and does not need the page kept open. The active feed stays searchable throughout, so importing never blinds the fleet."),
 }
 # The section at the top. Edit when a batch of pages changes.

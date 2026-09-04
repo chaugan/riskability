@@ -1,8 +1,8 @@
 /*
  * Hide the "Admin" links unless the reader may actually follow them.
  *
- * The configuration app (riskability-config) is admin-only at the app level,
- * so for everyone else these links resolve to Splunk's 404 -- correct, but a
+ * The administration pages are admin-only views of this app, so for everyone
+ * else these links resolve to Splunk's 404 -- correct, but a
  * dead link is still a thing a user was shown and could not use, and it
  * advertises that an admin surface exists. This script asks splunkd, through
  * the same proxy every page here already uses, whether the current user can
@@ -23,7 +23,7 @@
     }
 
     var links = document.querySelectorAll(
-        'a[href$="riskability-config/riskability_admin"]');
+        'a[href$="riskability_admin"]');
     if (!links.length) return;
 
     function hideAll() {

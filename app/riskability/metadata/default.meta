@@ -19,6 +19,36 @@ access = read : [ * ], write : [ admin, sc_admin ]
 [views/riskability_ai]
 access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
 
+# The two Network analysis pages work the same way: admin-only as shipped, and
+# the firewall settings endpoint opens them to everyone when an administrator
+# names a firewall source (and closes them again when the source is removed).
+# Splunk drops an empty nav collection, so the whole "Network analysis" menu is
+# absent for a user until then, rather than two pages that say "not configured".
+[views/riskability_netevidence]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
+[views/riskability_routes]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
+# The four configuration pages, which used to be a separate app so that only
+# administrators could open them. A Splunkbase listing takes one archive, so
+# they live here with the same restriction expressed per view: Splunk filters
+# the navigation bar by view permission on the server, so for everyone else
+# the Administration menu is empty and is not drawn, and a typed URL answers
+# Splunk's own 404. The endpoints behind them guard themselves by capability
+# regardless of which page calls them.
+[views/riskability_admin]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
+[views/riskability_ai_settings]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
+[views/riskability_escalations]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
+[views/riskability_firewall]
+access = read : [ admin, sc_admin ], write : [ admin, sc_admin ]
+
 [collections/riskability_ranges]
 access = read : [ * ], write : [ admin, sc_admin ]
 

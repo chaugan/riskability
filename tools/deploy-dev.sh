@@ -12,11 +12,24 @@ source "$ROOT/docker/.env"
 "$ROOT/tools/make-feedbuilder.sh"
 "$ROOT/tools/build-viz.sh"
 
-# All five packages the repository ships. riskability-config and
-# TA-riskability-ai joined in 1.3.0; missing one from this list is how a
-# developer ends up debugging a configuration app that exists in git but has
-# never been installed anywhere.
-for app in riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai; do
+# All four packages the repository ships. TA-riskability-ai joined in 1.3.0,
+# and the configuration app folded back into riskability in 1.4.0; missing one
+# from this list is how a developer ends up debugging an app that exists in
+# git but has never been installed anywhere.
+# Splunk Web stamps every static file URL with the app build it read at
+# startup, and browsers cache those URLs for a year. Copying a new build in
+# without restarting leaves the page stamping the OLD build, so a browser that
+# has seen the page keeps its cached script and never fetches the new one: a
+# feature was reported missing while the file on disk plainly had it. When the
+# build changes, restart, whatever RESTART says.
+have_build=$(docker exec "$CONTAINER" sed -n 's/^build *= *//p' /opt/splunk/etc/apps/riskability/default/app.conf 2>/dev/null | head -1)
+want_build=$(sed -n 's/^build *= *//p' "$ROOT/app/riskability/default/app.conf" | head -1)
+if [ -n "$have_build" ] && [ "$have_build" != "$want_build" ]; then
+  echo "app build $have_build -> $want_build: restarting so Splunk Web stamps the new build into its static URLs"
+  RESTART=1
+fi
+
+for app in riskability TA-riskability TA-riskability-indexes TA-riskability-ai; do
   [ -d "$ROOT/app/$app" ] || continue
   # Replace default/ and bin/ but never local/ or metadata/local.meta: Splunk
   # writes runtime state there (the is_configured flag, any UI edits), and an
@@ -97,8 +110,8 @@ docker exec -u splunk "$CONTAINER" /opt/splunk/bin/splunk reload auth -auth "adm
   # pipeline test can pass or fail against a version of the search that is no
   # longer on disk. Cost an afternoon: a field added to a snapshot job kept
   # coming back empty because the job being run was the previous one.
-  for app in riskability riskability-config TA-riskability TA-riskability-indexes TA-riskability-ai; do
-    for endpoint in data/ui/views saved/searches admin/macros admin/transforms-lookup admin/collections-conf; do
+  for app in riskability TA-riskability TA-riskability-indexes TA-riskability-ai; do
+    for endpoint in data/ui/views data/ui/nav saved/searches admin/macros admin/transforms-lookup admin/collections-conf; do
       docker exec -u splunk "$CONTAINER" curl -sk -u "admin:$SPLUNK_PASSWORD" -X POST \
         "https://localhost:8089/servicesNS/nobody/$app/$endpoint/_reload" \
         >/dev/null 2>&1 || true

@@ -168,6 +168,21 @@ def main():
           all(("%s =" % k) in (ROOT / "app" / "riskability" / "README" / "riskability_firewall.conf.spec").read_text()
               for k in firewall.FIELDS))
 
+    # --- the Network analysis menu follows the settings ---------------------------
+    meta = (ROOT / "app" / "riskability" / "metadata" / "default.meta").read_text()
+    for view in ("riskability_netevidence", "riskability_routes"):
+        check("%s ships admin-only, to be opened by the settings" % view,
+              re.search(r"\[views/%s\]\s*\naccess = read : \[ admin, sc_admin \]" % view, meta) is not None)
+    handler = (ROOT / "app" / "riskability" / "bin" / "riskability_firewall_rest.py").read_text()
+    mirror = handler.split("def _mirror_configured", 1)[1].split("def _heal_mirror", 1)[0]
+    check("the ACL write uses an absolute path and sends the fields as the body",
+          '"/servicesNS/nobody/riskability/data/ui/views/%s/acl"' in mirror and 'body={"perms.read"' in mirror
+          and '"sharing": "app"' in mirror)
+    check("save mirrors configured() into the ACLs",
+          "self._mirror_configured(service, firewall.configured(clean))" in handler.split("def _set", 1)[1].split("def _test", 1)[0])
+    check("every admin read heals a stale ACL",
+          "self._heal_mirror(service, settings)" in handler.split("def _get", 1)[1].split("def _set", 1)[0])
+
     print()
     if FAILURES:
         print("FAILED (%d): %s" % (len(FAILURES), ", ".join(FAILURES)))

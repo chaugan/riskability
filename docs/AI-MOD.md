@@ -36,19 +36,19 @@ of this design assumed.
 
 | Package | What it is | Where it installs |
 |---|---|---|
-| `riskability-config` | **New.** The configuration app: feed administration (moved here) and the AI analysis settings. Readable only by `admin` and `sc_admin`. | Search head |
+| (was `riskability-config`) | Folded back into `riskability` in 1.4.0 as admin-only views under the Administration menu: feed administration and the AI analysis settings. Readable only by `admin` and `sc_admin`. | Search head |
 | `riskability` | The main app. Gains the AI capability and endpoints, the `riskabilityaianalyze` search command, the four AI saved searches, the verdict cache collection, and one new dashboard that removes itself when AI is off. Feed admin UI **moved out** to the config app. | Search head |
 | `TA-riskability-ai` | **New.** The three pipeline indexes and their sourcetype parsing. | Indexers (single instance: everywhere) |
 
 Install order: `TA-riskability-ai` and `TA-riskability-indexes` on the
-indexers, then `riskability` and `riskability-config` on the search head. The
+indexers, then `riskability` on the search head. The
 config app links to the main app's data and vice versa; both ship in the same
 release.
 
 ### The two apps, and why
 
 Everything an analyst needs sits in the main app. Everything that *changes*
-how the app works sits in `riskability-config`, whose
+how the app works sits in admin-only views of the main app, whose
 `metadata/default.meta` grants read access to admins only:
 
 ```ini
@@ -324,7 +324,7 @@ signature: the expansion treats a verdict older than seven days as stale.
 
 ## 4. Configuring it (admin flow)
 
-Open **Riskability Configuration → AI analysis**:
+Open **Administration → AI analysis** in the app:
 
 1. **Connection.** Endpoint URL (OpenAI-compatible, no `/v1`), auth style
    (`none`, `bearer` for vLLM's `--api-key`, `basic` for a proxy), the model
@@ -370,6 +370,19 @@ long prompt can legitimately need a minute, and a timeout shorter than the
 card produces the same symptom as a broken endpoint.
 
 ---
+
+### Who may ask for an explanation
+
+**Explain in depth** on the AI prioritization page is for analysts. The
+capability behind it, `riskability_ai_explain`, ships granted to `user` and
+`power` as well as the admin roles, and the handler reads the connection
+settings, the stored secret and the verdict cache with the system token
+splunkd passes it, so the grant carries nothing else. The first ask for a CVE
+is one outbound model call; the answer is stored with the verdict and shown to
+everyone after. A site that wants that decision kept with administrators
+removes the capability from those two roles in `local/authorize.conf`; the
+button then reads "Explain in depth (administrators)" and is disabled for
+them, while saved answers still show.
 
 ## 5. Indexes, sourcetypes and the fields that travel
 
@@ -572,7 +585,7 @@ findings, until the endpoint is approved.
 ## 9. File map
 
 ```
-app/riskability-config/                 the configuration app (admin-only)
+(riskability-config was folded into app/riskability in 1.4.0)
   default/data/ui/views/riskability_admin.xml   feed admin (moved here)
   default/data/ui/views/riskability_ai.xml      AI connection & pipeline
   appserver/static/riskability_ai.js|css        the AI admin page

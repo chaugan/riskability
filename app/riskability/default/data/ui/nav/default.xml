@@ -5,13 +5,23 @@
   <view name="riskability_remediation"/>
   <view name="riskability_mitre"/>
   <view name="riskability_exposure"/>
-  <view name="riskability_hosts"/>
-  <view name="riskability_host"/>
-  <view name="riskability_netevidence"/>
-  <view name="riskability_routes"/>
+  <collection label="Hosts">
+    <view name="riskability_hosts"/>
+    <view name="riskability_host"/>
+  </collection>
+  <collection label="Network analysis">
+    <view name="riskability_netevidence"/>
+    <view name="riskability_routes"/>
+  </collection>
   <view name="riskability_coverage"/>
   <view name="riskability_exceptions"/>
   <view name="riskability_cve"/>
   <view name="riskability_ai"/>
+  <collection label="Administration">
+    <view name="riskability_admin"/>
+    <view name="riskability_ai_settings"/>
+    <view name="riskability_escalations"/>
+    <view name="riskability_firewall"/>
+  </collection>
   <view name="search"/>
 </nav>
