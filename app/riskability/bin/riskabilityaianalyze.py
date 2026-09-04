@@ -227,8 +227,8 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
             self.write_warning(
                 "Verdict cache is keyed on schema %s but this app produces %s. "
                 "Cached answers were written by an older prompt or schema and "
-                "are still being served. Open the Riskability Configuration AI "
-                "page and save the connection to re-stamp the salt, which "
+                "are still being served. Open Administration, AI analysis, "
+                "and save the connection to re-stamp the salt, which "
                 "re-analyses the fleet within the configured budget."
                 % (stamped, current))
         return salt
@@ -239,8 +239,8 @@ class RiskabilityAIAnalyzeCommand(EventingCommand):
             secret = ai_settings.read_secret(self.service)
         else:
             raise RuntimeError(
-                "AI analysis is switched off in the Riskability Configuration "
-                "app; this command refuses to contact any endpoint")
+                "AI analysis is switched off under Administration, AI analysis; "
+                "this command refuses to contact any endpoint")
         url = cfg["endpoint_url"]
         auth_type, username = cfg["auth_type"], cfg["username"]
         model, verify = cfg["model"], cfg["verify_tls"] == "1"

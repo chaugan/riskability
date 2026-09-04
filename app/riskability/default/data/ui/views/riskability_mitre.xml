@@ -443,7 +443,8 @@
       <search>
         <query>| inputlookup riskability_attack_ledger_lookup
 | search confidence=$conf_tok|s$
-| stats sum(total_open_cves) AS t, sum(placed_any) AS p, sum(via_chain) AS c, sum(only_inherited) AS i, sum(only_vector) AS v, sum(only_observed) AS o, sum(no_cwe_at_all) AS n, sum(unplaced) AS u</query>
+| stats count AS rk_rows, sum(total_open_cves) AS t, sum(placed_any) AS p, sum(via_chain) AS c, sum(only_inherited) AS i, sum(only_vector) AS v, sum(only_observed) AS o, sum(no_cwe_at_all) AS n, sum(unplaced) AS u
+| fillnull value=0 t p c i v o n u</query>
         <done>
           <condition>
             <set token="lg_t">$result.t$</set>

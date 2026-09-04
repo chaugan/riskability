@@ -212,7 +212,6 @@ def test_conf_files():
                for n in ("riskability_ai.conf", "restmap.conf", "web.conf",
                          "authorize.conf", "macros.conf",
                          "savedsearches.conf", "app.conf")]
-    targets.append(os.path.join(ROOT, "app", "riskability-config", "default", "app.conf"))
     targets += [os.path.join(ROOT, "app", "TA-riskability-ai", "default", n)
                 for n in ("indexes.conf", "props.conf", "app.conf")]
     for path in targets:
@@ -529,6 +528,74 @@ def main():
             check("invalid mock server started", False)
     finally:
         bad.stop()
+
+    # --- the overview view's ACL heals from the switch on every admin visit ----
+    rest_src = open(os.path.join(ROOT, "app", "riskability", "bin", "riskability_ai_rest.py")).read()
+    get_body = rest_src.split("def _get(self, request):", 1)[1].split("def _post", 1)[0]
+    check("settings GET re-asserts the overview ACL from the switch",
+          "self._heal_mirror(service, current)" in get_body)
+    check("the view ACL is addressed by an absolute path (a relative one is namespaced twice by splunklib and 404s)",
+          '"servicesNS/nobody/riskability/data/ui/views/riskability_ai' not in rest_src
+          and rest_src.count('"/servicesNS/nobody/riskability/data/ui/views/riskability_ai') >= 2)
+    mirror_src = rest_src.split("def _mirror_enabled", 1)[1].split("# -- routes", 1)[0]
+    check("the ACL fields travel as the request body (splunklib eats owner/sharing as kwargs)",
+          'body={"perms.read"' in mirror_src and '"sharing": "app"' in mirror_src
+          and '"owner": "nobody", "app": "riskability", "sharing": "app"})' not in mirror_src)
+    check("the heal calls the same mirror the save uses",
+          "self._mirror_enabled(service, enabled)" in rest_src.split("def _heal_mirror", 1)[1].split("def _get", 1)[0])
+
+    # --- the page works for the roles it opens to -----------------------------
+    restmap = open(os.path.join(ROOT, "app", "riskability", "default", "restmap.conf")).read()
+    status_stanza = restmap.split("[script:riskability_ai_status]", 1)[1].split("\n[", 1)[0]
+    check("status GET is gated on a capability every role holds (search), not list_settings",
+          "capability.get = search" in status_stanza and "list_settings" not in status_stanza.replace("list_settings, which", ""))
+    status_src = open(os.path.join(ROOT, "app", "riskability", "bin", "riskability_ai_status_rest.py")).read()
+    check("status reply says whether the viewer may ask the model",
+          '"can_explain": _can_explain(service)' in status_src
+          and '"riskability_ai_explain" in caps' in status_src)
+    page_src = open(os.path.join(ROOT, "app", "riskability", "appserver", "static", "riskability_ai_overview.js")).read()
+    check("the page disables Explain for a viewer who may not ask, before the click",
+          "state.can_explain === false" in page_src and "Explain in depth (administrators)" in page_src)
+    check("Re-run never shows for such a viewer", "rerun.hidden = false;" not in page_src)
+
+    # --- Explain in depth is for analysts, and needs nothing but its capability ---
+    auth = open(os.path.join(ROOT, "app", "riskability", "default", "authorize.conf")).read()
+    def role_block(name):
+        return auth.split("[role_%s]" % name, 1)[1].split("\n[", 1)[0] if ("[role_%s]" % name) in auth else ""
+    check("riskability_ai_explain is granted to user and power as shipped",
+          all("riskability_ai_explain = enabled" in role_block(r) for r in ("user", "power", "admin", "sc_admin")))
+    explain_src = open(os.path.join(ROOT, "app", "riskability", "bin", "riskability_ai_explain_rest.py")).read()
+    handle_body = explain_src.split("def handle(", 1)[1].split("def _system_service", 1)[0]
+    check("the explain handler reads settings, secret and cache with the system token, never the caller",
+          "self._system_service(request)" in handle_body and "self._service(request)" not in handle_body
+          and "ai_settings.read_secret(service)" in handle_body)
+    explain_stanza = restmap.split("[script:riskability_ai_explain]", 1)[1].split("\n[", 1)[0]
+    check("splunkd passes the system token to the explain handler", "passSystemAuth = true" in explain_stanza)
+    macros_text = open(os.path.join(ROOT, "app", "riskability", "default", "macros.conf")).read()
+    plat = macros_text.split("[riskability_host_platforms(1)]", 1)[1].split("\n[", 1)[0]
+    check("the platform macro applies the host filter with search (a where broke on the stripped-quote *)",
+          'search hostname!="__meta" hostname="$host$"' in plat and "where hostname" not in plat)
+
+    # --- the settings page lists the endpoint's models instead of making an admin guess ---
+    settings_js = open(os.path.join(ROOT, "app", "riskability", "appserver", "static", "riskability_ai.js")).read()
+    check("Fetch models asks /v1/models through the connection test and offers a picker",
+          '"Fetch models"' in settings_js and 'action: "test_connection"' in settings_js.split("fetchBtn.addEventListener", 1)[1].split("form._offerModels", 1)[0]
+          and "function offerModels(models)" in settings_js)
+    check("Test connection fills the same picker", "form._offerModels(r.models || [])" in settings_js)
+
+    # --- Test analysis reports the names the validated answer carries ---------
+    rest_src2 = open(os.path.join(ROOT, "app", "riskability", "bin", "riskability_ai_rest.py")).read()
+    tc = rest_src2.split("def _test_completion", 1)[1].split("def _test_bert", 1)[0]
+    check("Test analysis reads model_tier/model_score, not the renamed priority_* keys",
+          '"priority_tier"' not in tc and '"priority_score"' not in tc and 'res.get("model_tier"' in tc)
+    settings_js2 = open(os.path.join(ROOT, "app", "riskability", "appserver", "static", "riskability_ai.js")).read()
+    check("the settings page shows the model's tier under its real name",
+          "res.priority_tier" not in settings_js2 and "res.model_tier" in settings_js2)
+
+    # --- the page sees the last test result -------------------------------------
+    get_body2 = open(os.path.join(ROOT, "app", "riskability", "bin", "riskability_ai_rest.py")).read().split("def _get(self, request):", 1)[1].split("def _post", 1)[0]
+    check("settings GET serves last_test beside the settings (load_config drops unknown keys)",
+          'current["last_test"] =' in get_body2 and '.content.get("last_test")' in get_body2)
 
     print()
     if FAILURES:

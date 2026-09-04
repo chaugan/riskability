@@ -43,8 +43,12 @@
        way to tell which is wrong. So the lag is stated, and stated loudly once
        it is bigger than the interval that produced it. -->
   <search id="rk_rollup_age">
+    <!-- count, so there is always a row. stats with only aggregates returns
+         NO row on empty input, the done handler below never fires, and the
+         panel renders the token's own name at a customer on the day they
+         install. -->
     <query>| inputlookup riskability_openstate_host_lookup
-| stats max(rolled_at) AS rolled
+| stats count AS rk_rows, max(rolled_at) AS rolled
 | eval rolled_label = if(isnull(rolled), "never",
       strftime(rolled, "%Y-%m-%d %H:%M")),
       rolled_mins = if(isnull(rolled), 99999, round((now() - rolled) / 60))</query>
@@ -120,7 +124,7 @@
             Open counts are stale-high for the hosts below and closing is withheld until the
             fold completes: risk is over-reported, never under-reported. Usually clears within
             the hour; if not, the pipeline has stopped and
-            <a href="../riskability-config/riskability_admin">Admin</a> shows which job.
+            <a href="riskability_admin">Admin</a> shows which job.
           </span>
         </div>
       </html>

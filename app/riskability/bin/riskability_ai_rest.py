@@ -226,10 +226,17 @@ class AIAdminHandler(PersistentServerConnectionApplication):
         data.insert(json.dumps({"_key": "ai_enabled",
                                 "enabled": "1" if enabled else "0"}))
         # Splunk takes a comma-separated role list in one perms.read parameter.
+        # The path is absolute (leading slash) on purpose: splunklib prefixes a
+        # relative path with the connection's own namespace, which turned this
+        # into /servicesNS/nobody/riskability/servicesNS/nobody/riskability/...
+        # and a 404 that the save swallowed, so the page never opened to anyone.
+        # The fields go as the request body, also on purpose: splunklib's post()
+        # takes owner, app and sharing as ITS namespace arguments and drops them,
+        # and splunkd then refuses the write for missing owner and sharing.
         service.post(
-            "servicesNS/nobody/riskability/data/ui/views/riskability_ai/acl",
-            **{"perms.read": "*" if enabled else "admin,sc_admin",
-               "owner": "nobody", "app": "riskability", "sharing": "app"})
+            "/servicesNS/nobody/riskability/data/ui/views/riskability_ai/acl",
+            body={"perms.read": "*" if enabled else "admin,sc_admin",
+                  "owner": "nobody", "sharing": "app"})
 
     # -- routes ------------------------------------------------------------
 
@@ -257,9 +264,46 @@ class AIAdminHandler(PersistentServerConnectionApplication):
                 "traceback": traceback.format_exc(limit=6),
             })
 
+    def _view_open(self, service):
+        """True if the overview view is readable by everyone, False if by
+        admins only, None if the ACL could not be read."""
+        try:
+            body = service.get("/servicesNS/nobody/riskability/data/ui/views/riskability_ai",
+                               output_mode="json").body.read()
+            perms = json.loads(body)["entry"][0]["acl"].get("perms") or {}
+            return "*" in (perms.get("read") or [])
+        except Exception:
+            return None
+
+    def _heal_mirror(self, service, current):
+        """Re-assert the view ACL from the switch when the two disagree.
+
+        The ACL is written when the switch is saved and at no other time, so
+        a switch that was flipped before this mirror existed, or a search head
+        whose local metadata was lost, leaves the page closed to everyone but
+        admins while AI is on. Every admin visit to the settings page is a
+        chance to notice and put it right; it costs one read when they agree.
+        """
+        enabled = str(current.get("enabled") or "0") == "1"
+        state = self._view_open(service)
+        if state is None or state == enabled:
+            return
+        try:
+            self._mirror_enabled(service, enabled)
+        except Exception:
+            pass
+
     def _get(self, request):
         service = self._service(request)
         current = self._read_config(service)
+        self._heal_mirror(service, current)
+        # The test history is written to the same stanza by _note_test but is
+        # not a setting, so load_config drops it with every other unknown key;
+        # it is read here on its own, or the page said "never run" for ever.
+        try:
+            current["last_test"] = service.confs["riskability_ai"]["connection"].content.get("last_test") or ""
+        except Exception:
+            current["last_test"] = ""
         return _reply(200, {
             "config": current,
             "password_set": self._password_set(service),
@@ -454,9 +498,14 @@ class AIAdminHandler(PersistentServerConnectionApplication):
             self._secret_for_test(request, body), cfg["model"],
             cfg["verify_tls"] == "1", cfg["request_timeout"])
         if result.get("ok"):
-            detail = "%s ms · tier %s score %s" % (
-                result["latency_ms"], result["result"]["priority_tier"],
-                result["result"]["priority_score"])
+            # The validated answer carries the model's own tier and score as
+            # model_tier and model_score: the priority the app uses is computed
+            # from measured facts, and the model's is recorded for calibration.
+            # Reading the old names here raised KeyError on a test that had in
+            # fact succeeded, reported as "unexpected failure: 'priority_tier'".
+            res = result.get("result") or {}
+            detail = "%s ms · model said tier %s, score %s" % (
+                result["latency_ms"], res.get("model_tier", "?"), res.get("model_score", "?"))
         else:
             detail = result.get("validation_error") or "invalid output"
         self._note_test(request, "analysis", result.get("ok", False), detail)

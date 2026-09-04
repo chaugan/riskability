@@ -32,6 +32,8 @@ import re
 import sys
 import time
 from pathlib import Path
+import os
+ROOT = str(Path(__file__).resolve().parents[1])
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "app" / "riskability" / "bin"))
 
@@ -744,6 +746,50 @@ def main():
                         % ", ".join(sorted(missed)))
         print("FAIL  tests defined but never run: %s"
               % ", ".join(sorted(missed)))
+
+    # --- the schedule dial shows every job sharing a minute --------------------
+    viz_src = open(os.path.join(str(ROOT), "app", "riskability", "appserver", "static",
+                                "visualizations", "riskability_chart", "src",
+                                "visualization_source.js")).read()
+    sched = viz_src.split("function buildSchedule", 1)[1].split("function buildTimeline", 1)[0]
+    check("the dial draws one mark per minute, not one per job",
+          "byMinute[key] = { minute: jobs[i].minute, jobs: [] }" in sched
+          and "data: slots.map(" in sched)
+    check("a mark carries every job at its minute, so none is hidden behind another",
+          "jobs: slot.jobs" in sched)
+    check("the mark grows with how many jobs share the minute",
+          "symbolSize: function (val, params)" in sched and "(n - 1) * 3" in sched)
+    check("a failure is not hidden behind a success it shares a minute with",
+          "function slotState(slot)" in sched and "rank(slot.jobs[j].state) > rank(worst)" in sched)
+    check("the tooltip lists them all when there is more than one",
+          "list.length + ' jobs at '" in sched and "for (k = 0; k < list.length; k++)" in sched)
+    check("the centre says when the next slot holds more than one",
+          "next.jobs.length === 1" in sched and "+ ' more'" in sched)
+    # Ten minutes of this app's own schedule collide, and :20 carries three.
+    import re as _re
+    conf = open(os.path.join(str(ROOT), "app", "riskability", "default", "savedsearches.conf")).read()
+    hourly = []
+    for blk in _re.split(r"\n(?=\[)", conf):
+        m = _re.match(r"\[([^\]]+)\]", blk)
+        if not m:
+            continue
+        def field(k):
+            mm = _re.search(r"^%s\s*=\s*(.*)$" % k, blk, _re.M)
+            return mm.group(1).strip() if mm else ""
+        cron, en, dis = field("cron_schedule"), field("enableSched"), field("disabled")
+        parts = cron.split()
+        if cron and en == "1" and dis != "1" and len(parts) >= 2 and parts[1] == "*":
+            hourly.append(int(parts[0]))
+    collisions = sum(1 for m in set(hourly) if hourly.count(m) > 1)
+    check("the app's own schedule really does collide, so this matters",
+          collisions > 0, "minutes shared by more than one job: %d" % collisions)
+
+    # --- the chart accepts a chain without the optional edge columns -----------
+    viz = open(os.path.join(str(ROOT), "app", "riskability", "appserver", "static", "visualizations",
+                            "riskability_chart", "src", "visualization_source.js")).read()
+    check("chaingraph's edge_label and edge_class are optional (the CVE fix chain tables five columns)",
+          "chaingraph: 2," in viz.split("OPTIONAL_TRAILING", 1)[1].split("};", 1)[0]
+          and "var need = contract.length - optional;" in viz)
 
     print()
     if FAILURES:

@@ -259,7 +259,7 @@
           declared, the data is stale, or the host never appeared in it. None of
           those is a statement about the network. If every row on this page
           reads unknown, the firewall feed has not been connected to Riskability
-          yet; that is set up by an administrator in Riskability Configuration,
+          yet; that is set up by an administrator under the Administration menu,
           and the details are in the app's documentation under network evidence.</span>
         </div>
       </html>

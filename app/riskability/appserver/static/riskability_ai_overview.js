@@ -145,7 +145,7 @@
         notice("AI analysis is currently switched off by an administrator.",
                "Nothing on this page runs and no data is sent to a model endpoint "
                + "while it is off. An administrator can switch it on under "
-               + "Riskability Configuration, AI analysis. Priorities elsewhere in "
+               + "Administration, AI analysis. Priorities elsewhere in "
                + "the app are unaffected: they are computed from measured facts, "
                + "not from the model.", "rk-warn");
     }
@@ -836,7 +836,7 @@
                     + ". Re-run asks the model again and replaces it.";
                 explain.textContent = "Hide explanation";
                 explain.className = "rk-ai-explain";
-                rerun.hidden = false;
+                rerun.hidden = !!(state && state.can_explain === false);
             }
             function hideAnswer() {
                 out.hidden = true;
@@ -870,6 +870,22 @@
             if (row.explanation) {
                 saved = {text: row.explanation, when: row.explained_at};
                 hideAnswer();
+            }
+            // Asking the model is gated on riskability_ai_explain (admin and
+            // sc_admin as shipped). A viewer without it can still read an
+            // answer somebody else asked for, but must not be handed a button
+            // that fails with a 403 after the click: say so on the button.
+            if (state && state.can_explain === false) {
+                rerun.hidden = true;
+                rerun.disabled = true;
+                if (!saved) {
+                    explain.disabled = true;
+                    explain.textContent = "Explain in depth (administrators)";
+                    explain.title = "Asking the model to explain a CVE needs the "
+                        + "riskability_ai_explain capability, which an administrator "
+                        + "grants. An explanation an administrator has asked for shows "
+                        + "here for everyone.";
+                }
             }
             var controls = el("div", "rk-ai-explain-controls");
             controls.appendChild(explain);

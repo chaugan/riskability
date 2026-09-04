@@ -56,6 +56,23 @@ def _first(value):
     return value
 
 
+def _can_explain(service) -> bool:
+    """Whether the caller holds riskability_ai_explain.
+
+    The page opens to every role once AI is on, but asking the model to write
+    an explanation is an egress an administrator has to have granted, and
+    the explain endpoint refuses everyone else with a 403. The page asks here
+    first so it can say so on the button, instead of failing after the click.
+    """
+    try:
+        body = service.get("/services/authentication/current-context",
+                           output_mode="json").body.read()
+        caps = json.loads(body)["entry"][0]["content"].get("capabilities") or []
+        return "riskability_ai_explain" in caps
+    except Exception:
+        return True   # unknown: leave the button, the endpoint still decides
+
+
 def _overview_from_kv(service) -> dict:
     """Everything the AI overview page draws, read entirely from KV Store.
 
@@ -208,7 +225,7 @@ class AIStatusHandler(PersistentServerConnectionApplication):
                     enabled = str(row.get("enabled", "0")) in ("1", "true")
             except Exception:
                 enabled = False
-            reply = {"enabled": enabled}
+            reply = {"enabled": enabled, "can_explain": _can_explain(service)}
             if enabled:
                 reply["overview"] = _overview_from_kv(service)
             return _reply(200, reply)

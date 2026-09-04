@@ -30,8 +30,48 @@
   </search>
 
 
+  <!-- Is there a feed at all? The app used to lean on Splunk's own setup gate to
+       say this, which turned out to block the very page that clears it, so the
+       app now says it itself and the gate is gone (see is_configured in
+       app.conf). Counted rather than tested for a field, because an import that
+       is still running writes the row before the counts land. -->
+  <search>
+    <query>| inputlookup riskability_feedstate_lookup
+| search _key=current
+| where isnotnull(generation) AND isnotnull(imported_at)
+| stats count AS feeds</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.feeds$ &gt; 0">
+        <unset token="no_feed"></unset>
+      </condition>
+      <condition>
+        <set token="no_feed">1</set>
+      </condition>
+    </done>
+  </search>
+
   <label>Start here</label>
   <description>What this app does, what its numbers mean, and what they do not.</description>
+
+  <row depends="$no_feed$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn">
+          <b>No vulnerability feed has been imported yet, so nothing can be assessed.</b>
+          <span>
+            Every count in this app is zero until an offline feed is imported, and a
+            zero here does not mean a clean fleet. An administrator builds the feed on
+            a machine with internet access and imports the bundle on
+            <b>Administration &#8594; Feed administration</b>, which only administrators
+            can see. Inventory from your forwarders can arrive before or after the feed;
+            the app matches whatever it has once both are present.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
 
   <row>
     <panel>
@@ -143,6 +183,12 @@
        panel, because that is where a done handler fires dependably; the verdict
        is still built in the search, beside the numbers it describes, so the two
        cannot come to disagree. -->
+  <!-- fillnull, and not for tidiness. On an install where no host has reported
+       yet the lookup is empty, and stats returns its one row carrying only
+       count: sum() over nothing produces no field at all, so late, on_schedule
+       and unlearned were absent rather than zero. The done handler below then
+       set each token to the literal string "$result.late$", and that is what a
+       first-time visitor read on the landing page. -->
   <search id="fleetstate">
     <query>| inputlookup riskability_hostcadence_lookup
 | eval is_late = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)
@@ -150,6 +196,7 @@
 | eval is_new = if(isnull(learned) OR tonumber(learned) != 1, 1, 0)
 | stats sum(is_late) AS late, sum(is_on) AS on_schedule,
         sum(is_new) AS unlearned, count AS total
+| fillnull value=0 late on_schedule unlearned total
 | eval state = case(late &gt; 0, "late", total = 0, "none",
                     on_schedule = 0, "unlearned", 1=1, "calm")
 | eval verdict = case(
@@ -177,6 +224,10 @@
        and the number of them is not fixed. Standalone, so its done handler
        fires: a base search is not dispatched until a panel consumes its rows,
        and an html panel reading a token is not a consumer. -->
+  <!-- count first, because values() over no rows returns no ROW at all rather
+       than an empty field, and a search that returns nothing never fires its
+       done handler: the token would keep its literal name on the page. An
+       install with every daily search disabled is the case that reaches it. -->
   <search id="offhour">
     <query>| rest /servicesNS/nobody/riskability/saved/searches splunk_server=local
 | search eai:acl.app=riskability cron_schedule=* is_scheduled=1
@@ -190,8 +241,8 @@
                      away &lt; 172800, tostring(round(away/3600)) . " h",
                      1=1, tostring(round(away/86400)) . " d")
 | eval one = label . ", next " . strftime(nxt, "%a %H:%M") . " (in " . in_txt . ")"
-| stats values(one) AS parts
-| eval line = mvjoin(parts, "   ·   ")
+| stats count AS n, values(one) AS parts
+| eval line = if(n = 0, "nothing is scheduled outside the hourly cycle", mvjoin(parts, "   ·   "))
 | fields line</query>
     <earliest>0</earliest>
     <latest>now</latest>
@@ -342,7 +393,7 @@
             Open counts for those hosts are stale-high and closing is withheld until the fold
             completes, so risk may be over-reported, never under-reported. Usually clears within
             the hour; if not, the pipeline has stopped and
-            <a href="../riskability-config/riskability_admin">Admin</a> shows which job.
+            <a href="riskability_admin">Admin</a> shows which job.
           </span>
         </div>
       </html>
@@ -581,19 +632,24 @@
             <span>Which findings the network can reach, and which sit inside containers.
               Re-orders the work, never removes any of it.</span></div>
           <div class="rk-guide-item"><b>Hosts</b>
-            <span>One machine at a time, split by filesystem root.</span></div>
+            <span>Every machine at a glance, and one machine in detail.</span></div>
+          <div class="rk-guide-item"><b>Network analysis</b>
+            <span>What the firewall has actually seen: which ports were reached, and the jumps a
+              permitted flow has made from an entry point. <em>Appears once an administrator
+              names a firewall source.</em></span></div>
           <div class="rk-guide-item"><b>Coverage</b>
             <span>What the app <em>cannot</em> see: ecosystems in the fleet the imported feed
               knows nothing about.</span></div>
-          <div class="rk-guide-item"><b>CVE encyclopaedia</b>
-            <span>What a vulnerability actually is, offline. Every CVE id in every table on
-              every page opens it here, so you never have to leave an air-gapped room to look
-              one up.</span></div>
           <div class="rk-guide-item"><b>Risk exceptions</b>
             <span>Findings handled another way, and how. Excluded from every risk number and
               counted separately, so they are never hidden.</span></div>
-          <div class="rk-guide-item"><b>Feed administration</b>
-            <span>Import the offline CVE data, and download the builder that makes it.</span></div>
+          <div class="rk-guide-item"><b>CVE encyclopaedia</b>
+            <span>What a vulnerability actually is, offline. Every CVE id on every page opens
+              it here.</span></div>
+          <div class="rk-guide-item"><b>AI prioritization</b>
+            <span>The work queue with a language model's reasoning beside each CVE; the priority
+              itself is computed from measured facts. <em>Appears once an administrator switches
+              AI analysis on.</em></span></div>
         </div>
       </html>
     </panel>

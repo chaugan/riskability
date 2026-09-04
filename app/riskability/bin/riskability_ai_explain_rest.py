@@ -18,14 +18,13 @@ same dice more verbosely; it cannot add a schema field and it cannot override
 the deterministic rules. What genuinely was missing is the case where a human
 is looking at one row and wants the reasoning spelled out. That is this.
 
-Who may call it, stated accurately. This is admin-tier in practice, not the
-analyst-facing button an earlier version of this docstring described. The
-handler reads the endpoint's stored secret on the CALLER's session, because a
-persistent REST handler has no other token, and reading a storage password is
-admin-tier in Splunk's own trust model. The verdict cache is admin-write for
-the same reason. An analyst-safe version is a different design, where the
-scheduled pipeline produces the explanation under the search owner's context;
-it is not this one with a wider grant. See authorize.conf.
+Who may call it. Anyone holding riskability_ai_explain, which ships granted
+to user, power, admin and sc_admin: this is the analyst-facing button. The
+handler does its reading with the system token splunkd passes it (restmap
+passSystemAuth), so the caller's own rights do not have to cover the stored
+secret or the admin-write verdict cache. An earlier version read the secret
+on the caller's session, which quietly limited the button to admins; a site
+that wants it narrower removes the capability from a role in authorize.conf.
 
 What this endpoint deliberately cannot do:
 
@@ -182,7 +181,16 @@ class AIExplainHandler(PersistentServerConnectionApplication):
             if not CVE_RE.match(cve_id):
                 return _reply(400, {"error": "cve_id must look like CVE-2024-3094"})
 
-            service = self._service(request)
+            # Everything the handler touches on the caller's behalf is read
+            # with the system token splunkd passes (restmap passSystemAuth):
+            # the connection settings, the stored secret and the verdict
+            # cache. The caller's own session decides nothing here beyond
+            # what splunkd already decided at the door, the capability on the
+            # POST. That is what makes riskability_ai_explain grantable to a
+            # plain user role: without it the secret read ran as the caller,
+            # who cannot list storage passwords, and the call went out with
+            # no credential.
+            service = self._system_service(request)
             cfg = ai_settings.load_config(service)
             if str(cfg.get("enabled", "0")).strip().lower() not in ("1", "true", "yes", "on"):
                 return _reply(409, {"error": "AI analysis is switched off"})
@@ -256,7 +264,7 @@ class AIExplainHandler(PersistentServerConnectionApplication):
                 # collection is admin-write, so the caller's own session would
                 # be refused for every analyst and the answer would never be
                 # shared: the next reader would pay for the same model call.
-                self._writer(request).kvstore[VERDICTS_COLLECTION].data.batch_save(doc)
+                service.kvstore[VERDICTS_COLLECTION].data.batch_save(doc)
                 cached_ok = True
             except Exception as exc:
                 # Worth returning the answer anyway, but NOT worth pretending
@@ -278,11 +286,10 @@ class AIExplainHandler(PersistentServerConnectionApplication):
             _log("unhandled error: %s" % exc)
             return _reply(500, {"error": "the explanation could not be produced"})
 
-    def _writer(self, request):
-        """The service that writes the cache: system auth when splunkd passed
-        it (restmap passSystemAuth), the caller otherwise, so a deployment
-        without the flag degrades to the old admin-only behaviour rather than
-        failing."""
+    def _system_service(self, request):
+        """System auth when splunkd passed it (restmap passSystemAuth), the
+        caller otherwise, so a deployment without the flag degrades to the old
+        admin-only behaviour rather than failing."""
         token = request.get("system_authtoken")
         if not token:
             return self._service(request)

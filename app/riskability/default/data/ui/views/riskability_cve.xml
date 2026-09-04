@@ -352,6 +352,22 @@
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">Nothing in this fleet matches this CVE. That means no host reports an affected package at an affected version. It does not mean immunity: Coverage lists what the feed cannot assess at all.</option>
       </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            <b>Found at is where the collector found the package, in the collector's own words.</b>
+            For a package a package manager owns it is the file. For a Windows product read
+            from the registry it is the directory the product registered as its install
+            location, because the registry names no executable; that directory is whatever the
+            installer wrote there, and some vendors register their installer's folder rather
+            than the product's. Where a listening service is behind the finding, the
+            <a href="riskability_exposure">Exposure</a> page names the process on the port.
+            <b>Installed</b> is the version the same registry entry reports, verbatim, so a
+            product that publishes "V2.7" in one entry and "02.07.00.00" in another is two
+            rows in the inventory and may match on either.
+          </span>
+        </div>
+      </html>
     </panel>
   </row>
 

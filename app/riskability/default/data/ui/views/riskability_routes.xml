@@ -43,38 +43,12 @@
        data, so the column labels are computed: entry, one label per hop up
        to the deepest, then software and findings. The same hop walk as the
        chain, reduced to a number. -->
-  <search id="rk_chain_depth">
-    <query>| `riskability_fw_edges`
-| lookup riskability_hostaddr_lookup address AS src_ip OUTPUT hostname AS rk_s, claimants AS rk_sc
-| lookup riskability_hostaddr_lookup address AS dest_ip OUTPUT hostname AS rk_d, claimants AS rk_dc
-| where isnotnull(rk_s) AND isnotnull(rk_d) AND rk_s != rk_d AND mvcount(rk_s) == 1 AND mvcount(rk_d) == 1
-| where coalesce(tonumber(rk_sc), 1) &lt;= 1 AND coalesce(tonumber(rk_dc), 1) &lt;= 1
-| stats count BY rk_s, rk_d
-| append [| inputlookup riskability_netevidence_lookup | where observed_grade IN ("confirmed observed", "historically observed") | stats count BY hostname | eval rk_d = hostname, rk_s = "__entry__" | fields rk_s, rk_d]
-| eval hop = if(rk_s == "__entry__", 1, 0)
-| eventstats values(eval(if(hop == 1, rk_d, null()))) AS h1
-| eval hop = if(hop == 0 AND isnotnull(mvfind(h1, "^" . rk_s . "$$")), 2, hop)
-| eventstats values(eval(if(hop == 2, rk_d, null()))) AS h2
-| eval hop = if(hop == 0 AND isnotnull(mvfind(h2, "^" . rk_s . "$$")), 3, hop)
-| eventstats values(eval(if(hop == 3, rk_d, null()))) AS h3
-| eval hop = if(hop == 0 AND isnotnull(mvfind(h3, "^" . rk_s . "$$")), 4, hop)
-| eventstats values(eval(if(hop == 4, rk_d, null()))) AS h4
-| eval hop = if(hop == 0 AND isnotnull(mvfind(h4, "^" . rk_s . "$$")), 5, hop)
-| where hop &gt; 0
-| stats max(hop) AS maxhop
-| eval maxhop = coalesce(maxhop, 1)
-| eval labels = "c0:entry point"
-| eval labels = labels . ",c1:hop 1" . if(maxhop &gt;= 2, ",c2:hop 2", "") . if(maxhop &gt;= 3, ",c3:hop 3", "") . if(maxhop &gt;= 4, ",c4:hop 4", "") . if(maxhop &gt;= 5, ",c5:hop 5", "")
-| eval labels = labels . ",c" . (maxhop + 1) . ":software listening,c" . (maxhop + 2) . ":open findings"
-| table labels</query>
-    <earliest>-30d</earliest>
-    <latest>now</latest>
-    <done>
-      <condition match="isnotnull($result.labels$)">
-        <set token="chain_labels">$result.labels$</set>
-      </condition>
-    </done>
-  </search>
+  <!-- The column labels come from the chain search itself (its done handler
+       below), so the hop columns are exactly the hops the drawn chain has.
+       A separate depth search used to count hops over every entry point and
+       every host, and labelled three hop columns for an entry that reaches
+       one, which put the software and the findings under "hop 2" and "hop 3"
+       with the two right-hand columns empty. -->
 
   <row depends="$fw_unconfigured$">
     <panel>
@@ -169,7 +143,6 @@
 | eventstats values(eval(if(hop == 4, dst, null()))) AS rk_h4
 | eval hop = if(hop == 0 AND isnotnull(mvfind(rk_h4, "^" . src . "$$")), 5, hop)
 | where hop &gt; 0
-| eventstats max(hop) AS rk_maxhop
 | eval rk_hostfilter = $host_filter|s$
 | eval rk_keep = if(rk_hostfilter == "*" OR rk_hostfilter == "", 1, 0)
 | eventstats values(eval(if(dst == rk_hostfilter, src, null()))) AS rk_anc1
@@ -186,6 +159,7 @@
          OR src == rk_hostfilter
          OR isnotnull(mvfind(rk_des, "^" . src . "$$")), 1, 0))
 | where rk_on_chain == 1
+| eventstats max(hop) AS rk_maxhop
 | lookup riskability_exposure_lookup hostname AS dst, port OUTPUT package AS rk_pkgs
 | eval rk_portnode = dst . ":" . port
 | eval rk_edge_label = rk_proto . "/" . port . " · " . rk_v . " sessions"
@@ -203,8 +177,6 @@
           | where isnotnull(hostname) AND mvcount(hostname) == 1 AND coalesce(tonumber(rk_c), 1) &lt;= 1
           | stats count BY hostname, port | fields hostname, port]
       | dedup hostname, port
-      | eval rk_hostfilter = $host_filter|s$
-      | where rk_hostfilter == "*" OR rk_hostfilter == "" OR hostname == rk_hostfilter
       | lookup riskability_exposure_lookup hostname, port OUTPUT package AS rk_pkg
       | mvexpand rk_pkg
       | where isnotnull(rk_pkg) AND rk_pkg != ""
@@ -232,24 +204,31 @@
        edge_label = mvindex(split(rk_rows, "|"), 5), edge_class = mvindex(split(rk_rows, "|"), 6)
 | eventstats max(rk_maxhop) AS rk_maxhop
 | eval rk_maxhop = coalesce(rk_maxhop, 1)
-| eval rk_pname = case(match(target_kind, ":port$$"), target, source_kind == "port", source, 1=1, null())
+| eval rk_labels = "c0:entry point,c1:hop 1" . if(rk_maxhop &gt;= 2, ",c2:hop 2", "") . if(rk_maxhop &gt;= 3, ",c3:hop 3", "") . if(rk_maxhop &gt;= 4, ",c4:hop 4", "") . if(rk_maxhop &gt;= 5, ",c5:hop 5", "")
+| eval rk_labels = rk_labels . ",c" . (rk_maxhop + 1) . ":software listening,c" . (rk_maxhop + 2) . ":open findings"
+| eval rk_pname = case(match(target_kind, ":port$$"), target, source_kind IN ("port", "package"), rk_portnode, 1=1, null())
 | eval rk_phop = if(match(target_kind, ":port$$"), tonumber(replace(target_kind, ":port$$", "")), null())
 | eventstats max(rk_phop) AS rk_my_hop BY rk_pname
-| where source_kind != "port" OR isnotnull(rk_my_hop)
+| where NOT source_kind IN ("port", "package") OR isnotnull(rk_my_hop)
 | eventstats values(eval(if(source_kind == "port", rk_class, null()))) AS rk_port_class BY rk_pname
 | eval edge_class = if(match(target_kind, ":port$$") AND isnotnull(rk_port_class), mvindex(rk_port_class, 0), edge_class)
 | eval source_kind = case(source_kind == "port", coalesce(rk_my_hop, 1) . ":port",
                           source_kind == "package", (rk_maxhop + 1) . ":package", 1=1, source_kind)
 | eval target_kind = case(target_kind == "package", (rk_maxhop + 1) . ":package",
                           target_kind == "cve", (rk_maxhop + 2) . ":cve", 1=1, target_kind)
-| stats max(value) AS value, values(edge_label) AS edge_label, values(edge_class) AS edge_class BY source, source_kind, target, target_kind
+| stats max(value) AS value, values(edge_label) AS edge_label, values(edge_class) AS edge_class, first(rk_labels) AS rk_labels BY source, source_kind, target, target_kind
 | eval edge_label = mvindex(edge_label, 0), edge_class = mvindex(mvfilter(edge_class != ""), 0)
 | sort 5000 - value
 | head 500
-| fields source, source_kind, target, target_kind, value, edge_label, edge_class</query>
+| fields source, source_kind, target, target_kind, value, edge_label, edge_class, rk_labels</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
-        </search>
+          <done>
+            <condition match="isnotnull($result.rk_labels$)">
+              <set token="chain_labels">$result.rk_labels$</set>
+            </condition>
+          </done>
+</search>
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <!-- Columns are HOPS, not kinds. A host reached straight from an entry
              point sits in column 1; a host it reaches sits in column 2; and so
@@ -337,7 +316,8 @@
 | eval Fix = coalesce(fixed_version, "")
 | eval "Why" = coalesce(rationale, "not analysed by the pipeline yet; tier from severity")
 | sort 0 Tier, - Score
-| rename hostname AS Host, package AS Software, current_version AS Installed, cve_id AS CVE, severity AS Severity, recommended_action AS Action
+| eval Installed = coalesce(current_version, last_version)
+| rename hostname AS Host, package AS Software, cve_id AS CVE, severity AS Severity, recommended_action AS Action
 | table Tier, Score, CVE, Severity, KEV, Host, Software, Installed, Fix, Action, "Why"</query>
           <earliest>0</earliest>
           <latest>now</latest>
@@ -354,7 +334,12 @@
           <condition match="$click.name$ == &quot;CVE&quot;">
             <link target="_blank">/app/riskability/riskability_cve?form.cve_tok=$row.CVE|u$</link>
           </condition>
-          <condition></condition>
+          <!-- The catch-all needs an action: Splunk's own dashboard code walks
+               every condition's actions and throws on an empty one, which was
+               an uncaught TypeError in the console on every load. -->
+          <condition>
+            <unset token="rk_click_noop"></unset>
+          </condition>
         </drilldown>
       </viz>
       <html>
@@ -381,10 +366,10 @@
 | search hostname=$host_filter|s$
 | where observed_grade IN ("confirmed observed", "historically observed")
 | eval From = coalesce(entry_text, ""), To = hostname . ":" . port, Kind = "entry point to host"
-| eval rk_ef = $entry_filter|s$
-| where rk_ef == "*" OR From == rk_ef
-| fields - rk_ef
-| fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen
+| eval rk_entry = mvindex(split(coalesce(entry_text, "entry point"), " "), 0)
+| search rk_entry=$entry_filter|s$
+| eval rk_src = "__entry__", rk_dst = hostname, hop = 1
+| fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen, rk_src, rk_dst, hop
 | append
     [ | `riskability_fw_edges`
       | lookup riskability_hostaddr_lookup address AS src_ip OUTPUT hostname AS rk_src_host, claimants AS rk_src_claim
@@ -395,11 +380,22 @@
       | search rk_src_host=$host_filter|s$ OR rk_dst_host=$host_filter|s$
       | stats sum(sessions) AS sessions, max(edge_last_seen) AS edge_last_seen, values(src_ip) AS srcs_text BY rk_src_host, rk_dst_host, port
       | eval From = rk_src_host, To = rk_dst_host . ":" . port, Kind = "host to host", observed_grade = "lateral, permitted"
-      | fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen ]
+      | eval rk_src = rk_src_host, rk_dst = rk_dst_host, hop = 0
+      | fields From, To, Kind, observed_grade, sessions, srcs_text, edge_last_seen, rk_src, rk_dst, hop ]
+| eventstats values(eval(if(hop == 1, rk_dst, null()))) AS rk_h1
+| eval hop = if(hop == 0 AND isnotnull(mvfind(rk_h1, "^" . rk_src . "$$")), 2, hop)
+| eventstats values(eval(if(hop == 2, rk_dst, null()))) AS rk_h2
+| eval hop = if(hop == 0 AND isnotnull(mvfind(rk_h2, "^" . rk_src . "$$")), 3, hop)
+| eventstats values(eval(if(hop == 3, rk_dst, null()))) AS rk_h3
+| eval hop = if(hop == 0 AND isnotnull(mvfind(rk_h3, "^" . rk_src . "$$")), 4, hop)
+| eventstats values(eval(if(hop == 4, rk_dst, null()))) AS rk_h4
+| eval hop = if(hop == 0 AND isnotnull(mvfind(rk_h4, "^" . rk_src . "$$")), 5, hop)
+| where hop &gt; 0
+| eval Kind = if(hop == 1, Kind, "host to host, hop " . hop)
 | eval "Last seen" = if(isnotnull(edge_last_seen) AND edge_last_seen != "", strftime(tonumber(edge_last_seen), "%Y-%m-%d %H:%M"), "")
 | eval Sources = mvjoin(mvdedup(srcs_text), " ")
 | rename observed_grade AS Grade, sessions AS Sessions
-| sort - Sessions
+| sort hop, - Sessions
 | table Kind, From, To, Grade, Sessions, Sources, "Last seen"</query>
           <earliest>-30d</earliest>
           <latest>now</latest>

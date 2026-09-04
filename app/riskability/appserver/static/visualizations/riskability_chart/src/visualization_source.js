@@ -224,6 +224,17 @@ var CONTRACTS = {
     kevbridge: ['technique', 'reach', 'value', 'tier', 'comment'],
 };
 
+/* How many of a contract's trailing columns a panel may leave out. The chain
+ * reads edge_label and edge_class only when a search supplies them (the
+ * routes page does, the CVE page's fix chain does not), and kevbridge reads
+ * comment into the tooltip only. The check below used the full contract
+ * length, which refused the CVE page's five-column chain with "needs 7
+ * columns" the moment the two optional ones were added for routes. */
+var OPTIONAL_TRAILING = {
+    chaingraph: 2,
+    kevbridge: 1,
+};
+
 /* Fixed colours for the values that carry meaning rather than magnitude.
  * Confidence and severity are ordered scales, and an ordered scale drawn in
  * an arbitrary palette invites the reader to compare the wrong things. */
@@ -610,22 +621,39 @@ function buildSchedule(rows, t, config) {
     if (!jobs.length) { return null; }
     jobs.sort(function (a, b) { return a.minute - b.minute; });
 
+    // One mark per MINUTE, not per job. Ten of this app's minutes carry more
+    // than one job and :20 carries three, and a scatter point per job put them
+    // all at the same polar coordinate: identical marks stacked exactly on top
+    // of each other, so the dial looked like a quiet minute and the tooltip
+    // could only ever report whichever one the hit test happened to reach,
+    // which was the last one drawn. Every job at a minute is now on the same
+    // mark, the mark grows with how many there are, and the tooltip lists them.
+    var slots = [], byMinute = {};
+    for (i = 0; i < jobs.length; i++) {
+        var key = String(jobs[i].minute);
+        if (!byMinute[key]) {
+            byMinute[key] = { minute: jobs[i].minute, jobs: [] };
+            slots.push(byMinute[key]);
+        }
+        byMinute[key].jobs.push(jobs[i]);
+    }
+
     var now = new Date();
     var nowMin = now.getMinutes() + now.getSeconds() / 60;
-    var lo = jobs[0].minute, hi = jobs[jobs.length - 1].minute;
+    var lo = slots[0].minute, hi = slots[slots.length - 1].minute;
 
     // The next one due, wrapping into the next hour when the cycle is done for
     // this one. Without the wrap the panel reads "next in 0 min" for the five
     // idle minutes at the top of every hour.
     var next = null;
-    for (i = 0; i < jobs.length; i++) {
-        if (jobs[i].minute > nowMin) { next = jobs[i]; break; }
+    for (i = 0; i < slots.length; i++) {
+        if (slots[i].minute > nowMin) { next = slots[i]; break; }
     }
     var mins;
     if (next) {
         mins = next.minute - nowMin;
     } else {
-        next = jobs[0];
+        next = slots[0];
         mins = (60 - nowMin) + next.minute;
     }
     var countdown = mins < 1 ? (Math.round(mins * 60) + ' s')
@@ -635,6 +663,27 @@ function buildSchedule(rows, t, config) {
         if (state === 'success' || state === 'completed') { return '#3f7d7a'; }
         if (!state || state === 'unknown') { return '#6b5a2a'; }
         return '#dc4e41';
+    }
+
+    // A failure must never hide behind a success it shares a minute with, so
+    // the mark takes the worst state in its slot rather than the first or the
+    // last. The tooltip still reports each job's own state.
+    function rank(state) {
+        if (state === 'success' || state === 'completed') { return 0; }
+        if (!state || state === 'unknown') { return 1; }
+        return 2;
+    }
+    function slotState(slot) {
+        var worst = slot.jobs[0].state, j;
+        for (j = 1; j < slot.jobs.length; j++) {
+            if (rank(slot.jobs[j].state) > rank(worst)) { worst = slot.jobs[j].state; }
+        }
+        return worst;
+    }
+
+    function tookText(secs) {
+        return (secs === null || secs === undefined)
+            ? 'no run recorded' : ('last took ' + secs + ' s');
     }
 
     var arc = [];
@@ -662,21 +711,38 @@ function buildSchedule(rows, t, config) {
             textStyle: { color: t.text },
             formatter: function (p) {
                 var d = p.data || {};
-                var took = (d.secs === null || d.secs === undefined)
-                    ? 'no run recorded'
-                    : ('last took ' + d.secs + ' s');
-                return escapeHtml(String(d.name || '')) + '<br/>runs at :'
-                    + (p.value[1] < 10 ? '0' : '') + p.value[1] + '<br/>' + took;
+                var list = d.jobs || [];
+                var mm = ':' + (p.value[1] < 10 ? '0' : '') + p.value[1];
+                if (list.length === 1) {
+                    return escapeHtml(String(list[0].name)) + '<br/>runs at ' + mm
+                        + '<br/>' + tookText(list[0].secs);
+                }
+                var out = '<b>' + list.length + ' jobs at ' + mm + '</b>', k;
+                for (k = 0; k < list.length; k++) {
+                    out += '<br/><span style="display:inline-block;width:7px;height:7px;'
+                        + 'border-radius:50%;margin-right:5px;background:'
+                        + colour(list[k].state) + '"></span>'
+                        + escapeHtml(String(list[k].name))
+                        + ' <span style="opacity:.7">' + tookText(list[k].secs) + '</span>';
+                }
+                return out;
             },
         },
         series: [
             { type: 'line', coordinateSystem: 'polar', showSymbol: false,
               silent: true, data: arc,
               lineStyle: { color: '#3f7d7a', width: 9, opacity: 0.22 } },
-            { type: 'scatter', coordinateSystem: 'polar', symbolSize: 6,
-              data: jobs.map(function (j) {
-                  return { value: [25, j.minute], name: j.name, secs: j.secs,
-                           itemStyle: { color: colour(j.state), opacity: 0.9 } };
+            { type: 'scatter', coordinateSystem: 'polar',
+              // The mark grows with the number of jobs sharing the minute, so a
+              // busy slot reads as busy at a glance instead of as a single job.
+              symbolSize: function (val, params) {
+                  var n = ((params.data || {}).jobs || []).length || 1;
+                  return Math.min(6 + (n - 1) * 3, 14);
+              },
+              data: slots.map(function (slot) {
+                  return { value: [25, slot.minute], jobs: slot.jobs,
+                           name: slot.jobs[0].name,
+                           itemStyle: { color: colour(slotState(slot)), opacity: 0.9 } };
               }) },
             { type: 'line', coordinateSystem: 'polar', showSymbol: false,
               silent: true, data: [[0, nowMin], [29, nowMin]],
@@ -687,11 +753,14 @@ function buildSchedule(rows, t, config) {
               style: { text: 'next in ' + countdown, fill: t.text,
                        fontSize: 19, fontWeight: 600, textAlign: 'center' } },
             { type: 'text', left: 'center', top: '49%',
-              style: { text: shorten(next.name, 34), fill: '#d5d8dc',
+              style: { text: next.jobs.length === 1
+                             ? shorten(next.jobs[0].name, 34)
+                             : shorten(next.jobs[0].name, 24) + '  +' + (next.jobs.length - 1) + ' more',
+                       fill: '#d5d8dc',
                        fontSize: 11, textAlign: 'center' } },
             { type: 'text', left: 'center', top: '56%',
               style: { text: 'at :' + (next.minute < 10 ? '0' : '') + next.minute
-                             + '  \u00b7  ' + jobs.length + ' hourly jobs',
+                             + '  ·  ' + jobs.length + ' hourly jobs',
                        fill: t.muted, fontSize: 10, textAlign: 'center' } },
         ],
     };
@@ -1712,12 +1781,15 @@ export default SplunkVisualizationBase.extend({
             return;
         }
 
-        var need = CONTRACTS[chartType].length;
+        var contract = CONTRACTS[chartType];
+        var optional = OPTIONAL_TRAILING[chartType] || 0;
+        var need = contract.length - optional;
         if ((data.fields || []).length < need) {
             this._message('bad', 'This panel\'s search does not match the chart',
                 chartType + ' needs ' + need + ' columns (' +
-                CONTRACTS[chartType].join(', ') + ') but the search returned ' +
-                (data.fields || []).length + '.');
+                contract.slice(0, need).join(', ') + ')' +
+                (optional ? ', optionally followed by ' + contract.slice(need).join(', ') + ',' : '') +
+                ' but the search returned ' + (data.fields || []).length + '.');
             return;
         }
 
