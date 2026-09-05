@@ -30,17 +30,30 @@ command -v magick >/dev/null || { echo "ImageMagick (magick) is required" >&2; e
 BG="srgb(23,29,33)"
 
 # name                     source                y     height
+# name                     source                y     height
+#
+# y is the top of the region in the FULL-PAGE capture, chosen so the panel the
+# name promises starts just below the crop's top edge. They are tied to where
+# panels actually sit, so they go stale when a page gains or loses one: five of
+# these were still aimed at a 2026-08 layout and framed the wrong panel, one of
+# them showing a filter legend under the name "attack matrix". To re-aim, print
+# each panel's offset from the live page rather than guessing:
+#
+#   document.querySelectorAll('.panel-title').forEach(e =>
+#     console.log(Math.round(e.getBoundingClientRect().top + scrollY), e.textContent.trim()))
+#
+# then set y to roughly 40px above the panel you want.
 SHOTS="
-01-priority-matrix         exposure              320   899
-02-fleet-overview          fleet-overview        60    899
-03-findings                findings              120   899
-04-exposure-chain          exposure              1470  899
-05-attack-matrix           mitre-attack          285   1010
-06-weakness-to-technique   mitre-attack          2500  899
-07-coverage                coverage              640   899
-08-hosts                   hosts                 180   899
-09-containers              exposure              2800  899
-10-feed-administration     feed-administration   70    899
+01-priority-matrix         exposure              430   899
+02-fleet-overview          fleet-overview        195   899
+03-findings                findings              360   899
+04-exposure-chain          exposure              1760  899
+05-attack-matrix           mitre-attack          1790  1010
+06-weakness-to-technique   mitre-attack          4590  899
+07-coverage                coverage              1300  899
+08-hosts                   hosts                 285   899
+09-containers              exposure              4870  899
+10-feed-administration     feed-administration   220   899
 "
 
 fail=0
