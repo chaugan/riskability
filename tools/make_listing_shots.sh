@@ -13,7 +13,12 @@
 #   tools/make_listing_shots.sh
 set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SRC="$ROOT/docs/screenshots"
+# The FULL-PAGE captures, not the gallery's. The crops below reach thousands of
+# pixels down a scrolled page, and docs/screenshots holds one viewport per page.
+# Pointing this at those silently produced blank 348-byte images for every crop
+# below y=1000. Refresh them with tools/capture_full_pages.js.
+SRC="${RK_SHOT_SRC:-$ROOT/docs/screenshots-full}"
+[ -d "$SRC" ] || { echo "no full-page captures in $SRC; run tools/capture_full_pages.js first" >&2; exit 1; }
 # Gitignored: these are listing assets for the Splunkbase admin flow, not
 # repository content. They are transferred out of band.
 OUT="${RK_LISTING_OUT:-$ROOT/docs/splunkbase}"
@@ -50,7 +55,9 @@ while read -r name src y h; do
   # shipping a listing image that is half background.
   ph=$(magick identify -format '%h' "$f")
   if [ $((y + h)) -gt "$ph" ]; then
-    echo "  WARN $name: wants ${y}+${h} but $src is only ${ph}px tall; layout may have changed" >&2
+    echo "  FAIL $name: wants ${y}+${h} but $src is only ${ph}px tall; recapture it" >&2
+    fail=1
+    continue
   fi
   magick "$f" -crop "1600x${h}+0+${y}" +repage \
     -resize 623x350 -background "$BG" -gravity center -extent 623x350 \

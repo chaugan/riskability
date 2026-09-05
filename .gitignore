@@ -47,3 +47,7 @@ STANDALONE-HANDOFF.md
 # They are produced into this directory and transferred out of band.
 /docs/splunkbase/
 ENRICHMENT-PLAN.md
+
+# Intermediate full-page captures for the Splunkbase listing images. Cut from
+# by tools/make_listing_shots.sh; the gallery uses docs/screenshots/ instead.
+/docs/screenshots-full/
