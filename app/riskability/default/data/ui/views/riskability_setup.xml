@@ -1,25 +1,70 @@
-<dashboard version="1.1" theme="dark" script="riskability_help.js" stylesheet="application.css">
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_admin.js" stylesheet="application.css,riskability_admin.css">
   <label>Setup</label>
-  <description>Where the configuration lives now.</description>
+  <description>Import the first vulnerability feed. Everything else can wait.</description>
 
+  <!-- This view PERFORMS the setup rather than describing where the setup pages
+       are, and that is the whole point of it.
+
+       app.conf ships is_configured = 0, which Splunk Cloud vetting requires, and
+       while that is 0 Splunk puts its own "this app has not been fully
+       configured yet" page in front of every view in the app. That included
+       Feed administration, which is the only page that can import a feed, and
+       importing a feed is the only thing that sets the flag. The gate had no
+       exit: verified on a clean install, where Feed administration returned the
+       interstitial with no file input anywhere in the DOM.
+
+       So the gate now lands on a page that can clear itself. The feed
+       administration control is mounted here by the same script the
+       Administration page uses, against the same #riskability-admin element, so
+       there is one implementation rather than two that can drift. The longer
+       guidance stays on Feed administration; a first run needs the control, not
+       the essay. -->
   <row>
     <panel>
       <html>
         <div class="rk-card">
-          <h3>Configuration is for administrators</h3>
+          <h3>One thing to do: import a vulnerability feed</h3>
           <p>
-            Riskability is configured under the <b>Administration</b> menu, which
-            only administrators see. It holds feed administration, the AI
-            analysis settings, the escalation rules and the firewall data source.
+            Riskability has no route to the internet and does not want one. The
+            vulnerability data is a bundle you build on a connected machine and carry
+            across. Until one is imported the app can assess nothing, and every count
+            it shows is zero for that reason rather than because the fleet is clean.
           </p>
           <p>
-            <a href="riskability_admin">Open Feed administration</a>
-            &#160;·&#160;
-            <a href="riskability_ai_settings">Open AI analysis settings</a>
+            Import one below and this setup page is done with. Everything else is
+            optional and configured later, under the <b>Administration</b> menu:
+            AI analysis, escalation rules and the firewall data source all ship off.
           </p>
           <p class="rk-dim">
-            Both pages are in this app, under Administration in the navigation bar,
-            and only administrators can see them.
+            This needs an administrator. The controls below write through Splunk's
+            configuration service and are gated on capabilities granted to
+            <code>admin</code> and <code>sc_admin</code>, so a user without them will
+            see the panel refuse rather than fail quietly.
+          </p>
+        </div>
+
+        <div id="riskability-admin">
+          <div class="rk-loading">Loading feed state&#8230;</div>
+        </div>
+
+        <div class="rk-help">
+          <h3>Building the bundle, on a machine that does have internet</h3>
+          <pre>riskability-feed sources                      # what can be fetched
+
+riskability-feed build --out riskability-feed.tar.gz \
+    --ecosystem Ubuntu --ecosystem Debian --ecosystem Alpine \
+    --ecosystem npm --ecosystem PyPI --ecosystem Go --ecosystem Maven \
+    --kev --epss</pre>
+          <p>
+            Only the sources you name are downloaded. Pick the distributions and language
+            ecosystems your fleet runs. <b>A Windows estate also needs NVD</b>, which carries
+            the CPE-keyed ranges a registry version can be matched against:
+            add <code>--nvd 2015-2026 --mitre</code>.
+          </p>
+          <p>
+            The full guidance, including what each source costs to carry and how
+            redistribution licensing works, is on
+            <b>Administration &#8594; Feed administration</b> once this page is done.
           </p>
         </div>
       </html>

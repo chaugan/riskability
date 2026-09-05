@@ -141,10 +141,33 @@ def main():
     # --- 4. the setup gate has an exit --------------------------------------
     print("\nFix 2: a first run is not locked out of its own configuration page")
     app_conf = open(os.path.join(APP, "default", "app.conf"), encoding="utf-8").read()
-    check("the app ships configured",
-          re.search(r"^is_configured\s*=\s*1\s*$", app_conf, re.M) is not None)
-    check("the setup view is still declared, as a way in rather than a wall",
+    # Splunk Cloud vetting fails is_configured = 1
+    # (check_that_setup_has_not_been_performed), so the gate cannot be switched
+    # off. It is made to lead somewhere useful instead: the setup view imports a
+    # feed, and importing a feed is what clears the flag.
+    check("the app ships unconfigured, as Cloud vetting requires",
+          re.search(r"^is_configured\s*=\s*0\s*$", app_conf, re.M) is not None)
+    check("the setup view is declared",
           re.search(r"^setup_view\s*=\s*riskability_setup\s*$", app_conf, re.M) is not None)
+    setup = open(os.path.join(APP, "default", "data", "ui", "views",
+                              "riskability_setup.xml"), encoding="utf-8").read()
+    check("the setup view can actually perform the setup, not just describe it",
+          'id="riskability-admin"' in setup and "riskability_admin.js" in setup)
+    check("it mounts the same control the Administration page uses, not a second copy",
+          setup.count('id="riskability-admin"') == 1)
+    triggers = app_conf.split("[triggers]", 1)[1]
+    for conf in ("riskability_ai", "riskability_escalations", "riskability_firewall"):
+        check("%s.conf has a reload trigger, so no restart is demanded" % conf,
+              ("reload.%s = simple" % conf) in triggers)
+    check("no reload trigger names a conf the app does not ship",
+          "reload.riskability_feeds" not in triggers and "reload.collections" not in triggers)
+    restmap_all = open(os.path.join(APP, "default", "restmap.conf"), encoding="utf-8").read()
+    check("every python.version is paired with python.required",
+          restmap_all.count("python.version = python3") == restmap_all.count("python.required = 3.9, 3.13"))
+    server = open(os.path.join(APP, "default", "server.conf"), encoding="utf-8").read()
+    check("a search head cluster replicates the three confs a person edits",
+          all(("conf_replication_include.%s = true" % c) in server
+              for c in ("riskability_ai", "riskability_escalations", "riskability_firewall")))
     start = open(os.path.join(APP, "default", "data", "ui", "views", "riskability_start.xml"),
                  encoding="utf-8").read()
     check("the landing page decides for itself whether a feed exists",

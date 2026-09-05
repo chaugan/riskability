@@ -63,7 +63,7 @@ organisation.
 
 **Where it goes** &nbsp; [Configuring the universal forwarder](#configuring-the-universal-forwarder) · [Index names](#index-names) · [The forwarder input, and what it inherits](#the-forwarder-input-and-what-it-inherits)
 
-**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [Escalation rules](#escalation-rules) · [Observed permitted traffic evidence](#observed-permitted-traffic-evidence-optional) · [AI analysis, when an admin switches it on](#ai-analysis-optional)
+**Working in it** &nbsp; [Dashboards](#dashboards) · [Accepting a risk, and proving you did](#accepting-a-risk-and-proving-you-did) · [Escalation rules](#escalation-rules) · [Observed permitted traffic evidence](#observed-permitted-traffic-evidence-optional) · [AI analysis](#ai-analysis-optional)
 
 **At fleet scale** &nbsp; [What makes it work on a fleet rather than a laptop](#what-makes-it-work-on-a-fleet-rather-than-a-laptop) · [Status](#status)
 
@@ -811,9 +811,9 @@ hosts × packages.
 
 ## Dashboards
 
-Fourteen views, in nav order, and fifteen when AI analysis is switched on. Every
-one is captured in the [screenshot gallery](https://chaugan.github.io/riskability/); the name of each page below
-links to its capture.
+In nav order. Every one is captured in the
+[screenshot gallery](https://chaugan.github.io/riskability/). Three appear only
+under a condition, noted in their row.
 
 | View | Answers |
 |---|---|
@@ -825,10 +825,12 @@ links to its capture.
 | **Exposure** | Which findings the network can reach, and which sit inside containers |
 | **Host overview** | Every host at a glance, split by filesystem root. Under the Hosts menu with Host detail |
 | **Host detail** | Everything known about one machine: what has been measured on it and what has not, what it is configured to run, its Windows patch level, and what on it is no longer supported |
+| **Network evidence** | Which listening ports a permitted flow has actually been observed reaching, graded, and which have never been reached. Under the Network analysis menu, present once a firewall source is named |
+| **Routes** | The jumps a permitted flow has been seen to make, from a declared entry point onward, and what is listening with findings open where it lands. Under the Network analysis menu, present once a firewall source is named |
 | **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
-| **AI prioritization** | Only present when an administrator has switched the AI analysis pipeline on. The tiers, scores, rationales and mitigations the GPU pipeline produced, newest per CVE per asset |
+| **AI prioritization** | The tiers, scores, rationales and mitigations the pipeline produced, newest per CVE per asset. Present once AI analysis is switched on |
 | **Feed administration** | Build, upload and import bundles. Under the **Administration** menu with the AI, escalation and firewall settings, which only administrators can see |
 
 ## AI analysis (optional)
