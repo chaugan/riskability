@@ -40,13 +40,17 @@ CAPTIONS = {
  "end-of-support-hosts":   ("End of support, by host", "Where each end of support product is installed, so the timeline above can be turned into a list of machines."),
  "risk-exceptions":        ("Risk exceptions", "Findings someone accepted, why, until when, and who said so. Written to an audit index that is appended to and never rewritten."),
  "cve-encyclopaedia":      ("CVE encyclopaedia", "What any vulnerability the feed carries actually is, and where it sits in this fleet. Entirely offline."),
+ "admin-ai-analysis":      ("AI analysis (admin)", "The model endpoint, its credential in Splunk's password store, and the master switch. Fetch models lists what the endpoint actually serves so the name is chosen rather than typed. Test connection and Test analysis prove it answers before the fleet's data is trusted to it. Under the Administration menu, drawn for administrators only."),
  "feed-administration":    ("Feed administration (admin)", "Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. Under the Administration menu of the app, drawn for administrators only."),
  "feed-import-progress":   ("Feed import in progress (admin)", "An import runs on the server and does not need the page kept open. The active feed stays searchable throughout, so importing never blinds the fleet."),
 }
 # The section at the top. Edit when a batch of pages changes.
-RECENT_TITLE = "Changed on 2026-09-03"
-RECENT = ["ai-prioritization", "ai-explain-rendered", "network-evidence", "netevidence-grades",
-          "routes", "routes-host-filter", "routes-drilldown", "admin-escalation-rules", "admin-firewall-source"]
+RECENT_TITLE = "Changed on 2026-09-05"
+# The four Administration captures, retaken because the previous ones showed
+# these pages while they lived in a separate riskability-config app, and one
+# added: the AI settings page had never been captured at all.
+RECENT = ["feed-administration", "admin-ai-analysis", "admin-escalation-rules",
+          "admin-firewall-source"]
 
 
 def when(name):

@@ -44,35 +44,15 @@
   <p>Captures of every dashboard, taken from a live instance against real inventory and demo firewall data. Click any image to open it at full size. The files live in <code>docs/screenshots/</code> and this page lists whatever is there.</p>
 </header>
 <div class="search"><input type="search" id="q" placeholder="Filter by name or caption" aria-label="Filter screenshots"></div>
-<h2>Changed on 2026-09-03</h2>
+<h2>Changed on 2026-09-05</h2>
 <div class="grid" id="today">
-      <figure class="card" id="ai-prioritization" data-name="ai-prioritization">
-        <a href="screenshots/ai-prioritization.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-prioritization.png" alt="AI prioritization"></a>
-        <figcaption><b>AI prioritization</b> <span class="dim">The sea of CVEs banded by exploit likelihood, the few lifted above the waterline, and the paged, sortable, filterable work queue with the model&#x27;s reasoning beside each row.</span><span class="date">2026-09-03</span></figcaption>
+      <figure class="card" id="feed-administration" data-name="feed-administration">
+        <a href="screenshots/feed-administration.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/feed-administration.png" alt="Feed administration (admin)"></a>
+        <figcaption><b>Feed administration (admin)</b> <span class="dim">Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. Under the Administration menu of the app, drawn for administrators only.</span><span class="date">2026-09-05</span></figcaption>
       </figure>
-      <figure class="card" id="ai-explain-rendered" data-name="ai-explain-rendered">
-        <a href="screenshots/ai-explain-rendered.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-explain-rendered.png" alt="Explain in depth, rendered"></a>
-        <figcaption><b>Explain in depth, rendered</b> <span class="dim">A saved explanation opened from its green button: headings, paragraphs and lists built from the model&#x27;s markdown, with Re-run beside it.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="network-evidence" data-name="network-evidence">
-        <a href="screenshots/network-evidence.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/network-evidence.png" alt="Network evidence"></a>
-        <figcaption><b>Network evidence</b> <span class="dim">With a firewall source wired: ten ports confirmed observed from a declared entry point, one graded not observed on a covered host, the rest unknown, and the coverage state that gates every grade. Every table sorts and filters by column.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="netevidence-grades" data-name="netevidence-grades">
-        <a href="screenshots/netevidence-grades.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/netevidence-grades.png" alt="Network evidence, grades"></a>
-        <figcaption><b>Network evidence, grades</b> <span class="dim">The grade donut with the coverage grid beside it. No green anywhere, because none of these grades means safe; not observed is the app&#x27;s one negative claim and it is licensed only where a constant pressure entry point is declared.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="routes" data-name="routes">
-        <a href="screenshots/routes.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes.png" alt="Routes"></a>
-        <figcaption><b>Routes</b> <span class="dim">The jumps a permitted flow has been seen to make, laid out by hop: entry point, the host reached, its port, the software listening, the findings open in it. Each host to host jump carries the port and session count; a red edge lands on software with a known exploited or high EPSS finding open.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="routes-host-filter" data-name="routes-host-filter">
-        <a href="screenshots/routes-host-filter.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-host-filter.png" alt="Routes, one host"></a>
-        <figcaption><b>Routes, one host</b> <span class="dim">Filtered to one host: only the chains through it, at the hops the unfiltered graph gives them. A host reached both directly and through two others sits in both columns.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="routes-drilldown" data-name="routes-drilldown">
-        <a href="screenshots/routes-drilldown.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-drilldown.png" alt="Routes, drill-down"></a>
-        <figcaption><b>Routes, drill-down</b> <span class="dim">Clicking a point on the route opens the findings behind it on the same page, with tier, score, KEV, fix version and the pipeline&#x27;s rationale.</span><span class="date">2026-09-03</span></figcaption>
+      <figure class="card" id="admin-ai-analysis" data-name="admin-ai-analysis">
+        <a href="screenshots/admin-ai-analysis.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/admin-ai-analysis.png" alt="AI analysis (admin)"></a>
+        <figcaption><b>AI analysis (admin)</b> <span class="dim">The model endpoint, its credential in Splunk&#x27;s password store, and the master switch. Fetch models lists what the endpoint actually serves so the name is chosen rather than typed. Test connection and Test analysis prove it answers before the fleet&#x27;s data is trusted to it. Under the Administration menu, drawn for administrators only.</span><span class="date">2026-09-05</span></figcaption>
       </figure>
       <figure class="card" id="admin-escalation-rules" data-name="admin-escalation-rules">
         <a href="screenshots/admin-escalation-rules.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/admin-escalation-rules.png" alt="Escalation rules (admin)"></a>
@@ -85,6 +65,14 @@
 </div>
 <h2>Everything else</h2>
 <div class="grid" id="rest">
+      <figure class="card" id="ai-explain-rendered" data-name="ai-explain-rendered">
+        <a href="screenshots/ai-explain-rendered.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-explain-rendered.png" alt="Explain in depth, rendered"></a>
+        <figcaption><b>Explain in depth, rendered</b> <span class="dim">A saved explanation opened from its green button: headings, paragraphs and lists built from the model&#x27;s markdown, with Re-run beside it.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="ai-prioritization" data-name="ai-prioritization">
+        <a href="screenshots/ai-prioritization.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/ai-prioritization.png" alt="AI prioritization"></a>
+        <figcaption><b>AI prioritization</b> <span class="dim">The sea of CVEs banded by exploit likelihood, the few lifted above the waterline, and the paged, sortable, filterable work queue with the model&#x27;s reasoning beside each row.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
       <figure class="card" id="attack-matrix-fuller" data-name="attack-matrix-fuller">
         <a href="screenshots/attack-matrix-fuller.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/attack-matrix-fuller.png" alt="ATT&amp;CK matrix and its denominator"></a>
         <figcaption><b>ATT&amp;CK matrix and its denominator</b> <span class="dim">Four evidence sources place a CVE on ATT&amp;CK, each labelled and filterable. The caption is the honest denominator: unique open CVEs in scope, how many placed and through which source, how many not and why.</span><span class="date">2026-08-27</span></figcaption>
@@ -116,10 +104,6 @@
       <figure class="card" id="exposure" data-name="exposure">
         <a href="screenshots/exposure.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/exposure.png" alt="Exposure"></a>
         <figcaption><b>Exposure</b> <span class="dim">The priority matrix, open findings by network reach against exploitation likelihood, the most exposed hosts, and the chain the network takes: edge, listening process, container, package, CVE.</span><span class="date">2026-09-03</span></figcaption>
-      </figure>
-      <figure class="card" id="feed-administration" data-name="feed-administration">
-        <a href="screenshots/feed-administration.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/feed-administration.png" alt="Feed administration (admin)"></a>
-        <figcaption><b>Feed administration (admin)</b> <span class="dim">Build, upload and import bundles, fetch sources directly on an instance that has a route out, and set index names. Under the Administration menu of the app, drawn for administrators only.</span><span class="date">2026-09-05</span></figcaption>
       </figure>
       <figure class="card" id="feed-import-progress" data-name="feed-import-progress">
         <a href="screenshots/feed-import-progress.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/feed-import-progress.png" alt="Feed import in progress (admin)"></a>
@@ -153,6 +137,14 @@
         <a href="screenshots/mitre-attack.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/mitre-attack.png" alt="MITRE ATT&amp;CK"></a>
         <figcaption><b>MITRE ATT&amp;CK</b> <span class="dim">Which adversary techniques the open findings could enable, built from four kinds of evidence that carry different strengths of claim and are never blended into one number.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
+      <figure class="card" id="netevidence-grades" data-name="netevidence-grades">
+        <a href="screenshots/netevidence-grades.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/netevidence-grades.png" alt="Network evidence, grades"></a>
+        <figcaption><b>Network evidence, grades</b> <span class="dim">The grade donut with the coverage grid beside it. No green anywhere, because none of these grades means safe; not observed is the app&#x27;s one negative claim and it is licensed only where a constant pressure entry point is declared.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="network-evidence" data-name="network-evidence">
+        <a href="screenshots/network-evidence.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/network-evidence.png" alt="Network evidence"></a>
+        <figcaption><b>Network evidence</b> <span class="dim">With a firewall source wired: ten ports confirmed observed from a declared entry point, one graded not observed on a covered host, the rest unknown, and the coverage state that gates every grade. Every table sorts and filters by column.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
       <figure class="card" id="remediation" data-name="remediation">
         <a href="screenshots/remediation.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/remediation.png" alt="Remediation"></a>
         <figcaption><b>Remediation</b> <span class="dim">What was actually fixed, and what merely stopped being reported. Installer artifacts closed with their own reason are counted as neither.</span><span class="date">2026-09-03</span></figcaption>
@@ -160,6 +152,18 @@
       <figure class="card" id="risk-exceptions" data-name="risk-exceptions">
         <a href="screenshots/risk-exceptions.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/risk-exceptions.png" alt="Risk exceptions"></a>
         <figcaption><b>Risk exceptions</b> <span class="dim">Findings someone accepted, why, until when, and who said so. Written to an audit index that is appended to and never rewritten.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="routes" data-name="routes">
+        <a href="screenshots/routes.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes.png" alt="Routes"></a>
+        <figcaption><b>Routes</b> <span class="dim">The jumps a permitted flow has been seen to make, laid out by hop: entry point, the host reached, its port, the software listening, the findings open in it. Each host to host jump carries the port and session count; a red edge lands on software with a known exploited or high EPSS finding open.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="routes-drilldown" data-name="routes-drilldown">
+        <a href="screenshots/routes-drilldown.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-drilldown.png" alt="Routes, drill-down"></a>
+        <figcaption><b>Routes, drill-down</b> <span class="dim">Clicking a point on the route opens the findings behind it on the same page, with tier, score, KEV, fix version and the pipeline&#x27;s rationale.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="routes-host-filter" data-name="routes-host-filter">
+        <a href="screenshots/routes-host-filter.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-host-filter.png" alt="Routes, one host"></a>
+        <figcaption><b>Routes, one host</b> <span class="dim">Filtered to one host: only the chains through it, at the hops the unfiltered graph gives them. A host reached both directly and through two others sits in both columns.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
       <figure class="card" id="start-here" data-name="start-here">
         <a href="screenshots/start-here.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/start-here.png" alt="Start here"></a>
