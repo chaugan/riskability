@@ -2227,20 +2227,37 @@ export default SplunkVisualizationBase.extend({
             if (aspect > 0) { h = Math.round(w * aspect); }
             this.chart.resize({ width: w, height: h });
         }
-        var url = this.chart.getDataURL({ pixelRatio: 2, backgroundColor: '#ffffff' });
-        // The image stands beside the chart's own element, which is hidden,
-        // in this visualization's element: ECharts owns everything inside its
-        // element and rebuilds it on the next resize, so an image placed in
-        // there prints twice, once as itself and once as the rebuilt canvas.
-        var img = document.createElement('img');
-        img.className = 'rk-print-snapshot';
-        img.alt = '';
-        img.src = url;
-        img.style.width = '100%';
-        img.style.height = 'auto';
-        img.style.display = 'block';
+        // The stand-in is a canvas, not an <img> of a data URL. Safari prints
+        // before it has decoded an image whose source was set inside
+        // beforeprint, and prints a zero-height gap where the chart should
+        // be; a canvas copied synchronously from the chart's own canvas needs
+        // no decoding and prints everywhere. It stands beside the chart's
+        // element, which is hidden, inside this visualization's element:
+        // ECharts owns everything inside its own element and rebuilds it on
+        // the next resize.
+        var opts = { pixelRatio: 2, backgroundColor: '#ffffff' };
+        var snap = null;
+        try {
+            if (typeof this.chart.renderToCanvas === 'function') { snap = this.chart.renderToCanvas(opts); }
+            else if (typeof this.chart.getRenderedCanvas === 'function') { snap = this.chart.getRenderedCanvas(opts); }
+        } catch (e) { snap = null; }
+        if (!snap) {
+            snap = document.createElement('img');
+            snap.alt = '';
+            snap.src = this.chart.getDataURL(opts);
+        }
+        snap.className = 'rk-print-snapshot';
+        // ECharts hands the canvas over positioned absolute, which takes it
+        // out of flow: the wrapper collapses to nothing and clips it.
+        snap.style.position = 'static';
+        snap.style.left = '';
+        snap.style.top = '';
+        snap.style.width = '100%';
+        snap.style.height = 'auto';
+        snap.style.display = 'block';
         host.style.display = 'none';
-        host.parentNode.insertBefore(img, host);
+        host.parentNode.insertBefore(snap, host);
+        var img = snap;
         this._printImg = img;
     },
 

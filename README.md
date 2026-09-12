@@ -855,7 +855,9 @@ A stylesheet fixes the orientation, prints on white and lays each sheet out
 to fill the paper; the chart visualization re-renders every chart in its
 light palette, at a size chosen for the sheet, and stands an image in front
 of the canvas for the duration of the print, so the charts come out. The
-browser's own Print command produces the same sheets. Splunk's own Export to PDF
+browser's own Print command produces the same sheets. Safari ignores a
+page's own orientation, so a Safari reader picks landscape in the dialog;
+the page says so beside the button. Splunk's own Export to PDF
 cannot be used for this, because it omits every custom visualization; that
 was tried, and the result was nine pages with the charts missing. Nothing is
 generated on the server and no library is bundled, which is what an

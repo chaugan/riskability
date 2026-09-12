@@ -115,18 +115,21 @@ def main():
 
     print("\nPrint")
     js = open(os.path.join(APP, "appserver", "static", "riskability_executive.js"), encoding="utf-8").read()
+    viz = open(os.path.join(APP, "appserver", "static", "visualizations", "riskability_chart", "src",
+                            "visualization_source.js"), encoding="utf-8").read()
     css = open(os.path.join(APP, "appserver", "static", "riskability_executive.css"), encoding="utf-8").read()
     check("A4 landscape is fixed by the stylesheet", re.search(r"@page\s*\{[^}]*size:\s*A4 landscape", css) is not None)
     check("the two chart rows each start a sheet, so the print is always the same shape",
           "#rk_exec_charts, #rk_exec_bottom { break-inside: avoid; page-break-inside: avoid; break-before: page" in css)
     check("the sheet is not left at Splunk's 960 px print width", "body { width: auto !important; }" in css.split("@media print", 1)[1])
-    check("the running footer is a page margin box written by the script, not a fixed element",
-          "@bottom-left" in js and "position: fixed" not in css.split("@media print", 1)[1])
+    check("the closing line prints in normal flow, since Safari has no margin boxes and Chromium misplaces fixed elements",
+          "position: fixed" not in css.split("@media print", 1)[1] and "@bottom-left" not in js
+          and 'class="rk-exec-foot"' in raw.split('id="rk_exec_note"', 1)[1])
+    check("the print stand-in is a canvas copy, which Safari prints, with an image only as fallback",
+          "renderToCanvas" in viz and "getRenderedCanvas" in viz)
     check("notes print even when Panel notes is off",
           "body.rk-help-off .rk-status:not(.rk-bad) { display: block !important; }" in css)
     check("the print control never prints", ".rk-exec-print-bar" in css.split("@media print", 1)[1])
-    viz = open(os.path.join(APP, "appserver", "static", "visualizations", "riskability_chart", "src",
-                            "visualization_source.js"), encoding="utf-8").read()
     check("the visualization re-renders light and swaps a synchronous PNG in for print",
           "if (printMode) { return LIGHT; }" in viz and "getDataURL(" in viz
           and "addEventListener('beforeprint'" in viz)

@@ -165,8 +165,8 @@
     font-size: 8pt;
     color: #5c6773;
   }
-  /* @bottom-left carries the running footer; the script writes its text
-     at print time, since a margin box cannot read the page. */
+  /* Safari honours none of this block: no size, no margin boxes. The reader
+     picks landscape in its dialog, and the page says so beside the button. */
 }
 
 @media print {
@@ -232,7 +232,17 @@
   header, [role="banner"], .navbar, .app-bar, .splunk-header,
   .dashboard-header .dashboard-view-controls, .dashboard-header .edit-btn,
   .rk-help-bar, .rk-exec-print-bar, .splunk-message-container, .dashboard-footer, footer,
-  .rk-viz-filtered, .rk-exec-foot { display: none !important; }
+  .rk-viz-filtered { display: none !important; }
+  /* The closing line of the last sheet, in normal flow. */
+  .rk-exec-foot {
+    display: block;
+    margin-top: 10px;
+    padding-top: 4px;
+    border-top: 1px solid #d5d8dc;
+    color: #5c6773 !important;
+    font-size: 8pt;
+    line-height: 1.3;
+  }
   .dashboard-header h2 { font-size: 22px; margin-bottom: 4px; }
   .dashboard-header .dashboard-description { font-size: 11.5px; margin-bottom: 4px; }
 
@@ -247,7 +257,7 @@
     min-height: 0 !important;
     overflow: visible !important;
   }
-  .rk-print-snapshot { display: block; width: 100%; height: auto; }
+  .rk-print-snapshot { display: block; position: static !important; width: 100%; height: auto; }
 
   /* The fix-first table: Splunk's print sheet forces every cell to wrap and
      break words, which turns "Vulnerability" into three lines and splits

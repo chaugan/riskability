@@ -35,28 +35,8 @@
     // Browsers take the suggested PDF file name from document.title. Set it
     // for the print and put it back afterwards, so the tab does not carry the
     // date for the rest of the session.
-    // The running footer is a page margin box, which is the only thing that
-    // repeats cleanly on every sheet (a fixed element under a zoomed page
-    // lands in the wrong place on the second sheet). A margin box cannot
-    // read the page, so its text is written into a stylesheet here, from
-    // the hidden footer element the dashboard's tokens have already filled.
-    function setFooter() {
-        var src = document.querySelector(".rk-exec-foot");
-        if (!src) { return; }
-        var text = (src.textContent || "").replace(/\s+/g, " ").trim();
-        var style = document.getElementById("rk-exec-page-footer");
-        if (!style) {
-            style = document.createElement("style");
-            style.id = "rk-exec-page-footer";
-            document.head.appendChild(style);
-        }
-        style.textContent = '@page { @bottom-left { content: "' + text.replace(/\\/g, "\\\\").replace(/"/g, '\\"')
-            + '"; font-size: 7.5pt; color: #5c6773; width: 85%; } }';
-    }
-
     function enterPrint() {
         var date = stampNow();
-        setFooter();
         if (savedTitle === null) { savedTitle = document.title; }
         document.title = "Riskability executive summary " + date;
         document.body.classList.add("rk-exec-printing");

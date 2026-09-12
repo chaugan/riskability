@@ -460,12 +460,6 @@
           Accepted risks are excluded from every count except their own tile. Every zero on this
           page is explained by the panel beside it or a banner above it.
         </div>
-        <div class="rk-exec-foot">
-          Riskability executive summary. Figures as of $rollup_at$ from the hourly roll-up; feed
-          imported $feed_at$; $f_total$ systems known, $f_late$ gone quiet. Accepted risks excluded.
-          Could not be checked means unknown, not safe.
-          Printed <span class="rk-exec-printed"></span>.
-        </div>
       </html>
     </panel>
     <panel depends="$rk_ready$,$rk_ready2$">
@@ -473,9 +467,9 @@
         <div class="rk-exec-print-bar">
           <button type="button" class="rk-exec-print">Print or save as PDF (A4 landscape)</button>
           <p class="rk-dim">Three landscape sheets: the figures, the two pictures, what changed and
-          what to do. Choose "Save as PDF" in the print dialog for a file. Splunk's own Export to
-          PDF leaves the charts out. Nobody can schedule this; it is this page, printed by your
-          browser.</p>
+          what to do. Choose "Save as PDF" in the print dialog for a file. Safari ignores the
+          page's own orientation, so pick landscape there. Splunk's own Export to PDF leaves the
+          charts out. Nobody can schedule this; it is this page, printed by your browser.</p>
         </div>
       </html>
     </panel>
@@ -749,6 +743,15 @@
           plus many accepted ones is not a clean fleet. A zero is no data until the banners above are
           clear. Could not be checked means unknown, not safe. Every figure comes from the same hourly
           roll-ups the other pages read, so a number here always matches the page it links to.</span>
+        </div>
+        <!-- Print only: the closing line of the last sheet. In normal flow, not
+             fixed, because Safari has no page margin boxes and a fixed element
+             under a zoomed sheet lands in the wrong place in Chromium. -->
+        <div class="rk-exec-foot">
+          Riskability executive summary. Figures as of $rollup_at$ from the hourly roll-up; feed
+          imported $feed_at$; $f_total$ systems known, $f_late$ gone quiet. Accepted risks excluded.
+          Could not be checked means unknown, not safe.
+          Printed <span class="rk-exec-printed"></span>.
         </div>
       </html>
     </panel>
