@@ -1,0 +1,756 @@
+<dashboard version="1.1" theme="dark" script="riskability_help.js,riskability_executive.js" stylesheet="application.css,riskability_executive.css">
+  <label>Executive summary</label>
+  <description>The fleet's vulnerability position on one page, in the order the questions get asked: what is already being exploited, what of that can be reached, how much is open, what we chose to carry, and how far to trust the figures.</description>
+
+  <!-- ==================================================================
+       State searches. Every number on this page is the sibling page's own
+       query, verbatim where one exists, so that a figure here can never
+       disagree with Fleet overview, Exposure, Remediation or Risk
+       exceptions. Each search aggregates with a count FIRST, because stats
+       over an empty input returns no row at all when it carries only
+       aggregates, and a done handler that never fires leaves the token's own
+       name printed on the page (seen on Start here on a fresh install).
+       Every child of a done block with conditions is itself a condition.
+       ================================================================== -->
+
+  <!-- Feed: Start here's no_feed test, extended with the date and the
+       30-day staleness threshold the feed-is-stale alert uses. -->
+  <search id="rk_feed">
+    <query>| inputlookup riskability_feedstate_lookup
+| search _key=current
+| where isnotnull(generation) AND isnotnull(imported_at)
+| stats count AS feeds, max(imported_at) AS imported_at
+| eval feed_at = if(feeds = 0, "never", strftime(imported_at, "%Y-%m-%d")),
+       feed_days = if(feeds = 0, "0", tostring(round((now() - imported_at) / 86400, 1))),
+       feed_stale = if(feeds &gt; 0 AND (now() - imported_at) / 86400 &gt; 30, 1, 0),
+       feed_cls = case(feeds = 0, "rk-exec-alarm",
+                       (now() - imported_at) / 86400 &gt; 30, "rk-exec-alarm",
+                       (now() - imported_at) / 86400 &gt; 7, "rk-exec-warned",
+                       1=1, "rk-exec-calm")</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.feeds$ = 0">
+        <set token="no_feed">1</set>
+        <set token="feed_at">never</set>
+        <set token="feed_days">0</set>
+        <set token="feed_cls">rk-exec-alarm</set>
+        <unset token="feed_stale"></unset>
+      </condition>
+      <condition match="$result.feed_stale$ = 1">
+        <unset token="no_feed"></unset>
+        <set token="feed_at">$result.feed_at$</set>
+        <set token="feed_days">$result.feed_days$</set>
+        <set token="feed_cls">$result.feed_cls$</set>
+        <set token="feed_stale">1</set>
+      </condition>
+      <condition>
+        <unset token="no_feed"></unset>
+        <set token="feed_at">$result.feed_at$</set>
+        <set token="feed_days">$result.feed_days$</set>
+        <set token="feed_cls">$result.feed_cls$</set>
+        <unset token="feed_stale"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Hosts known: Start here's "seen at least once", which is the honest
+       denominator for tile 3. Fleet overview's seven-day window is not used
+       here because the numerator (hosts holding an open finding) includes
+       hosts on a monthly cadence, and N would exceed M. Exposure never
+       measured: hosts with no exposure snapshot at all. -->
+  <search id="rk_hosts">
+    <query>| `riskability_hosts_seen`
+| lookup riskability_exposure_hoststate_lookup hostname OUTPUT assessed_at
+| stats count AS hosts, sum(eval(if(isnull(assessed_at), 1, 0))) AS unmeasured
+| fillnull value=0 unmeasured
+| eval unm_cls = if(unmeasured &gt; 0, "rk-exec-warned", "rk-exec-plain")</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.hosts$ = 0">
+        <set token="no_hosts">1</set>
+        <set token="hosts_known">0</set>
+        <set token="x_unmeasured">0</set>
+        <set token="x_unm_cls">rk-exec-plain</set>
+      </condition>
+      <condition>
+        <unset token="no_hosts"></unset>
+        <set token="hosts_known">$result.hosts$</set>
+        <set token="x_unmeasured">$result.unmeasured$</set>
+        <set token="x_unm_cls">$result.unm_cls$</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Roll-up age: Fleet overview's rk_rollup_age verbatim, plus a first
+       branch for "the roll-up has never written", which on a fresh install
+       is the difference between "clean" and "not measured yet". -->
+  <search id="rk_rollup_age">
+    <query>| inputlookup riskability_openstate_host_lookup
+| stats count AS rk_rows, max(rolled_at) AS rolled
+| eval rolled_label = if(isnull(rolled), "never",
+      strftime(rolled, "%Y-%m-%d %H:%M")),
+      rolled_mins = if(isnull(rolled), 99999, round((now() - rolled) / 60))</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.rk_rows$ = 0">
+        <set token="rollup_at">never</set>
+        <set token="rk_norows">1</set>
+        <unset token="rollup_stale"></unset>
+      </condition>
+      <condition match="$result.rolled_mins$ &gt; 90">
+        <set token="rollup_at">$result.rolled_label$</set>
+        <unset token="rk_norows"></unset>
+        <set token="rollup_stale">1</set>
+      </condition>
+      <condition>
+        <set token="rollup_at">$result.rolled_label$</set>
+        <unset token="rk_norows"></unset>
+        <unset token="rollup_stale"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Whether the finding state holds open findings the roll-up has not yet
+       reported. Only meaningful beside rk_norows: with rows it is redundant,
+       without rows it decides between "clean" and "not rolled up yet". -->
+  <search id="rk_liveopen">
+    <query>| `riskability_open_findings`
+| stats count AS live_open</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.live_open$ &gt; 0">
+        <set token="rk_liveopen">1</set>
+        <set token="live_open">$result.live_open$</set>
+      </condition>
+      <condition>
+        <unset token="rk_liveopen"></unset>
+        <set token="live_open">0</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Pipeline health: Fleet overview's match-receipt test, verbatim. -->
+  <search id="rk_pipeline">
+    <query>index=`riskability_index_findings` sourcetype=riskability:findings
+    record_type="match_receipt"
+    earliest=0 latest=+10y
+    _index_earliest=`riskability_stuck_window` _index_latest=now
+| stats max(match_run) AS match_run, sum(findings_produced) AS findings_produced BY hostname
+| where findings_produced &gt; 0
+| lookup riskability_matchstate_lookup hostname OUTPUT folded_run
+| eval acknowledged = if(isnotnull(folded_run) AND abs(tonumber(folded_run) - match_run) &lt; 300, 1, 0)
+| where acknowledged == 0
+| stats count AS stale</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.stale$ &gt; 0">
+        <set token="pipeline_stale">1</set>
+      </condition>
+      <condition>
+        <unset token="pipeline_stale"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Open, accepted, distinct CVEs, and whether the two roll-ups that feed
+       this page (per host at :42, by dimension at :43) agree. sum(findings)
+       and sum(accepted) are Fleet overview's Open findings and Accepted risks
+       verbatim. The two appendcols read lookups of a few hundred rows and
+       return one row each; a subsearch limit cannot truncate them. -->
+  <search id="rk_open">
+    <query>| inputlookup riskability_openstate_host_lookup
+| stats count AS hosts_open, sum(findings) AS open_findings, sum(accepted) AS accepted
+| appendcols [| inputlookup riskability_openstate_cve_lookup | stats count AS open_cves]
+| appendcols [| inputlookup riskability_openstate_dim_lookup | where dim="severity" | stats sum(findings) AS dim_total]
+| fillnull value=0 hosts_open open_findings accepted open_cves
+| eval rollups_agree = if(isnull(dim_total) OR dim_total = open_findings, 1, 0)</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.rollups_agree$ = 0">
+        <set token="x_hosts_open">$result.hosts_open$</set>
+        <set token="x_open_findings">$result.open_findings$</set>
+        <set token="x_open_cves">$result.open_cves$</set>
+        <set token="x_accepted">$result.accepted$</set>
+        <set token="rollups_disagree">1</set>
+      </condition>
+      <condition>
+        <set token="x_hosts_open">$result.hosts_open$</set>
+        <set token="x_open_findings">$result.open_findings$</set>
+        <set token="x_open_cves">$result.open_cves$</set>
+        <set token="x_accepted">$result.accepted$</set>
+        <unset token="rollups_disagree"></unset>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Known-exploited and reachable: Exposure's rk_kev_reach at its default
+       (any host, all match confidences), summed across the fleet. There is no
+       fleet roll-up of reach, so this is a live read of the finding state, as
+       Exposure's own page does. It is the slowest read on the page, which is
+       why it also gates the print button. -->
+  <search id="rk_reach">
+    <query>| `riskability_reachability_for("*", "*")`
+| eval rk_kev_reach = if(reach_rank &gt;= 2 AND is_kev = 1, 1, 0),
+       rk_unknown = if(reach_rank &lt; 0, 1, 0)
+| stats count AS findings,
+        sum(rk_kev_reach) AS kev_reach_findings,
+        dc(eval(if(rk_kev_reach = 1, hostname, null()))) AS kev_reach_hosts,
+        sum(rk_unknown) AS unassessed_findings,
+        dc(eval(if(rk_unknown = 1, hostname, null()))) AS unassessed_hosts
+| fillnull value=0 findings kev_reach_findings kev_reach_hosts unassessed_findings unassessed_hosts</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.unassessed_findings$ &gt; 0">
+        <set token="x_kev_reach_f">$result.kev_reach_findings$</set>
+        <set token="x_kev_reach_h">$result.kev_reach_hosts$</set>
+        <set token="x_unk_f">$result.unassessed_findings$</set>
+        <set token="x_unk_h">$result.unassessed_hosts$</set>
+        <set token="x_unk_cls">rk-exec-warned</set>
+        <set token="rk_ready">1</set>
+      </condition>
+      <condition>
+        <set token="x_kev_reach_f">$result.kev_reach_findings$</set>
+        <set token="x_kev_reach_h">$result.kev_reach_hosts$</set>
+        <set token="x_unk_f">$result.unassessed_findings$</set>
+        <set token="x_unk_h">$result.unassessed_hosts$</set>
+        <set token="x_unk_cls">rk-exec-plain</set>
+        <set token="rk_ready">1</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Accepted risks that are known-exploited: Fleet overview's third tile,
+       written count-first. A separate search rather than a subsearch, because
+       a timed-out subsearch would print zero here, and zero here is the one
+       lie this page must not tell. -->
+  <search id="rk_accepted">
+    <query>| `riskability_accepted_findings`
+| eval rk_kev = if(isnotnull(kev_added) AND kev_added!="", cve_id, null())
+| stats count AS rk_n, dc(rk_kev) AS accepted_kev
+| fillnull value=0 accepted_kev</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.accepted_kev$ &gt; 0">
+        <set token="x_accepted_kev">$result.accepted_kev$</set>
+        <set token="x_accepted_kev_cls">rk-exec-alarm</set>
+        <set token="x_kevnote_cls">rk-exec-show</set>
+      </condition>
+      <condition>
+        <set token="x_accepted_kev">$result.accepted_kev$</set>
+        <set token="x_accepted_kev_cls">rk-exec-plain</set>
+        <set token="x_kevnote_cls">rk-exec-hide</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Exceptions due and lapsed: Risk exceptions' own two tiles, verbatim. -->
+  <search id="rk_exc">
+    <query>| `riskability_exceptions_now`
+| stats count AS exc_rows,
+        sum(eval(if(exc_state="active" AND expires_at!="" AND tonumber(expires_at) &lt; relative_time(now(), "+14d"), 1, 0))) AS due_14d,
+        sum(eval(if(exc_state="expired", 1, 0))) AS lapsed
+| fillnull value=0 due_14d lapsed</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.lapsed$ &gt; 0">
+        <set token="x_due_14d">$result.due_14d$</set>
+        <set token="x_lapsed">$result.lapsed$</set>
+        <set token="x_lapsed_cls">rk-exec-warned</set>
+      </condition>
+      <condition>
+        <set token="x_due_14d">$result.due_14d$</set>
+        <set token="x_lapsed">$result.lapsed$</set>
+        <set token="x_lapsed_cls">rk-exec-plain</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Age of serious findings: the severity roll-up's own medians. -->
+  <search id="rk_age">
+    <query>| inputlookup riskability_openstate_dim_lookup
+| where dim="severity"
+| stats count AS rk_rows,
+        max(eval(if(lower(value)="critical", age_med, null()))) AS crit_days,
+        max(eval(if(lower(value)="high", age_med, null()))) AS high_days,
+        max(eval(if(lower(value)="critical", findings, null()))) AS crit_n,
+        max(eval(if(lower(value)="high", findings, null()))) AS high_n
+| fillnull value=0 crit_n high_n
+| eval crit_days = if(isnull(crit_days), "none open", tostring(round(crit_days))),
+       high_days = if(isnull(high_days), "none open", tostring(round(high_days)))</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition>
+        <set token="x_crit_days">$result.crit_days$</set>
+        <set token="x_high_days">$result.high_days$</set>
+        <set token="x_crit_n">$result.crit_n$</set>
+        <set token="x_high_n">$result.high_n$</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Hosts gone quiet against their own pattern: Start here's fleetstate
+       search, verbatim, including its fillnull. -->
+  <search id="rk_cadence">
+    <query>| inputlookup riskability_hostcadence_lookup
+| eval is_late = if(tonumber(learned) = 1 AND tonumber(late) = 1, 1, 0)
+| eval is_on = if(tonumber(learned) = 1 AND tonumber(late) != 1, 1, 0)
+| eval is_new = if(isnull(learned) OR tonumber(learned) != 1, 1, 0)
+| stats sum(is_late) AS late, sum(is_on) AS on_schedule,
+        sum(is_new) AS unlearned, count AS total
+| fillnull value=0 late on_schedule unlearned total
+| eval late_cls = if(late &gt; 0, "rk-exec-alarm", "rk-exec-calm")</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition>
+        <set token="f_late">$result.late$</set>
+        <set token="f_total">$result.total$</set>
+        <set token="f_late_cls">$result.late_cls$</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- Known-exploited CVEs present, and how many are past the fix-by date
+       CISA set for US agencies. Same rows as Fleet overview's KEV table. -->
+  <search id="rk_kev">
+    <query>| inputlookup riskability_openstate_cve_lookup
+| where isnotnull(kev_added) AND kev_added!=""
+| eval overdue = if(isnotnull(kev_due) AND kev_due!="" AND strptime(kev_due, "%Y-%m-%d") &lt; now(), 1, 0)
+| stats count AS kev_cves, sum(overdue) AS kev_overdue
+| fillnull value=0 kev_overdue</query>
+    <earliest>0</earliest>
+    <latest>now</latest>
+    <done>
+      <condition match="$result.kev_cves$ = 0">
+        <set token="no_kev">1</set>
+        <set token="kev_cves">0</set>
+        <set token="kev_overdue">0</set>
+        <set token="x_kev_cls">rk-exec-big-quiet</set>
+        <set token="x_kev_over_cls">rk-exec-plain</set>
+      </condition>
+      <condition match="$result.kev_overdue$ &gt; 0">
+        <unset token="no_kev"></unset>
+        <set token="kev_cves">$result.kev_cves$</set>
+        <set token="kev_overdue">$result.kev_overdue$</set>
+        <set token="x_kev_cls">rk-exec-big-alarm</set>
+        <set token="x_kev_over_cls">rk-exec-alarm</set>
+      </condition>
+      <condition>
+        <unset token="no_kev"></unset>
+        <set token="kev_cves">$result.kev_cves$</set>
+        <set token="kev_overdue">$result.kev_overdue$</set>
+        <set token="x_kev_cls">rk-exec-big-alarm</set>
+        <set token="x_kev_over_cls">rk-exec-plain</set>
+      </condition>
+    </done>
+  </search>
+
+  <!-- ==================================================================
+       Row 0: banners. One per state, each in its own row so that only the
+       states that apply take space. The red ones override the page: a zero
+       under a red banner is "not measured", never "clean".
+       ================================================================== -->
+  <row id="rk_exec_banner_feed" depends="$no_feed$">
+    <panel>
+      <html>
+        <div class="rk-status rk-bad">
+          <b>No vulnerability feed has been imported, so nothing on this page can be assessed.</b>
+          <span>A zero here is no data, not no risk. An administrator imports the bundle on
+          Administration, Feed administration.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_hosts" depends="$no_hosts$" rejects="$no_feed$">
+    <panel>
+      <html>
+        <div class="rk-status rk-bad">
+          <b>A feed was imported on $feed_at$ but no system has reported its software inventory yet.</b>
+          <span>There is nothing to compare it against.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_norows" depends="$rk_norows$,$rk_liveopen$" rejects="$no_feed$,$no_hosts$">
+    <panel>
+      <html>
+        <div class="rk-status rk-bad">
+          <b>The hourly roll-up has not written yet, so the tiles read zero while the finding state holds $live_open$ open findings.</b>
+          <span>The numbers arrive within the hour. If they do not, the pipeline has stopped and
+          Start here reports which job.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_clean" depends="$rk_norows$" rejects="$rk_liveopen$,$no_feed$,$no_hosts$">
+    <panel>
+      <html>
+        <div class="rk-status rk-good">
+          <b>Nothing is open, confirmed against the finding state and not only against the roll-up.</b>
+          <span>Accepted risks, if any, are counted in their own tile.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_pipeline" depends="$pipeline_stale$">
+    <panel>
+      <html>
+        <div class="rk-status rk-bad">
+          <b>Some hosts are matched but not folded in.</b>
+          <span>Open counts are stale-high for those hosts and closing is withheld until the fold
+          completes: risk is over-reported, never under-reported. Usually clears within the hour.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_rollup" depends="$rollup_stale$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn">
+          <b>These counts are behind the finding state.</b>
+          <span>Every total on this page comes from an hourly roll-up, last written $rollup_at$,
+          and that is more than an hour ago.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_disagree" depends="$rollups_disagree$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn">
+          <b>The breakdown and the total come from two hourly roll-ups that did not run together.</b>
+          <span>Quote the total; the severity chart will agree within the hour.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+  <row id="rk_exec_banner_feedstale" depends="$feed_stale$">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn">
+          <b>Every number here is measured against a feed imported $feed_at$, $feed_days$ days ago.</b>
+          <span>Vulnerabilities published since then are invisible. A falling count on an ageing
+          feed is blindness, not improvement.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 1: as-of line and the print control. The as-of text is outside
+       .rk-status on purpose, so the Panel notes toggle can never hide it.
+       The print button does not exist until the two slowest reads have
+       returned, so a half-filled page cannot be printed as a quiet fleet.
+       ================================================================== -->
+  <row id="rk_exec_head">
+    <panel depends="$rollup_at$">
+      <html>
+        <div class="rk-exec-asof">
+          Figures as of <b>$rollup_at$</b>, from the hourly roll-up. Feed imported <b>$feed_at$</b>.
+          Accepted risks are excluded from every count except their own tile. Every zero on this
+          page is explained by the panel beside it or a banner above it.
+        </div>
+        <div class="rk-exec-foot">
+          Riskability executive summary. Figures as of $rollup_at$ from the hourly roll-up; feed
+          imported $feed_at$; $f_total$ systems known, $f_late$ gone quiet. Accepted risks excluded.
+          Could not be checked means unknown, not safe.
+          Printed <span class="rk-exec-printed"></span>.
+        </div>
+      </html>
+    </panel>
+    <panel depends="$rk_ready$,$rk_ready2$">
+      <html>
+        <div class="rk-exec-print-bar">
+          <button type="button" class="rk-exec-print">Print or save as PDF (A4 landscape)</button>
+          <p class="rk-dim">Three landscape sheets: the figures, the two pictures, what changed and
+          what to do. Choose "Save as PDF" in the print dialog for a file. Splunk's own Export to
+          PDF leaves the charts out. Nobody can schedule this; it is this page, printed by your
+          browser.</p>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 2: the four headline tiles, in the order the questions get asked.
+       ================================================================== -->
+  <row id="rk_exec_tiles" rejects="$no_feed$,$no_hosts$">
+    <panel depends="$kev_cves$">
+      <title>Exploited in the wild, present on our systems</title>
+      <!-- An html card, not a single value: Splunk's under-label never wraps,
+           so a sentence under the number is clipped at the panel edge. -->
+      <html>
+        <div class="rk-exec-card">
+          <span class="rk-exec-big $x_kev_cls$">$kev_cves$<small>vulnerabilities</small></span>
+          <div class="rk-exec-facts">
+            <div class="rk-exec-fact $x_kev_over_cls$"><span>Past CISA's fix-by date</span><b>$kev_overdue$</b></div>
+          </div>
+          <span class="rk-exec-sub">On CISA's list of vulnerabilities attackers already use (KEV),
+          and open on at least one of our systems. Grey at zero, never green: a feed built
+          without the KEV catalogue also reads zero.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$rk_ready$">
+      <title>Of those, answering the network right now</title>
+      <html>
+        <div class="rk-exec-card">
+          <span class="rk-exec-big">$x_kev_reach_f$<small>findings on $x_kev_reach_h$ systems</small></span>
+          <div class="rk-exec-facts">
+            <div class="rk-exec-fact $x_unk_cls$"><span>Could not be checked</span><b>$x_unk_f$</b> findings on $x_unk_h$ systems</div>
+          </div>
+          <span class="rk-exec-sub">A system that never reported its listening ports is unknown risk,
+          not low risk. All match confidences, as Exposure shows them.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$x_hosts_open$">
+      <title>Systems with at least one open vulnerability</title>
+      <html>
+        <div class="rk-exec-card">
+          <span class="rk-exec-big">$x_hosts_open$<small>of $hosts_known$</small></span>
+          <span class="rk-exec-sub"><b>$x_open_findings$</b> open findings across <b>$x_open_cves$</b>
+          distinct vulnerabilities, accepted risks excluded. Systems known means seen at least
+          once and not retired.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$x_accepted$,$x_kevnote_cls$">
+      <title>Risks we chose to carry, with a recorded reason</title>
+      <html>
+        <div class="rk-exec-card">
+          <span class="rk-exec-big">$x_accepted$<small>accepted findings</small></span>
+          <div class="rk-exec-facts">
+            <div class="rk-exec-fact $x_accepted_kev_cls$"><span>Of which exploited in the wild</span><b>$x_accepted_kev$</b></div>
+            <div class="rk-exec-fact"><span>Due for review within 14 days</span><b>$x_due_14d$</b></div>
+            <div class="rk-exec-fact $x_lapsed_cls$"><span>Lapsed, back in the open count</span><b>$x_lapsed$</b></div>
+          </div>
+          <span class="rk-exec-sub">Reviewed, kept on purpose, with a reason, a control and a review
+          date. Managed on Risk exceptions.</span>
+        </div>
+        <!-- depends= on a div inside an html panel does nothing; the note is
+             shown or hidden by a class the done handler chooses. -->
+        <div class="rk-status rk-bad $x_kevnote_cls$">
+          <b>Here, an accepted risk is a known-exploited one left in place on purpose.</b>
+          <span>Each of these is being exploited in the wild and someone chose not to patch it. That
+          can be a defensible decision, but it is never a low-risk state.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 3: how long serious findings stay open, and how far to trust the
+       page. The trust card is the executive's own gate on every other
+       number here.
+       ================================================================== -->
+  <row id="rk_exec_tiles2" rejects="$no_feed$,$no_hosts$">
+    <panel depends="$x_crit_days$">
+      <title>How long a serious finding has typically been open</title>
+      <html>
+        <div class="rk-exec-card">
+          <div class="rk-exec-facts rk-exec-facts-two">
+            <div class="rk-exec-fact"><span>Critical, median days open</span><b>$x_crit_days$</b> $x_crit_n$ open</div>
+            <div class="rk-exec-fact"><span>High, median days open</span><b>$x_high_days$</b> $x_high_n$ open</div>
+          </div>
+          <span class="rk-exec-sub">Median, counted from when Riskability first saw the finding, not
+          from when the vulnerability was published. It means something only once collection has
+          run longer than the fixes it is measuring.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$feed_at$,$f_total$,$rollup_at$">
+      <title>How far to trust this page</title>
+      <html>
+        <div class="rk-exec-card rk-exec-trust">
+          <div class="rk-exec-facts">
+            <div class="rk-exec-fact $feed_cls$"><span>Feed imported</span><b>$feed_at$</b> $feed_days$ days ago</div>
+            <div class="rk-exec-fact $f_late_cls$"><span>Systems gone quiet</span><b>$f_late$</b> of $f_total$, against their own pattern</div>
+            <div class="rk-exec-fact $x_unm_cls$"><span>Exposure never measured</span><b>$x_unmeasured$</b> systems, in the could-not-be-checked row</div>
+            <div class="rk-exec-fact"><span>Figures rolled up</span><b>$rollup_at$</b></div>
+          </div>
+          <span class="rk-exec-sub">A quiet system's findings are frozen, not fixed. An old feed
+          hides everything published since. Nothing on this page reaches the internet.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 4: the two visuals that earn a place. The matrix is Exposure's
+       own, at its defaults; the donut is the severity roll-up and must sum
+       to the open findings tile.
+       ================================================================== -->
+  <row id="rk_exec_charts" rejects="$no_feed$,$no_hosts$">
+    <panel>
+      <title>What to do first: open findings by whether they can be reached and how likely they are to be exploited</title>
+      <viz type="riskability.riskability_chart">
+        <search id="rk_matrix">
+          <query>| `riskability_reachability_for("*", "*")`
+| stats count AS findings BY exploit_class, reach_class, tier
+| fields exploit_class, reach_class, findings, tier</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+          <done>
+            <condition>
+              <set token="rk_ready2">1</set>
+            </condition>
+          </done>
+        </search>
+        <option name="riskability.riskability_chart.chartType">prioritymatrix</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.emptyText">Nothing to place. Either there are no open findings, or the exposure snapshot has not run yet. A system that was never checked is unknown risk, not low risk.</option>
+        <option name="height">300</option>
+        <drilldown>
+          <link target="_blank">/app/riskability/riskability_exposure</link>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Colour is urgency, not count.</b>
+          <span>KEV means on CISA's list of vulnerabilities attackers are already using. EPSS is the
+          published likelihood of exploitation. Rows say whether the copy on our system answers the
+          network; the dashed row is systems we could not check, which is unknown risk, not low risk.</span>
+        </div>
+      </html>
+    </panel>
+    <panel>
+      <title>Open findings by severity</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| inputlookup riskability_openstate_dim_lookup
+| where dim="severity"
+| eval ord = case(lower(value)="critical", 1, lower(value)="high", 2, in(lower(value), "medium", "moderate"), 3, lower(value)="low", 4, 1=1, 5)
+| sort 0 ord
+| table value, findings</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_chart.chartType">donut</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <option name="riskability.riskability_chart.emptyText">No open findings. With no feed imported the app cannot assess anything yet, which is not a clean fleet. Check the Feed administration page.</option>
+        <option name="height">300</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Slices add up to the open findings figure above, accepted risks excluded.</b>
+          <span>Unrated means the feed carried no severity for it, which is not the same as low.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 5: movement over the window closed findings are retained for,
+       and the short list of what to fix first.
+       ================================================================== -->
+  <row id="rk_exec_bottom" rejects="$no_feed$,$no_hosts$">
+    <panel>
+      <title>Movement in the last 30 days, by week</title>
+      <viz type="riskability.riskability_chart">
+        <search>
+          <query>| `riskability_findings_now`
+| eval rk_opened = if(status="open" AND coalesce(accepted, "0")!="1" AND first_seen &gt;= relative_time(now(), "-30d@d"), 1, 0)
+| eval rk_closed = if(in(status, "mitigated", "removed", "unknown") AND isnotnull(closed_at) AND closed_at &gt;= relative_time(now(), "-30d@d"), 1, 0)
+| where rk_opened = 1 OR rk_closed = 1
+| eval rk_wk = relative_time(if(rk_closed = 1, closed_at, first_seen), "@w1")
+| eval week = strftime(rk_wk, "%d %b")
+| eval series = if(rk_closed = 1, status, "open")
+| stats dc(finding_key) AS findings, min(rk_wk) AS rk_order BY week, series
+| sort 0 rk_order
+| table week, series, findings</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="riskability.riskability_chart.chartType">stackedcolumn</option>
+        <option name="riskability.riskability_chart.valueLabel">findings</option>
+        <option name="riskability.riskability_chart.drilldown">disabled</option>
+        <option name="riskability.riskability_chart.emptyText">No findings recorded yet. This chart fills in as scans accumulate.</option>
+        <option name="height">260</option>
+      </viz>
+      <html>
+        <div class="rk-status rk-note">
+          <b>Weeks start on Monday. Only a green bar, mitigated, is evidence of a fix.</b>
+          <span>Open is first seen that week and still open; mitigated is a version change observed
+          at the same path; removed and unknown stopped being reported without that evidence. Bars
+          cluster on scan and feed import times. Thirty days because closed findings are archived
+          after thirty days, so a longer window would understate fixes.</span>
+        </div>
+      </html>
+    </panel>
+    <panel rejects="$no_kev$">
+      <title>The five things to fix first</title>
+      <table>
+        <search>
+          <query>| inputlookup riskability_openstate_cve_lookup
+| where isnotnull(kev_added) AND kev_added!=""
+| sort 50000 - hosts
+| head 5
+| eval packages = mvjoin(packages, ", ")
+| eval fix_by = if(isnull(kev_due) OR kev_due="", "not stated", kev_due)
+| eval title = case(isnull(title) OR title="", "No description in the feed for this one.",
+                    len(title) &gt; 220, substr(title, 1, 217) . "...",
+                    1=1, title)
+| table title, cve_id, hosts, packages, fix_by
+| rename title AS "What it is", cve_id AS "Vulnerability", hosts AS "Systems", packages AS "Packages", fix_by AS "Fix-by date"</query>
+          <earliest>0</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="count">5</option>
+        <option name="drilldown">none</option>
+        <option name="wrap">true</option>
+        <option name="rowNumbers">false</option>
+        <option name="dataOverlayMode">none</option>
+      </table>
+      <html>
+        <div class="rk-status rk-note">
+          <b>The same known-exploited vulnerabilities as Fleet overview's table, ordered by how many systems carry them.</b>
+          <span>$kev_overdue$ of the $kev_cves$ listed are past the fix-by date the US government set
+          for its own agencies. What it is is the shortest advisory description the roll-up already
+          picks.</span>
+        </div>
+      </html>
+    </panel>
+    <panel depends="$no_kev$">
+      <title>The five things to fix first</title>
+      <html>
+        <div class="rk-status rk-note">
+          <b>No known-exploited vulnerabilities matched.</b>
+          <span>This reflects the KEV catalogue in the imported bundle; if KEV was unreachable when the
+          bundle was built, it is blank for that reason, and the tile above is grey rather than green
+          for the same reason.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- ==================================================================
+       Row 6: the page's single note. rk-warn so the Panel notes toggle can
+       hide it on screen; print CSS forces every note visible on paper,
+       where the reader cannot hover or click.
+       ================================================================== -->
+  <row id="rk_exec_note">
+    <panel>
+      <html>
+        <div class="rk-status rk-warn">
+          <b>How to read this page.</b>
+          <span>Accepted risks are excluded from every count except their own tile; no open findings
+          plus many accepted ones is not a clean fleet. A zero is no data until the banners above are
+          clear. Could not be checked means unknown, not safe. Every figure comes from the same hourly
+          roll-ups the other pages read, so a number here always matches the page it links to.</span>
+        </div>
+      </html>
+    </panel>
+  </row>
+</dashboard>

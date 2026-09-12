@@ -135,7 +135,26 @@ function colorMode(config) {
  * truncated security chart is a wrong chart, not a smaller one. */
 var ROW_CAP = 10000;
 
+/* Print support.
+ *
+ * Splunk switches a dark dashboard to a light page under @media print, but a
+ * canvas is a picture: the axis labels and legend text ECharts drew in the
+ * dark palette stay near-white and vanish against the printed page, and the
+ * canvas keeps the width it had on screen, so a chart drawn for a 1600px
+ * viewport is clipped on an A4 sheet. Both were observed in a print-to-PDF of
+ * Fleet overview before this existed.
+ *
+ * So every live chart re-renders in the LIGHT palette and resizes when the
+ * browser announces a print, and goes back afterwards. beforeprint/afterprint
+ * cover a person pressing Ctrl+P or a script calling window.print();
+ * matchMedia('print') covers engines that emulate print media without firing
+ * the events, which is what headless renderers do.
+ */
+var printMode = false;
+var liveCharts = [];
+
 function theme() {
+    if (printMode) { return LIGHT; }
     var mode;
     try {
         mode = vizUtils.getCurrentTheme && vizUtils.getCurrentTheme();
@@ -143,6 +162,38 @@ function theme() {
         mode = 'dark';
     }
     return mode === 'light' ? LIGHT : DARK;
+}
+
+/* Re-render is not enough on its own. ECharts paints on the next animation
+ * frame, and a browser takes its print snapshot synchronously once the
+ * beforeprint handlers return, so a canvas re-themed here could still be
+ * captured with the dark frame it had a moment ago. getDataURL() forces a
+ * synchronous render, so each chart is swapped for a PNG of itself drawn in
+ * the light palette at print resolution, and the canvas is hidden until the
+ * print ends. The image is sized to the panel, so it also follows the narrower
+ * printed column instead of keeping the on-screen width.
+ */
+function setPrintMode(on) {
+    if (printMode === on) { return; }
+    printMode = on;
+    for (var i = 0; i < liveCharts.length; i++) {
+        var inst = liveCharts[i];
+        try {
+            if (on) { inst._printSnapshot(); } else { inst._printRestore(); }
+        } catch (e) { /* one panel failing to re-theme must not stop the others */ }
+    }
+}
+
+if (typeof window !== 'undefined' && !window.__riskabilityPrintHooked) {
+    window.__riskabilityPrintHooked = true;
+    window.addEventListener('beforeprint', function () { setPrintMode(true); });
+    window.addEventListener('afterprint', function () { setPrintMode(false); });
+    if (window.matchMedia) {
+        var mq = window.matchMedia('print');
+        var onChange = function (e) { setPrintMode(!!e.matches); };
+        if (mq.addEventListener) { mq.addEventListener('change', onChange); }
+        else if (mq.addListener) { mq.addListener(onChange); }
+    }
 }
 
 function shorten(s, n) {
@@ -1712,6 +1763,7 @@ export default SplunkVisualizationBase.extend({
         SplunkVisualizationBase.prototype.initialize.apply(this, arguments);
         this.el.classList.add('riskability-chart');
         this.chart = null;
+        liveCharts.push(this);
     },
 
     getInitialDataParams: function () {
@@ -1818,6 +1870,14 @@ export default SplunkVisualizationBase.extend({
         }
 
         this._config = config;
+        this._data = data;
+        // The size the reader saw. Splunk narrows the page itself when a
+        // print starts, before this visualization hears of it, so the print
+        // snapshot is taken at this size rather than at the narrowed one.
+        if (!printMode && this.el.clientWidth > 0) {
+            this._screenW = this.el.clientWidth;
+            this._screenH = this.el.clientHeight;
+        }
         this._render(option, rows.length >= ROW_CAP, chartType, data.fields);
     },
 
@@ -2138,7 +2198,65 @@ export default SplunkVisualizationBase.extend({
         if (this.chart) { this.chart.resize(); }
     },
 
+    // See setPrintMode. Re-render in the light palette, then stand a PNG of
+    // the result in front of the canvas for the duration of the print.
+    _printSnapshot: function () {
+        if (!this._data || !this._config) { return; }
+        this.updateView(this._data, this._config);
+        if (!this.chart) { return; }
+        var host = this.chart.getDom();
+        // Render at the size the reader saw, whatever the container is by
+        // now: Splunk's own beforeprint handler has already narrowed the page,
+        // and a chart drawn at that width prints with its labels colliding.
+        // A page may shape the capture through two custom properties on this
+        // element: --rk-print-width, the width in px to draw at, so the
+        // chart's own text lands on paper near its natural size instead of
+        // being scaled down from a wide screen; and --rk-print-aspect, the
+        // height as a fraction of that width, so a chart sheet is filled
+        // rather than striped. Without them the capture is the screen size.
+        if (this._screenW) {
+            var w = this._screenW;
+            var h = this._screenH || this.chart.getHeight();
+            var wantW = 0, aspect = 0;
+            try {
+                var cs = window.getComputedStyle(this.el);
+                wantW = parseFloat(cs.getPropertyValue('--rk-print-width')) || 0;
+                aspect = parseFloat(cs.getPropertyValue('--rk-print-aspect')) || 0;
+            } catch (e) { wantW = 0; aspect = 0; }
+            if (wantW > 0) { w = Math.min(w, Math.round(wantW)); }
+            if (aspect > 0) { h = Math.round(w * aspect); }
+            this.chart.resize({ width: w, height: h });
+        }
+        var url = this.chart.getDataURL({ pixelRatio: 2, backgroundColor: '#ffffff' });
+        // The image stands beside the chart's own element, which is hidden,
+        // in this visualization's element: ECharts owns everything inside its
+        // element and rebuilds it on the next resize, so an image placed in
+        // there prints twice, once as itself and once as the rebuilt canvas.
+        var img = document.createElement('img');
+        img.className = 'rk-print-snapshot';
+        img.alt = '';
+        img.src = url;
+        img.style.width = '100%';
+        img.style.height = 'auto';
+        img.style.display = 'block';
+        host.style.display = 'none';
+        host.parentNode.insertBefore(img, host);
+        this._printImg = img;
+    },
+
+    _printRestore: function () {
+        if (this._printImg && this._printImg.parentNode) {
+            this._printImg.parentNode.removeChild(this._printImg);
+        }
+        this._printImg = null;
+        if (this.chart) { this.chart.getDom().style.display = ''; }
+        if (this._data && this._config) { this.updateView(this._data, this._config); }
+        if (this.chart) { this.chart.resize(); }
+    },
+
     remove: function () {
+        var at = liveCharts.indexOf(this);
+        if (at >= 0) { liveCharts.splice(at, 1); }
         this._disposeChart();
     },
 });

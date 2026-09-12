@@ -819,6 +819,7 @@ under a condition, noted in their row.
 |---|---|
 | **Start here** | What the numbers on every other page mean, and what they do not. The default landing page |
 | **Fleet overview** | How stale is the feed, how many hosts report, where is the risk concentrated |
+| **Executive summary** | One page in the order the questions get asked: what is already exploited, what of that can be reached, how much is open, what was consciously accepted, and how far to trust the figures. A Print or save as PDF button produces three A4 landscape sheets in the browser |
 | **Findings** | Every finding, ranked by EPSS (exploitation likelihood) rather than CVSS |
 | **Remediation** | What was actually fixed, and what merely stopped being reported |
 | **MITRE ATT&CK** | Which adversary techniques the open findings could enable. Context, not evidence |
@@ -832,6 +833,35 @@ under a condition, noted in their row.
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
 | **AI prioritization** | The tiers, scores, rationales and mitigations the pipeline produced, newest per CVE per asset. Present once AI analysis is switched on |
 | **Feed administration** | Build, upload and import bundles. Under the **Administration** menu with the AI, escalation and firewall settings, which only administrators can see |
+
+## Executive summary, and printing it
+
+The Executive summary page answers the questions an executive asks, in the
+order they ask them, and every figure on it is the sibling page's own query:
+the known-exploited count is Fleet overview's table, the reachable count is
+Exposure's column total, open and accepted come from the same hourly roll-up
+as everywhere else. It carries no composite score, because the app cannot
+defend one: the inputs go missing at unrelated rates. It carries no long-run
+trend line either, because closed findings are archived after thirty days and
+a line reconstructed from the current state would dip whenever hosts went
+quiet. What it shows instead is thirty days of movement, by week, with only
+the mitigated bar called evidence of a fix.
+
+**Print or save as PDF (A4 landscape)** is a button on the page. It is the
+page printed by the reader's own browser, as three sheets that are always the
+same shape: the figures, then the reachability matrix and the severity ring,
+then the thirty-day movement, the five to fix first and how to read the page.
+A stylesheet fixes the orientation, prints on white and lays each sheet out
+to fill the paper; the chart visualization re-renders every chart in its
+light palette, at a size chosen for the sheet, and stands an image in front
+of the canvas for the duration of the print, so the charts come out. The
+browser's own Print command produces the same sheets. Splunk's own Export to PDF
+cannot be used for this, because it omits every custom visualization; that
+was tried, and the result was nine pages with the charts missing. Nothing is
+generated on the server and no library is bundled, which is what an
+air-gapped search head allows. It follows that nobody can schedule or email
+it: only a person at a browser can produce it, and the page says so beside
+the button.
 
 ## AI analysis (optional)
 

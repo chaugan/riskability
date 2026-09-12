@@ -23,6 +23,8 @@ CAPTIONS = {
  "admin-escalation-rules": ("Escalation rules (admin)", "Every rule with a switch, the replay of what each would move against the fleet as it stands, and locked rules with the reason they cannot be enabled."),
  "admin-firewall-source":  ("Firewall data source (admin)", "Index or accelerated data model, field mapping, entry points with their scan pressure, freshness; Test source and Show top 100 edges before Save."),
  "start-here":             ("Start here", "The default landing page. What every number on the other pages means and, just as importantly, what it does not."),
+ "executive-summary-print": ("Executive summary, printed", "The same page as the browser prints it: A4 landscape, white paper, the charts re-rendered in the light palette. Sheet one of three carries the figures; the pictures follow, then what changed and what to do."),
+ "executive-summary":      ("Executive summary", "One page for executives, in the order the questions get asked: exploited in the wild, of those reachable, systems with an open vulnerability, risks consciously accepted, how long serious findings stay open, and how far to trust the figures. Every number is the sibling page's own query. The button prints it as three A4 landscape sheets in the browser."),
  "fleet-overview":         ("Fleet overview", "How stale the feed is, how many hosts are reporting, and where the open findings are concentrated."),
  "findings":               ("Findings", "Every finding ranked by EPSS rather than CVSS, with confidence, KEV status and the fixed version where one is known. Column filters narrow what is shown, not what was searched."),
  "remediation":            ("Remediation", "What was actually fixed, and what merely stopped being reported. Installer artifacts closed with their own reason are counted as neither."),
@@ -45,12 +47,11 @@ CAPTIONS = {
  "feed-import-progress":   ("Feed import in progress (admin)", "An import runs on the server and does not need the page kept open. The active feed stays searchable throughout, so importing never blinds the fleet."),
 }
 # The section at the top. Edit when a batch of pages changes.
-RECENT_TITLE = "Changed on 2026-09-05"
+RECENT_TITLE = "Changed on 2026-09-12"
 # The four Administration captures, retaken because the previous ones showed
 # these pages while they lived in a separate riskability-config app, and one
 # added: the AI settings page had never been captured at all.
-RECENT = ["feed-administration", "admin-ai-analysis", "admin-escalation-rules",
-          "admin-firewall-source"]
+RECENT = ["executive-summary", "executive-summary-print"]
 
 
 def when(name):
