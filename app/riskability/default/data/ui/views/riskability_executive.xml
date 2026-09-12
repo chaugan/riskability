@@ -490,8 +490,8 @@
             <div class="rk-exec-fact $x_kev_over_cls$"><span>Past CISA's fix-by date</span><b>$kev_overdue$</b></div>
           </div>
           <span class="rk-exec-sub">On CISA's list of vulnerabilities attackers already use (KEV),
-          and open on at least one of our systems. Grey at zero, never green: a feed built
-          without the KEV catalogue also reads zero.</span>
+          and open on at least one of our systems. <span class="rk-exec-screen-only">Grey at zero,
+          never green: a feed built without the KEV catalogue also reads zero.</span></span>
         </div>
       </html>
     </panel>
@@ -694,7 +694,7 @@
 | eval packages = mvjoin(packages, ", ")
 | eval fix_by = if(isnull(kev_due) OR kev_due="", "not stated", kev_due)
 | eval title = case(isnull(title) OR title="", "No description in the feed for this one.",
-                    len(title) &gt; 220, substr(title, 1, 217) . "...",
+                    len(title) &gt; 160, substr(title, 1, 157) . "...",
                     1=1, title)
 | table title, cve_id, hosts, packages, fix_by
 | rename title AS "What it is", cve_id AS "Vulnerability", hosts AS "Systems", packages AS "Packages", fix_by AS "Fix-by date"</query>

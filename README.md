@@ -851,10 +851,10 @@ the mitigated bar called evidence of a fix.
 page printed by the reader's own browser, as three sheets that are always the
 same shape: the figures, then the reachability matrix and the severity ring,
 then the thirty-day movement, the five to fix first and how to read the page.
-A stylesheet fixes the orientation, prints on white and lays each sheet out
-to fill the paper; the chart visualization re-renders every chart in its
-light palette, at a size chosen for the sheet, and stands an image in front
-of the canvas for the duration of the print, so the charts come out. The
+A stylesheet fixes the orientation, prints on white and sizes each sheet
+against the paper; the chart visualization draws every chart again in its
+light palette as vector SVG and stands that in front of the canvas for the
+duration of the print, so the charts come out sharp at any size. The
 browser's own Print command produces the same sheets. Safari ignores a
 page's own orientation, so a Safari reader picks landscape in the dialog;
 the page says so beside the button. Splunk's own Export to PDF

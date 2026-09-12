@@ -35,7 +35,7 @@ import {
     TitleComponent,
     LegendComponent,
 } from 'echarts/components';
-import { CanvasRenderer } from 'echarts/renderers';
+import { CanvasRenderer, SVGRenderer } from 'echarts/renderers';
 
 import SplunkVisualizationBase from 'api/SplunkVisualizationBase';
 import vizUtils from 'api/SplunkVisualizationUtils';
@@ -48,6 +48,8 @@ echarts.use([
     LegendComponent, MarkLineComponent, DataZoomInsideComponent, PolarComponent,
     GraphicComponent,
     CanvasRenderer,
+    // Print only: the stand-in for each chart is drawn as vector SVG.
+    SVGRenderer,
 ]);
 
 /*
@@ -1962,6 +1964,9 @@ export default SplunkVisualizationBase.extend({
         // ECharts component this tree shaken build does not register throws
         // here, and Splunk replaces the whole panel with "Error rendering",
         // which names neither the chart nor the cause.
+        // Kept for the print stand-in, which draws the same option again as
+        // vector SVG.
+        this._lastOption = option;
         try {
             this.chart.setOption(option, { notMerge: true });
         } catch (e) {
@@ -2227,34 +2232,58 @@ export default SplunkVisualizationBase.extend({
             if (aspect > 0) { h = Math.round(w * aspect); }
             this.chart.resize({ width: w, height: h });
         }
-        // The stand-in is a canvas, not an <img> of a data URL. Safari prints
-        // before it has decoded an image whose source was set inside
-        // beforeprint, and prints a zero-height gap where the chart should
-        // be; a canvas copied synchronously from the chart's own canvas needs
-        // no decoding and prints everywhere. It stands beside the chart's
-        // element, which is hidden, inside this visualization's element:
-        // ECharts owns everything inside its own element and rebuilds it on
-        // the next resize.
-        var opts = { pixelRatio: 2, backgroundColor: '#ffffff' };
+        // The stand-in is vector SVG when the chart can be drawn that way:
+        // the same option rendered again by ECharts' SVG renderer, off
+        // screen, so the print is sharp at any size. Otherwise a canvas
+        // copied synchronously from the chart's own canvas. Never an <img> of
+        // a data URL except as the last resort: Safari prints before it has
+        // decoded an image whose source was set inside beforeprint, and
+        // prints a zero-height gap where the chart should be.
+        //
+        // The stand-in is sized by the page: width is the column, or less
+        // when --rk-print-h (a height, set by the page's print stylesheet)
+        // asks for a shorter box, and the aspect is the drawing's own. It
+        // stands beside the chart's element, which is hidden, inside this
+        // visualization's element: ECharts owns everything inside its own
+        // element and rebuilds it on the next resize.
         var snap = null;
+        var w = this.chart.getWidth();
+        var h = this.chart.getHeight();
         try {
-            if (typeof this.chart.renderToCanvas === 'function') { snap = this.chart.renderToCanvas(opts); }
-            else if (typeof this.chart.getRenderedCanvas === 'function') { snap = this.chart.getRenderedCanvas(opts); }
+            if (this._lastOption) {
+                var tmp = echarts.init(null, null, { renderer: 'svg', ssr: true, width: w, height: h });
+                tmp.setOption(this._lastOption, { notMerge: true });
+                var svg = tmp.renderToSVGString();
+                tmp.dispose();
+                if (svg && svg.indexOf('<svg') === 0) {
+                    snap = document.createElement('div');
+                    snap.innerHTML = svg;
+                    var node = snap.firstElementChild;
+                    if (!node.getAttribute('viewBox')) { node.setAttribute('viewBox', '0 0 ' + w + ' ' + h); }
+                    node.setAttribute('width', '100%');
+                    node.setAttribute('height', '100%');
+                    node.style.display = 'block';
+                }
+            }
         } catch (e) { snap = null; }
         if (!snap) {
-            snap = document.createElement('img');
-            snap.alt = '';
-            snap.src = this.chart.getDataURL(opts);
+            var opts = { pixelRatio: 3, backgroundColor: '#ffffff' };
+            try {
+                if (typeof this.chart.renderToCanvas === 'function') { snap = this.chart.renderToCanvas(opts); }
+                else if (typeof this.chart.getRenderedCanvas === 'function') { snap = this.chart.getRenderedCanvas(opts); }
+            } catch (e2) { snap = null; }
+            if (!snap) {
+                snap = document.createElement('img');
+                snap.alt = '';
+                snap.src = this.chart.getDataURL(opts);
+            }
         }
         snap.className = 'rk-print-snapshot';
-        // ECharts hands the canvas over positioned absolute, which takes it
-        // out of flow: the wrapper collapses to nothing and clips it.
-        snap.style.position = 'static';
-        snap.style.left = '';
-        snap.style.top = '';
-        snap.style.width = '100%';
-        snap.style.height = 'auto';
-        snap.style.display = 'block';
+        // ECharts hands a canvas over positioned absolute, which takes it out
+        // of flow: the wrapper collapses to nothing and clips it.
+        snap.style.cssText = 'display:block;position:static;left:auto;top:auto;height:auto;'
+            + 'aspect-ratio:' + w + ' / ' + h + ';'
+            + 'width:min(100%, calc(var(--rk-print-h, 9999px) * ' + (w / h).toFixed(4) + '));';
         host.style.display = 'none';
         host.parentNode.insertBefore(snap, host);
         var img = snap;

@@ -35,16 +35,63 @@
     // Browsers take the suggested PDF file name from document.title. Set it
     // for the print and put it back afterwards, so the tab does not carry the
     // date for the rest of the session.
+    // The three sheets. Every row before the chart row is the figures sheet
+    // (banners included: they are hidden unless they matter), the chart row
+    // is the second, everything after it the third. The rows are moved into
+    // three sections for the duration of the print and moved back after, so
+    // the stylesheet has one page break per sheet to place and nothing else.
+    // Splunk keeps its references to the panels; moving them does not
+    // disturb it, and the screen layout is restored before anyone sees it.
+    var sheets = null;
+
+    function buildSheets() {
+        if (sheets) { return; }
+        var charts = document.getElementById("rk_exec_charts");
+        if (!charts || !charts.parentNode) { return; }
+        var parent = charts.parentNode;
+        var rows = [];
+        for (var i = 0; i < parent.children.length; i++) {
+            if (parent.children[i].classList.contains("dashboard-row")) { rows.push(parent.children[i]); }
+        }
+        var groups = [[], [], []];
+        var at = 0;
+        for (var j = 0; j < rows.length; j++) {
+            if (rows[j] === charts) { at = 1; groups[1].push(rows[j]); at = 2; continue; }
+            groups[at].push(rows[j]);
+        }
+        sheets = [];
+        for (var g = 0; g < groups.length; g++) {
+            if (!groups[g].length) { continue; }
+            var section = document.createElement("section");
+            section.className = "rk-sheet";
+            parent.insertBefore(section, groups[g][0]);
+            for (var k = 0; k < groups[g].length; k++) { section.appendChild(groups[g][k]); }
+            sheets.push(section);
+        }
+    }
+
+    function unbuildSheets() {
+        if (!sheets) { return; }
+        for (var i = 0; i < sheets.length; i++) {
+            var section = sheets[i];
+            while (section.firstChild) { section.parentNode.insertBefore(section.firstChild, section); }
+            section.parentNode.removeChild(section);
+        }
+        sheets = null;
+    }
+
     function enterPrint() {
         var date = stampNow();
         if (savedTitle === null) { savedTitle = document.title; }
         document.title = "Riskability executive summary " + date;
         document.body.classList.add("rk-exec-printing");
+        try { buildSheets(); } catch (e) { }
     }
 
     function leavePrint() {
         if (savedTitle !== null) { document.title = savedTitle; savedTitle = null; }
         document.body.classList.remove("rk-exec-printing");
+        try { unbuildSheets(); } catch (e) { }
     }
 
     document.addEventListener("click", function (ev) {

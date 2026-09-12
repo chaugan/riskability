@@ -153,9 +153,9 @@
      2. the two pictures that explain them: the matrix and the severity ring;
      3. what changed and what to do: movement, the five to fix first, and
         how to read the page.
-   Everything below is scoped to print so the screen is untouched. Sheet
-   width at these margins is 1047 CSS px, height 699; the figures sheet lays
-   out at natural size, the other two are zoomed per row to fit.
+   Everything below is scoped to print so the screen is untouched. The
+   script wraps the rows into the three sheets at print time; this sheet
+   sizes what is in them against the paper.
    ====================================================================== */
 @page {
   size: A4 landscape;
@@ -193,7 +193,7 @@
     box-shadow: none !important;
   }
   .dashboard-panel { border: 1px solid #d5d8dc; }
-  .panel-title { color: #24292e !important; font-size: 13px; }
+  .panel-title { color: #24292e !important; font-size: 13px; padding: 6px 0 4px !important; }
   .single-value .under-label { color: #5c6773 !important; }
   /* No single values on this page today; kept so one added later prints in
      ink rather than in the dark theme's white. No !important, so the inline
@@ -208,9 +208,11 @@
   .rk-exec-calm b   { color: #2f7a35 !important; }
   .rk-exec-big.rk-exec-big-alarm { color: #a4302a !important; }
   .rk-exec-big.rk-exec-big-quiet { color: #5c6773 !important; }
-  /* A shade larger than on screen: paper has no hover and no zoom. */
+  /* The headline figures a shade larger than on screen; the small print as
+     on screen, tightened, so the figures sheet keeps its slack. */
   .rk-exec-big { font-size: 38px; }
-  .rk-exec-sub, .rk-exec-fact, .rk-exec-fact span, .rk-exec-asof { font-size: 12px; }
+  .rk-exec-sub, .rk-exec-fact, .rk-exec-fact span, .rk-exec-asof { font-size: 11px; line-height: 1.35; }
+  .rk-exec-screen-only { display: none !important; }
   .rk-exec-fact b { font-size: 20px; white-space: nowrap; }
   /* Four facts across a half-sheet card: a date and time may take two lines
      rather than run past the card's edge. */
@@ -236,15 +238,15 @@
   /* The closing line of the last sheet, in normal flow. */
   .rk-exec-foot {
     display: block;
-    margin-top: 10px;
+    margin-top: 6px;
     padding-top: 4px;
     border-top: 1px solid #d5d8dc;
     color: #5c6773 !important;
-    font-size: 8pt;
+    font-size: 7.5pt;
     line-height: 1.3;
   }
-  .dashboard-header h2 { font-size: 22px; margin-bottom: 4px; }
-  .dashboard-header .dashboard-description { font-size: 11.5px; margin-bottom: 4px; }
+  .dashboard-header h2 { font-size: 22px; margin: 0 0 2px !important; }
+  .dashboard-header .dashboard-description { font-size: 11px; margin: 0 0 6px !important; }
 
   /* The visualization stands a PNG in front of each canvas while printing;
      let the panel and Splunk's fixed-height wrappers take the image's
@@ -257,7 +259,8 @@
     min-height: 0 !important;
     overflow: visible !important;
   }
-  .rk-print-snapshot { display: block; position: static !important; width: 100%; height: auto; }
+  .rk-print-snapshot { display: block; position: static !important; }
+  .rk-print-snapshot svg { display: block; width: 100%; height: 100%; }
 
   /* The fix-first table: Splunk's print sheet forces every cell to wrap and
      break words, which turns "Vulnerability" into three lines and splits
@@ -266,8 +269,9 @@
      a third wider. */
   #rk_exec_bottom table, #rk_exec_bottom table td, #rk_exec_bottom table th {
     font-family: "Splunk Platform Sans", "Proxima Nova", Roboto, Droid, "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-    font-size: 11px !important;
+    font-size: 10px !important;
   }
+  #rk_exec_bottom table td { line-height: 1.3 !important; padding: 3px 5px !important; }
   #rk_exec_bottom table th,
   #rk_exec_bottom table td:nth-child(2), #rk_exec_bottom table td:nth-child(5) {
     white-space: nowrap !important; overflow-wrap: normal !important; word-break: normal !important;
@@ -278,13 +282,25 @@
   .dashboard-panel:has(.rk-exec-print-bar) { display: none !important; }
   .dashboard-cell:has(.rk-exec-print-bar) { display: none !important; }
 
-  /* Sheets. The figures sheet is natural size. The two chart rows are each
-     a sheet of their own, zoomed to fill it; the how-to-read note follows
-     the fix-first row on the third. A panel or card never splits. */
+  /* Sheets. The script wraps the rows into three sections for the print,
+     each one sheet: the figures; the two pictures; what changed and what to
+     do. A section ends with a page break and nothing else asks for one, so
+     the print is always the same shape. Rows are sized against the paper
+     (vh), because a browser lays a print out at its own idea of the page:
+     Chromium at the sheet's own width, Safari a quarter wider and then
+     shrunk, so a fixed pixel height fills one and leaves the other half
+     empty. A panel or card never splits. */
+  .dashboard-body, .dashboard-body .dashboard.view-mode, .dashboard-layout-row-column { display: block !important; }
+  .rk-sheet { break-after: page; page-break-after: always; }
+  .rk-sheet:last-child { break-after: auto; page-break-after: auto; }
   .dashboard-panel, .rk-exec-card { break-inside: avoid; page-break-inside: avoid; }
   .panel-title { break-after: avoid; page-break-after: avoid; }
-  #rk_exec_charts, #rk_exec_bottom { break-inside: avoid; page-break-inside: avoid; break-before: page; page-break-before: always; }
-  .dashboard-header, #rk_exec_head, #rk_exec_tiles, #rk_exec_tiles2 { zoom: 0.94; }
-  #rk_exec_charts { zoom: 0.98; }
-  #rk_exec_bottom, #rk_exec_note { zoom: 0.92; }
+  #rk_exec_tiles .rk-exec-card { min-height: 20vh; }
+  #rk_exec_tiles2 .rk-exec-card { min-height: 12vh; }
+  #rk_exec_charts { --rk-print-h: 60vh; }
+  #rk_exec_bottom { --rk-print-h: 46vh; }
+  #rk_exec_note .rk-status { font-size: 11px; }
+  /* Banners are the data-state warnings above the tiles; on paper they must
+     not cost the figures their sheet. */
+  [id^="rk_exec_banner_"] .rk-status { font-size: 10.5px; padding: 4px 8px; margin: 0; }
 }
