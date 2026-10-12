@@ -23,6 +23,12 @@ What is defended, and why each one is worth a test:
    goes back and forth.
 6. The chart's row contract: node_mark is column 7 and rk_labels after it,
    because the chart reads rows by position.
+7. The page reads the walk's collections and never the firewall index: the
+   chart, the path table and the jump list all start from inputlookup, the
+   chart trims through riskabilitywalk in view mode, the listeners come in
+   through inputlookup append rather than a subsearch with a row ceiling, the
+   page opens on CVE-enabled jumps with a per-hop cap, and the two jobs that
+   write the collections are scheduled after the assess job.
 """
 import re
 import sys
@@ -71,7 +77,8 @@ check('mvmap(' in reach, 'the rank must be computed per vector, a CVE can carry 
 chain = view[view.index('<title>Possible jumps'):view.index('<title>Every path')]
 check('rk_exploit' not in chain and 'EPSS 50%' not in chain,
       'the chain must not grade an edge from KEV or EPSS')
-check('`riskability_route_hop_class`' in chain, 'the chain must grade through riskability_route_hop_class')
+check('`riskability_route_hop_class`' in macros[macros.index('[riskability_route_edges]'):],
+      'the edge macro must grade through riskability_route_hop_class')
 
 # 4. the macro walks findings to ports with lookup, not join
 hop = macros[macros.index('[riskability_route_hop_class]'):]
@@ -82,20 +89,56 @@ check('lookup riskability_exposure_lookup hostname, package OUTPUT port' in hop,
 check('rk_n_wire' in hop and 'rk_wire_text' in hop,
       'the macro must emit a count and a text, a join keeps only the first multivalue')
 
-# 5. the path table
+# 5. the path table reads the walk's paths, worst first, capped and honest about it
 paths = view[view.index('<title>Every path'):view.index('<title>Findings at the clicked')]
-check('NOT match(mvindex(split(rk_p1, "|"), 0), "(^|→)" . dst . "(→|$$)")' in paths,
-      'path growth must refuse to revisit a host')
-check('"^(C*).*$$"' in paths, 'the CVE-only run must be measured from the flags')
+check('| inputlookup riskability_routepaths_lookup' in paths, 'the path table must read the paths collection')
+check('sort 0 - full_cve, - jumps' in paths and '| head 500' in paths, 'paths come worst first and capped')
 check('Where the CVE-only path stops' in paths, 'the path table must name the stop')
-check('rk_p5' in paths and 'rk_p6' not in paths, 'paths are grown to five hops, the depth the chain walks')
-check('mvjoin(rk_wire_text, " / ")' in paths and '"; "' not in paths,
-      'multi-port text must not use the hop separator')
+check('paths_truncated' in paths, 'the page must say when the walk cut the list')
+check('full_cve == 1' in paths, 'the Show filter must narrow paths the way it narrows the graph')
 
 # 6. the row contract
-check('| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, rk_labels</query>' in chain,
+check('| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, rk_labels, ' in chain,
       'node_mark must be column 7, before rk_labels')
 check("rows[i][7]" in viz, 'the chart must read the mark from column 7')
+
+# 7. collections in, firewall index out
+check('| inputlookup riskability_routeedges_lookup\n| riskabilitywalk mode=view' in chain,
+      'the chart must read the edge collection and trim through riskabilitywalk mode=view')
+check('entry=$entry_filter|s$ host=$host_filter|s$ top=$top$ classes=$show|s$' in chain,
+      'the view mode must take the four page inputs')
+check('riskability_fw_edges' not in chain and 'riskability_netevidence_lookup' not in chain,
+      'the chart must not read the firewall index or the evidence ledger itself')
+check('| inputlookup append=true riskability_routelisteners_lookup' in chain,
+      'listeners must come in through inputlookup append, not a subsearch')
+check('<default>cve</default>' in view and '<default>25</default>' in view,
+      'the page must open on CVE-enabled jumps with a per-hop cap')
+check('rk-route-status' in view and '$rk_hidden$' in view, 'the page must say how many hosts it left out')
+jumps = view[view.index('<title>The jumps, listed'):]
+check('| inputlookup riskability_routeedges_lookup' in jumps and '| head 1000' in jumps,
+      'the jump list must read the edge collection, capped')
+ss = open(ROOT + '/app/riskability/default/savedsearches.conf', encoding='utf-8').read()
+walkjob = ss[ss.index('[Riskability - walk observed jumps]'):]
+walkjob = walkjob[:walkjob.index('\n[', 1)]
+check('riskabilitywalk mode=grade' in walkjob and 'riskabilitywalk mode=paths' in walkjob
+      and 'outputlookup riskability_routeedges_lookup' in walkjob and 'outputlookup riskability_routepaths_lookup' in walkjob,
+      'the walk job must write both collections')
+import re as _re
+def cron_minute(name):
+    block = ss[ss.index('[%s]' % name):]
+    return int(_re.search(r'cron_schedule = (\d+) ', block).group(1))
+check(cron_minute('Riskability - assess observed permitted traffic') < cron_minute('Riskability - walk observed jumps')
+      < cron_minute('Riskability - roll up route listeners'),
+      'the walk runs after the assess job and before the listeners roll-up')
+cmds = open(ROOT + '/app/riskability/default/commands.conf', encoding='utf-8').read()
+check('[riskabilitywalk]' in cmds and 'local = true' in cmds[cmds.index('[riskabilitywalk]'):],
+      'riskabilitywalk must be declared and local')
+for coll in ('riskability_routeedges', 'riskability_routepaths', 'riskability_routelisteners'):
+    cc = open(ROOT + '/app/riskability/default/collections.conf', encoding='utf-8').read()
+    tc = open(ROOT + '/app/riskability/default/transforms.conf', encoding='utf-8').read()
+    check('[%s]' % coll in cc and 'replicate = false' in cc[cc.index('[%s]' % coll):][:400],
+          '%s must exist and not replicate' % coll)
+    check('[%s_lookup]' % coll in tc, '%s_lookup must exist' % coll)
 
 # the findings grid says what each finding needs over the wire
 find = view[view.index('<title>Findings at the clicked'):view.index('<title>The jumps, listed')]

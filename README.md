@@ -827,7 +827,7 @@ under a condition, noted in their row.
 | **Host overview** | Every host at a glance, split by filesystem root. Under the Hosts menu with Host detail |
 | **Host detail** | Everything known about one machine: what has been measured on it and what has not, what it is configured to run, its Windows patch level, and what on it is no longer supported |
 | **Network evidence** | Which listening ports a permitted flow has actually been observed reaching, graded, and which have never been reached. Under the Network analysis menu, present once a firewall source is named |
-| **Routes** | The jumps a permitted flow has been seen to make, from a declared entry point onward, each graded by what an attacker would need to take it: a CVE alone, a foothold first, or something the app does not know about. Every path listed with where its CVE-only stretch stops. Under the Network analysis menu, present once a firewall source is named |
+| **Routes** | The jumps a permitted flow has been seen to make, from a declared entry point onward, each graded by what an attacker would need to take it: a CVE alone, a foothold first, or something the app does not know about. Every path listed with where its CVE-only stretch stops. Read from an hourly walk, opened on CVE-enabled jumps with a per-hop cap, so it draws an estate of thousands. Under the Network analysis menu, present once a firewall source is named |
 | **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
@@ -1318,6 +1318,24 @@ says so beside the graph. The grading lives in two macros,
 vector letters the escalation rules use, so the two cannot disagree about what
 network reachable means.
 
+**Built for an estate of thousands, not a demo of fifteen.** The page never
+walks the firewall index itself. An hourly job, *Riskability - walk observed
+jumps*, reduces the firewall edges once, grades them, and hands them to
+`riskabilitywalk`, a search command that does the walk in Python: the hop each
+host sits at from each entry point, the CVE-only reach, and the paths worth
+listing. It writes two collections, the positioned edges and the paths, and a
+second job writes what listens behind the ports the graph reaches. The page
+reads those three collections. The paths are capped by the job, at two
+thousand, worst first, following at most eight onward jumps from any host and
+stopping one jump past the first that is not CVE-enabled; the table says when
+the cap cut the list. The graph opens on CVE-enabled jumps only, with at most
+twenty-five hosts per hop, the worst kept, and says how many it left out; two
+inputs widen it to every observed jump and every host. The same command trims
+the graph for the chosen entry point and host at page load, over the
+collection, in milliseconds. The paths the sample fleet produces include one
+that stays CVE-enabled for five jumps from the internet edge, which is what a
+worst case on this page looks like.
+
 **A site without firewall logs loses nothing.** Every finding grades `unknown`,
 carrying a reason that says nothing is known about permitted traffic to that
 host and that this is not evidence nothing can reach it, and every priority,
@@ -1494,6 +1512,7 @@ job inspector and logs.
 | `riskability_feed_admin` | REST handler (`/riskability/feed`) | What **Feed administration** talks to: upload, stage, import, verify |
 | `riskability_exceptions` | REST handler (`/riskability/exceptions`) | Create, edit and revoke risk exceptions; writes the audit trail |
 | `riskabilityvercmp` | custom search command | Compares two versions the way the matcher would, for debugging a verdict |
+| `riskabilitywalk` | custom search command (`bin/riskability_walk_cmd.py`) | Walks the observed-jump graph: hops per entry point, the CVE-only reach, the paths worth listing, and the trimmed view the Routes page draws |
 | 28 scheduled searches | `savedsearches.conf` | The hourly pipeline below |
 
 The matcher is split into small modules with one job each, because each is a

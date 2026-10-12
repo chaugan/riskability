@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Turn the FW Route Explorer sample edges into firewall events for a demo index.
 
-    python3 tools/demo/make_firewall_events.py [--days 7 | --minutes 45] [--end EPOCH] > events.json
+    python3 tools/demo/make_firewall_events.py [--days 7 | --minutes 45] [--end EPOCH] [--chain-only] > events.json
+
+--chain-only emits only the worst-case chain (CHAIN below), for topping up a
+demo index that already holds the sample.
 
 --end pins the newest event to a moment rather than to now. It exists because
 the identity guard is strict on purpose: a flow is attributed to a host only
@@ -44,6 +47,22 @@ LANDING = [
     ("203.0.113.22", "62.238.42.61",   8443,  "internet edge -> shared address, refused by design"),
     ("10.0.45.5",    "62.238.42.61",   5432,  "sample -> shared address, refused by design"),
 ]
+# A worst case, on purpose: a chain from the internet edge that lands on a
+# CVE-enabled listener at every jump, so the routes page has a path that stays
+# red for four jumps. The sample's own lateral flows hit ports nothing in the
+# demo fleet listens on (1433, 1521, 49152), which is realistic and shows the
+# "permitted only" grade, and it also means no sample path stays red past the
+# first jump. These land where the demo fleet's vulnerable software listens:
+# nginx on demo-app-01, postgres on demo-db-01, bind on demo-core-dns, the KDC
+# on demo-core-ad, tomcat on demo-app-03.
+CHAIN = [
+    ("203.0.113.40", "10.20.30.10",   443,  "internet edge -> demo-app-01:443 (nginx)"),
+    ("203.0.113.41", "10.20.30.10",   443,  "internet edge -> demo-app-01:443 (nginx)"),
+    ("10.20.30.10",  "192.168.10.10", 5432, "demo-app-01 -> demo-db-01:5432 (postgres)"),
+    ("192.168.10.10", "192.168.50.10", 53,  "demo-db-01 -> demo-core-dns:53 (bind)"),
+    ("192.168.50.10", "192.168.50.12", 88,  "demo-core-dns -> demo-core-ad:88 (kdc)"),
+    ("192.168.50.12", "10.20.30.12",  8080, "demo-core-ad -> demo-app-03:8080 (tomcat)"),
+]
 CAP = 120          # events per edge at most
 DAYS = 7
 random.seed(7)
@@ -71,6 +90,10 @@ def main():
                           min(CAP, int(row["sessions"])), "sample"))
     for src, dst, port, note in LANDING:
         edges.append((src, dst, port, 40, note))
+    if "--chain-only" in sys.argv:
+        edges = []
+    for src, dst, port, note in CHAIN:
+        edges.append((src, dst, port, 60, note))
     n = 0
     for src, dst, port, count, note in edges:
         for _ in range(count):
