@@ -161,7 +161,7 @@
                is. Nothing here reads the firewall index: on an estate of
                thousands that is the difference between a page and a job. -->
           <query>| inputlookup riskability_routeedges_lookup
-| riskabilitywalk mode=view entry=$entry_filter|s$ host=$host_filter|s$ top=$top$ classes=$show|s$
+| riskabilitywalk mode=view entry=$entry_filter|s$ host=$host_filter|s$ top=$top|s$ classes=$show|s$
 | eval rk_portnode = dst . ":" . port
 | eval rk_edge_label = protocol . "/" . port . " · " . sessions . " sessions" . if(n_ports > 1, " · " . n_ports . " ports", "")
 | eval src_kind = if(src_kind == "entry", "0:entry", (hop - 1) . ":host"), dst_kind = hop . ":host"

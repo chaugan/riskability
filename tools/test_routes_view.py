@@ -105,7 +105,7 @@ check("rows[i][7]" in viz, 'the chart must read the mark from column 7')
 # 7. collections in, firewall index out
 check('| inputlookup riskability_routeedges_lookup\n| riskabilitywalk mode=view' in chain,
       'the chart must read the edge collection and trim through riskabilitywalk mode=view')
-check('entry=$entry_filter|s$ host=$host_filter|s$ top=$top$ classes=$show|s$' in chain,
+check('entry=$entry_filter|s$ host=$host_filter|s$ top=$top|s$ classes=$show|s$' in chain,
       'the view mode must take the four page inputs')
 check('riskability_fw_edges' not in chain and 'riskability_netevidence_lookup' not in chain,
       'the chart must not read the firewall index or the evidence ledger itself')
