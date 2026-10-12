@@ -145,24 +145,39 @@ def merge_edges(rows):
         last_seen = _num(_first(row.get("edge_last_seen")), 0)
         port = str(_first(row.get("port")) or "")
         proto = str(_first(row.get("protocol")) or "tcp")
+        # A graded row (one per pair, from the collection) already lists every
+        # port the pair was seen on; a raw row (one per port) names only its
+        # own. Both are honoured, so a view re-merging graded rows keeps the
+        # whole port list rather than the best port alone.
+        ports = []
+        for item in _listify(row.get("ports")):
+            for p in str(item).split(","):
+                if p.strip() and p.strip() not in ports:
+                    ports.append(p.strip())
+        if not ports and port:
+            ports = [port]
         key = (src, dst)
         cur = edges.get(key)
-        if cur is None:
-            edges[key] = {
+        fresh = cur is None
+        if fresh:
+            cur = edges[key] = {
                 "src": src, "dst": dst, "kind": "entry" if kind == "entry" else "host",
                 "rk_rank": rank, "rk_class": class_of(rank),
                 "port": port, "protocol": proto,
-                "sessions": sessions, "n_ports": 1,
+                "sessions": sessions, "n_ports": 0,
                 "edge_last_seen": last_seen,
                 "wire_text": str(_first(row.get("wire_text")) or ""),
                 "foot_text": str(_first(row.get("foot_text")) or ""),
-                "ports": [port] if port else [],
+                "ports": [],
             }
+        else:
+            cur["sessions"] += sessions
+        for p in ports:
+            if p not in cur["ports"]:
+                cur["ports"].append(p)
+        cur["n_ports"] = len(cur["ports"])
+        if fresh:
             continue
-        cur["sessions"] += sessions
-        cur["n_ports"] += 1
-        if port and port not in cur["ports"]:
-            cur["ports"].append(port)
         if last_seen > cur["edge_last_seen"]:
             cur["edge_last_seen"] = last_seen
         if rank > cur["rk_rank"]:
@@ -481,6 +496,7 @@ def view(rows, entry="*", host="*", top=25, classes=None, max_hops=DEFAULT_MAX_H
     for (s, d), edge in edges.items():
         row = dict(edge)
         row.pop("ports", None)
+        row["ports"] = ",".join(edge["ports"])
         row["sessions"] = _tidy(row["sessions"])
         row["edge_last_seen"] = _tidy(row["edge_last_seen"])
         # The hop is the edge's, not the destination's: one past where its

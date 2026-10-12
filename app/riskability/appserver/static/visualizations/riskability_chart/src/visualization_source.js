@@ -1552,9 +1552,19 @@ function buildChainGraph(rows, t, config) {
         // CVE-only frontier can be read off the graph without tracing edges.
         var tMark = rows[i].length > 7 && rows[i][7] !== null && rows[i][7] !== undefined ? String(rows[i][7]).toLowerCase() : '';
         if (tMark) { nodes[tid].mark = tMark; }
+        // Optional, columns 8 to 10: what the tooltip says about the edge
+        // beyond its label, and the point a click on the edge selects. A
+        // route's edge is a jump onto one or more ports; its label names the
+        // best port and the software there, the note lists every port and
+        // what is open behind it, and a click selects "host · ports ..." so
+        // the page can open those findings rather than the whole host's.
+        var cell = function (k) {
+            return rows[i].length > k && rows[i][k] !== null && rows[i][k] !== undefined ? String(rows[i][k]) : '';
+        };
         links.push({ source: sid, target: tid, value: v,
                      targetKind: tKind, sourceKind: sKind,
-                     rkLabel: eLabel, rkClass: eClass });
+                     rkLabel: eLabel, rkClass: eClass,
+                     rkNote: cell(8), rkPoint: cell(9), rkPointKind: cell(10) });
     }
 
     // Lay each column out top to bottom, busiest first, then two barycentre
@@ -1601,7 +1611,12 @@ function buildChainGraph(rows, t, config) {
     // ECharts' hideOverlap cannot do this job: it drops labels only after they
     // have collided, so in a tight column it discards most of them and keeps an
     // arbitrary few.
-    var LABEL_PITCH = 15;
+    // Pixels of height per node in the densest column. Fifteen names every
+    // node in a column of fix versions; a route's nodes are bubbles up to
+    // thirty pixels across with a port label on the edge beside them, so
+    // the routes page asks for more through chainPitch and the panel grows
+    // with the densest hop rather than packing it.
+    var LABEL_PITCH = Math.max(8, num(config && config.chainPitch) || 15);
     var CHROME = 62;
     // A CVE that a dozen distributions have each patched produces a column of
     // sixty fix versions, and the panel was sized for a fraction of that. Rather
@@ -1612,7 +1627,7 @@ function buildChainGraph(rows, t, config) {
     // Capped, because a pathological CVE should not produce a page of chart. Past
     // the cap the label budget still degrades by value, which is the old
     // behaviour and the only sensible one left.
-    var CHAIN_MAX_HEIGHT = 1600;
+    var CHAIN_MAX_HEIGHT = Math.max(1600, LABEL_PITCH * 60);
     var densest = 0;
     Object.keys(byLayer).forEach(function (L) {
         densest = Math.max(densest, byLayer[L].length);
@@ -1684,6 +1699,7 @@ function buildChainGraph(rows, t, config) {
             // behind here, which is why every edge once read "N CVEs through
             // this hop" with N being its session count.
             rkLabel: l.rkLabel, rkClass: l.rkClass,
+            rkNote: l.rkNote, rkPoint: l.rkPoint, rkPointKind: l.rkPointKind,
             lineStyle: {
                 width: vmax > 0 ? 1 + 2.4 * (l.value / vmax) : 1.4,
                 // The class overrides the source colour: a red edge is the
@@ -1692,11 +1708,18 @@ function buildChainGraph(rows, t, config) {
                 opacity: es.opacity,
                 type: es.type,
             },
-            label: (l.rkLabel && /:host$/.test(l.sourceKind) && /:host$/.test(l.targetKind))
-                ? { show: true, formatter: shorten(l.rkLabel, 22), fontSize: 9,
+            // A host-to-host jump carries its label, the port and the
+            // software listening there, at rest. A jump from an entry point
+            // carries the same label but shows it on hover only: an entry
+            // point fans out to every hop-1 host, the fans cross, and their
+            // labels at mid-edge overprint one another into nothing. On a
+            // capped estate that is twenty-five labels on one spot.
+            label: (l.rkLabel && /:(host|entry)$/.test(l.sourceKind) && /:host$/.test(l.targetKind))
+                ? { show: /:host$/.test(l.sourceKind), formatter: shorten(l.rkLabel, 30), fontSize: 9,
                     color: t.muted, position: 'middle',
                     backgroundColor: t.tooltipBg, padding: [1, 3], borderRadius: 2 }
                 : undefined,
+            emphasis: l.rkLabel ? { label: { show: true } } : undefined,
         };
     });
 
@@ -1741,8 +1764,9 @@ function buildChainGraph(rows, t, config) {
                     var head = escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
                         escapeHtml(chainNodeLabel(p.data.target));
                     var says = EDGE_SAYS[p.data.rkClass] ? ' &#183; <b>' + escapeHtml(EDGE_SAYS[p.data.rkClass]) + '</b>' : '';
+                    var note = p.data.rkNote ? '<br/>' + escapeHtml(p.data.rkNote) : '';
                     if (p.data.rkLabel) {
-                        return head + ' &#183; ' + escapeHtml(p.data.rkLabel) + says;
+                        return head + ' &#183; ' + escapeHtml(p.data.rkLabel) + says + note;
                     }
                     // No label: say what the width IS. On a route the left-hand
                     // edges are sessions and only the edges into the findings
@@ -1907,6 +1931,9 @@ export default SplunkVisualizationBase.extend({
                 colorScale: this._opt(config, 'colorScale'),
                 // Lets a panel relabel the chain's columns. See chainSchema.
                 chainKinds: this._opt(config, 'chainKinds'),
+                // Height per node in the chain's densest column; the panel
+                // grows to fit. See LABEL_PITCH in buildChainGraph.
+                chainPitch: this._opt(config, 'chainPitch'),
                 // The panel's pixel height, so a builder can decide what fits
                 // rather than guess at a row count. Zero while the panel is
                 // still hidden, hence the fallback at the point of use.
@@ -2061,8 +2088,12 @@ export default SplunkVisualizationBase.extend({
                 // A graph node's name carries its layer, so that a container
                 // and a package sharing a name stay separate. The dashboard
                 // wants the name back without it.
+                // An edge that names its own point (a route's jump names the
+                // ports it landed on) reports that; otherwise its target.
                 values = params.dataType === 'edge'
-                    ? [chainNodeLabel(params.data.target), params.data.targetKind]
+                    ? (params.data.rkPoint
+                        ? [params.data.rkPoint, params.data.rkPointKind || params.data.targetKind]
+                        : [chainNodeLabel(params.data.target), params.data.targetKind])
                     : [chainNodeLabel(params.name), params.data && params.data.rkKind];
             } else if (chartType === 'sankey') {
                 values = params.dataType === 'edge'

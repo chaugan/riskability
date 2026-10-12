@@ -36,19 +36,17 @@
   </search>
 
   <init>
-    <set token="chain_labels">c0:entry point,c1:hop 1,c2:software listening,c3:open findings</set>
+    <set token="chain_labels">c0:entry point,c1:hop 1</set>
   </init>
 
   <!-- The chain's columns are hops, and how many there are depends on the
-       data, so the column labels are computed: entry, one label per hop up
-       to the deepest, then software and findings. The same hop walk as the
-       chain, reduced to a number. -->
+       data, so the column labels are computed: entry, then one label per hop
+       up to the deepest. -->
   <!-- The column labels come from the chain search itself (its done handler
        below), so the hop columns are exactly the hops the drawn chain has.
        A separate depth search used to count hops over every entry point and
        every host, and labelled three hop columns for an entry that reaches
-       one, which put the software and the findings under "hop 2" and "hop 3"
-       with the two right-hand columns empty. -->
+       one, which left the right-hand columns empty. -->
 
   <row depends="$fw_unconfigured$">
     <panel>
@@ -148,71 +146,47 @@
       <title>Possible jumps, as the firewall has seen them</title>
       <viz type="riskability.riskability_chart">
         <search>
-          <!-- Five layers, left to right: where an attacker starts, the host a
-               permitted flow reached, the port it reached on that host, the
-               software listening there, and the CVEs open in it. The edges
-               come from the walk's collection, positioned and graded by the
-               hourly job; riskabilitywalk in view mode re-walks them for the
-               chosen entry point, keeps the chains through the chosen host,
-               drops the classes not shown and caps the hosts per hop. The
-               software and findings columns come from the listeners roll-up,
-               appended with inputlookup rather than a subsearch so no row
-               ceiling can quietly cut them, then kept only where a drawn port
-               is. Nothing here reads the firewall index: on an estate of
-               thousands that is the difference between a page and a job. -->
+          <!-- Entry points on the left, then one column per hop. Every edge
+               is a jump: a permitted flow the firewall saw land on a host,
+               and the label on it names the port it landed on and the
+               software listening there. There used to be two more columns
+               on the right, "software listening" and "open findings", fed
+               by every port on every host; with a jump on each hop that put
+               the first hop's nginx and the fourth hop's samba side by side
+               in one column, with nothing to say which jump each belonged
+               to. The software belongs to the jump, so it is drawn on the
+               jump: the label names the best port's software, the tooltip
+               lists every port the jump was seen on and what is open behind
+               each, and a click on the jump opens those findings below.
+
+               The edges come from the walk's collection, positioned and
+               graded by the hourly job; riskabilitywalk in view mode
+               re-walks them for the chosen entry point, keeps the chains
+               through the chosen host, drops the classes not shown and caps
+               the hosts per hop. What listens comes from the listeners
+               roll-up through lookup, one row per host and port, which has
+               no row ceiling. Nothing here reads the firewall index: on an
+               estate of thousands that is the difference between a page and
+               a job. -->
           <query>| inputlookup riskability_routeedges_lookup
 | riskabilitywalk mode=view entry=$entry_filter|s$ host=$host_filter|s$ top=$top|s$ classes=$show|s$
-| eval rk_portnode = dst . ":" . port
-| eval rk_edge_label = protocol . "/" . port . " · " . sessions . " sessions" . if(n_ports > 1, " · " . n_ports . " ports", "")
-| eval src_kind = if(src_kind == "entry", "0:entry", (hop - 1) . ":host"), dst_kind = hop . ":host"
-| eval rk_rows = mvappend(src . "|" . src_kind . "|" . dst . "|" . dst_kind . "|" . sessions . "|" . rk_edge_label . "|" . rk_class . "|" . dst_mark,
-                          dst . "|" . dst_kind . "|" . rk_portnode . "|" . hop . ":port|" . sessions . "||" . rk_class . "|")
-| fields rk_rows, rk_portnode, hop, rk_total_hosts, rk_shown_hosts, rk_hidden_hosts
-| mvexpand rk_rows
-| inputlookup append=true riskability_routelisteners_lookup
-| eval rk_listener = if(isnotnull(hostname), 1, null())
-| eventstats values(eval(if(isnull(rk_listener), rk_portnode, null()))) AS rk_drawn,
-            max(hop) AS rk_maxhop, max(rk_total_hosts) AS rk_total, max(rk_shown_hosts) AS rk_shown, max(rk_hidden_hosts) AS rk_hidden
-| eval rk_portnode = coalesce(rk_portnode, hostname . ":" . port)
-| where isnull(rk_listener) OR isnotnull(mvfind(rk_drawn, "^" . replace(rk_portnode, "\.", "\\.") . "$$"))
-| eval rk_cves = coalesce(rk_open, 0), rk_class = coalesce(rk_hop_class, "permitted")
-| eval rk_class = if(rk_class == "local", "permitted", rk_class)
-| eval rk_pkg_label = case(rk_class == "cve", rk_n_wire . " of " . rk_cves . " open usable over the network with no foothold" . if(coalesce(rk_kev, 0) == 1, ", one known-exploited", ""),
-                           rk_class == "foothold", rk_n_foot . " of " . rk_cves . " open reachable over the network, but needing credentials or user action",
-                           rk_class == "unrated", rk_cves . " open, one without a CVSS vector",
-                           rk_cves &gt; 0, rk_cves . " open, none reachable over the network",
-                           1=1, "no open findings")
-| eval rk_rows = if(isnull(rk_listener), rk_rows,
-      mvappend(rk_portnode . "|port|" . package . "|package|" . rk_cves . "|" . rk_pkg_label . "|" . rk_class . "|",
-               if(rk_cves &gt; 0, package . "|package|" . rk_cves . " open, worst " . rk_top . " @ " . hostname . " › " . package . "|cve|" . rk_cves . "||" . rk_class . "|", null())))
-| fields rk_rows, rk_portnode, rk_class, rk_maxhop, hop, rk_total, rk_shown, rk_hidden
-| mvexpand rk_rows
-| where isnotnull(rk_rows)
-| eval source = mvindex(split(rk_rows, "|"), 0), source_kind = mvindex(split(rk_rows, "|"), 1),
-       target = mvindex(split(rk_rows, "|"), 2), target_kind = mvindex(split(rk_rows, "|"), 3),
-       value = tonumber(mvindex(split(rk_rows, "|"), 4)),
-       edge_label = mvindex(split(rk_rows, "|"), 5), edge_class = mvindex(split(rk_rows, "|"), 6),
-       node_mark = mvindex(split(rk_rows, "|"), 7)
-| eval rk_maxhop = coalesce(rk_maxhop, 1)
+| eval rk_p = split(ports, ",")
+| mvexpand rk_p
+| lookup riskability_routelisteners_lookup hostname AS dst, port AS rk_p OUTPUT packages AS rk_sw, rk_summary AS rk_sum
+| eval rk_sw = coalesce(mvjoin(rk_sw, ", "), "nothing the inventory knows of")
+| eval rk_line = "port " . rk_p . ": " . coalesce(rk_sum, rk_sw . ", nothing open")
+| eval rk_best_sw = if(rk_p == port, rk_sw, null()), rk_order = if(rk_p == port, 0, 1)
+| sort 0 src, dst, rk_order, rk_p
+| stats first(src_kind) AS src_kind, first(hop) AS hop, first(port) AS port, first(protocol) AS protocol, first(sessions) AS sessions, first(n_ports) AS n_ports, first(ports) AS ports, first(rk_class) AS rk_class, first(dst_mark) AS dst_mark, first(rk_total_hosts) AS rk_total, first(rk_shown_hosts) AS rk_shown, first(rk_hidden_hosts) AS rk_hidden, values(rk_best_sw) AS rk_best_sw, list(rk_line) AS rk_lines BY src, dst
+| eval rk_best_sw = coalesce(mvindex(rk_best_sw, 0), "unknown listener")
+| eval edge_label = protocol . "/" . port . " · " . rk_best_sw . if(n_ports &gt; 1, " +" . (n_ports - 1), "")
+| eval edge_note = sessions . " sessions" . if(n_ports &gt; 1, " over " . n_ports . " ports", "") . " · " . mvjoin(rk_lines, " · ")
+| eval edge_point = dst . " · port" . if(n_ports &gt; 1, "s ", " ") . replace(ports, ",", ", "), edge_point_kind = "port"
+| eval source_kind = if(src_kind == "entry", "0:entry", (hop - 1) . ":host"), target_kind = hop . ":host"
+| eventstats max(hop) AS rk_maxhop, max(rk_total) AS rk_total, max(rk_shown) AS rk_shown, max(rk_hidden) AS rk_hidden
 | eval rk_labels = "c0:entry point,c1:hop 1" . if(rk_maxhop &gt;= 2, ",c2:hop 2", "") . if(rk_maxhop &gt;= 3, ",c3:hop 3", "") . if(rk_maxhop &gt;= 4, ",c4:hop 4", "") . if(rk_maxhop &gt;= 5, ",c5:hop 5", "")
-| eval rk_labels = rk_labels . ",c" . (rk_maxhop + 1) . ":software listening,c" . (rk_maxhop + 2) . ":open findings"
-| eval rk_pname = case(match(target_kind, ":port$$"), target, source_kind IN ("port", "package"), rk_portnode, 1=1, null())
-| eval rk_phop = if(match(target_kind, ":port$$"), tonumber(replace(target_kind, ":port$$", "")), null())
-| eventstats max(rk_phop) AS rk_my_hop BY rk_pname
-| where NOT source_kind IN ("port", "package") OR isnotnull(rk_my_hop)
-| eventstats values(eval(if(source_kind == "port", rk_class, null()))) AS rk_port_class BY rk_pname
-| eval edge_class = if(match(target_kind, ":port$$") AND isnotnull(rk_port_class), mvindex(rk_port_class, 0), edge_class)
-| eval source_kind = case(source_kind == "port", coalesce(rk_my_hop, 1) . ":port",
-                          source_kind == "package", (rk_maxhop + 1) . ":package", 1=1, source_kind)
-| eval target_kind = case(target_kind == "package", (rk_maxhop + 1) . ":package",
-                          target_kind == "cve", (rk_maxhop + 2) . ":cve", 1=1, target_kind)
-| eval rk_cprio = case(edge_class == "cve", 4, edge_class == "foothold", 3, edge_class == "unrated", 2, edge_class == "permitted", 1, 1=1, 0)
-| eventstats max(rk_cprio) AS rk_cbest BY source, source_kind, target, target_kind
-| where rk_cprio == rk_cbest
-| stats max(value) AS value, values(edge_label) AS edge_label, values(edge_class) AS edge_class, values(node_mark) AS node_mark, first(rk_labels) AS rk_labels, max(rk_total) AS rk_total, max(rk_shown) AS rk_shown, max(rk_hidden) AS rk_hidden BY source, source_kind, target, target_kind
-| eval edge_label = mvindex(edge_label, 0), edge_class = mvindex(mvfilter(edge_class != ""), 0), node_mark = mvindex(mvfilter(node_mark != ""), 0)
-| eventstats max(rk_total) AS rk_total, max(rk_shown) AS rk_shown, max(rk_hidden) AS rk_hidden
-| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, rk_labels, rk_total, rk_shown, rk_hidden</query>
+| rename src AS source, dst AS target, sessions AS value, rk_class AS edge_class, dst_mark AS node_mark
+| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, edge_note, edge_point, edge_point_kind, rk_labels, rk_total, rk_shown, rk_hidden</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
           <done>
@@ -227,16 +201,21 @@
         <option name="riskability.riskability_chart.chartType">chaingraph</option>
         <!-- Columns are HOPS, not kinds. A host reached straight from an entry
              point sits in column 1; a host it reaches sits in column 2; and so
-             on. A port node shares its host's column (kind "port" keeps its
-             colour, the column comes from the hop). Software and findings
-             take the two columns after the deepest hop. The labels below name
-             the columns by position; the kinds after the colon give colours. -->
+             on. The labels below name the columns by position; the kinds after
+             the colon give colours. -->
         <option name="riskability.riskability_chart.chainKinds">$chain_labels$</option>
-        <option name="riskability.riskability_chart.valueLabel">sessions or CVEs</option>
+        <option name="riskability.riskability_chart.valueLabel">sessions</option>
+        <!-- The panel grows with its densest hop: forty pixels per host, so
+             a bubble, its name and the port label on the jump beside it have
+             room, up to a ceiling past which names start to be dropped. The
+             height below is the floor for a small graph, not the size. -->
+        <option name="riskability.riskability_chart.chainPitch">40</option>
         <option name="riskability.riskability_chart.emptyText">Nothing to draw for this choice. With "CVE-enabled jumps" shown, that means no observed jump from an entry point lands on a listener with a finding usable over the network; widen Show to see the rest. If every choice is empty, the walk has not run yet or edges exist but none from a declared entry point has resolved to a host and port in the inventory. Either no entry point is declared, or the addresses the firewall logged are not ones the inventory has seen a host hold. The Network evidence page's "where the app refused to name a host" panel says which.</option>
-        <option name="height">640</option>
+        <option name="height">480</option>
         <!-- A click selects a point and opens the findings behind it in the
-             panel below, on this page. It deliberately does NOT rewrite the
+             panel below, on this page. A click on a jump selects the ports
+             it landed on, so the findings shown are the ones behind that
+             jump and not everything observed on the host. It deliberately does NOT rewrite the
              host filter: the first version did, and a click on the findings
              node set the host filter to "8 open, worst P2", which matched
              nothing and emptied the whole graph. -->
@@ -245,12 +224,12 @@
                "what does this boundary reach", and the answer is the graph
                narrowed to it, which is what the dropdown does. Every other
                kind opens the findings behind the point below. -->
-          <!-- The chart reports the kind as the row named it, "1:port" or
-               "4:package" with the column in front. The entry test matches
-               on the suffix for that reason, and the findings search below
-               strips the prefix itself; a version that compared the prefixed
-               value matched nothing and the panel said "No results found" for
-               every click. -->
+          <!-- The chart reports a node's kind as the row named it, "1:host"
+               with the column in front, and a jump's as "port" outright. The
+               entry test matches on the suffix for that reason, and the
+               findings search below strips the prefix itself; a version that
+               compared the prefixed value matched nothing and the panel said
+               "No results found" for every click. -->
           <condition match="match($row.node_kind$, &quot;entry$&quot;)">
             <set token="entry_filter">$row.node$</set>
             <set token="form.entry_filter">$row.node$</set>
@@ -265,7 +244,7 @@
       </viz>
       <html>
         <div class="rk-route-status" style="margin:6px 0 0;font-size:12px;color:#9aa4ae;">
-          Drawn from the walk at $walk_when$: $walk_edges$ observed jumps across $walk_hosts$ hosts. Showing $rk_shown$ of $rk_total$ hosts; $rk_hidden$ not drawn for this choice of jumps, host and cap.
+          Drawn from the walk at $walk_when$: $walk_edges$ observed jumps across $walk_hosts$ hosts. Showing $rk_shown$ of $rk_total$ hosts; $rk_hidden$ not drawn for this choice of jumps, host and cap. Each host-to-host jump is labelled with the port it landed on and the software listening there; a jump from an entry point shows its label on hover, since a fan of them would overprint. Hover any jump for every port and what is open behind each, click it for the findings.
         </div>
         <div class="rk-exec-legend" style="display:flex;flex-wrap:wrap;gap:6px 22px;margin:8px 0 0;font-size:12px;color:#c3cbd1;">
           <span><span style="display:inline-block;width:28px;border-top:3px solid #dc4e41;vertical-align:middle;margin-right:7px;"></span>CVE-enabled: a jump a CVE alone can make</span>
@@ -284,9 +263,10 @@
           the jump needs a zero-day or permissions the firewall knows nothing about.
           A red ring marks a host an attacker can reach from an entry point on
           CVE-enabled jumps all the way; the first jump of any other colour is where
-          the CVE-only path stops. Widths are sessions on the left and open CVEs on
-          the right; a thin edge is still a path. CVE-enabled means possible, not
-          proven: nothing here was exploited.</span>
+          the CVE-only path stops. The software belongs to the jump, not to a column
+          of its own: a chain through nginx, then PostgreSQL, then Kerberos names each
+          on the jump that reaches it. Widths are sessions; a thin edge is still a
+          path. CVE-enabled means possible, not proven: nothing here was exploited.</span>
         </div>
       </html>
     </panel>
@@ -363,24 +343,20 @@
       <viz type="riskability.riskability_grid">
         <search>
           <!-- What the click selected decides the scope. A host: every open
-               finding on it that sits behind an observed port. A port: the
-               software listening on it, and their findings. A package: its
-               findings on every host in the graph. The findings node names
-               its host and package outright. An entry point selects nothing
-               here, since findings live on hosts, and the panel says so. -->
+               finding on it that sits behind an observed port. A jump, which
+               the chart reports as "host · ports 443, 8080" of kind port: the
+               software listening on those ports, and their findings. An entry
+               point selects nothing here, since findings live on hosts, and
+               the panel says so. -->
           <query>| inputlookup riskability_findings_state_lookup where status="open"
 | eval rk_sel = $sel_node|s$, rk_kind = replace($sel_kind|s$, "^\d+:", "")
-| eval rk_host_of_port = if(rk_kind == "port", mvindex(split(rk_sel, ":"), 0), null())
-| eval rk_port_of_port = if(rk_kind == "port", mvindex(split(rk_sel, ":"), 1), null())
-| eval rk_cve_host = if(rk_kind == "cve", trim(mvindex(split(mvindex(split(rk_sel, " @ "), 1), " › "), 0)), null())
-| eval rk_cve_pkg = if(rk_kind == "cve", trim(mvindex(split(mvindex(split(rk_sel, " @ "), 1), " › "), 1)), null())
+| rex field=rk_sel "^(?&lt;rk_host_of_port&gt;.+?) · ports? (?&lt;rk_plist&gt;.+)$"
+| eval rk_port_rx = if(rk_kind == "port", "^(" . replace(replace(rk_plist, " ", ""), ",", "|") . ")$", null())
 | where case(rk_kind == "host", hostname == rk_sel,
-             rk_kind == "package", package == rk_sel,
-             rk_kind == "cve", hostname == rk_cve_host AND package == rk_cve_pkg,
              rk_kind == "port", hostname == rk_host_of_port,
              1=1, false())
 | lookup riskability_exposure_lookup hostname, package OUTPUT port AS rk_ports
-| where rk_kind != "port" OR mvfind(rk_ports, "^" . rk_port_of_port . "$") &gt;= 0
+| where rk_kind != "port" OR isnotnull(mvfind(rk_ports, rk_port_rx))
 | join type=left hostname
     [ | inputlookup riskability_netevidence_lookup
       | where observed_grade IN ("confirmed observed", "historically observed")
@@ -435,10 +411,12 @@
           where it has not. <i>Over the wire</i> reads the CVSS vector: the
           attack vector, whether privileges are needed, and whether a user has
           to act. A row that says "no foothold needed" is the one that makes a
-          jump CVE-enabled; the rest sit behind the jump without opening it. A host click lists only the findings behind ports
-          traffic was observed to reach, not everything open on the machine.
-          Clicking an entry point narrows the graph to it instead, since an
-          entry point has no findings of its own.</span>
+          jump CVE-enabled; the rest sit behind the jump without opening it. A
+          click on a jump lists the findings on the software listening on the
+          ports that jump landed on; a host click lists only the findings behind
+          ports traffic was observed to reach, not everything open on the
+          machine. Clicking an entry point narrows the graph to it instead,
+          since an entry point has no findings of its own.</span>
         </div>
       </html>
     </panel>
@@ -455,18 +433,25 @@
 | where rk_hostf == "*" OR rk_hostf == "" OR match(src, "^" . replace(rk_hostf, "\*", ".*") . "$$") OR match(dst, "^" . replace(rk_hostf, "\*", ".*") . "$$")
 | sort 0 hop, - rk_rank, - sessions
 | head 1000
+| eval rk_p = split(ports, ",")
+| mvexpand rk_p
+| lookup riskability_routelisteners_lookup hostname AS dst, port AS rk_p OUTPUT packages AS rk_sw, rk_open AS rk_popen, rk_hop_class AS rk_pclass, rk_wire_text AS rk_pwire, rk_foot_text AS rk_pfoot
 | eval Kind = if(kind == "entry", "entry point to host", "host to host, hop " . hop)
-| eval Needs = case(rk_class == "cve", "a CVE alone: " . wire_text, rk_class == "foothold", "a foothold first: " . foot_text, rk_class == "unrated", "cannot say, no CVSS vector", 1=1, "a zero-day or permissions")
+| eval Listening = coalesce(mvjoin(rk_sw, ", "), "nothing the inventory knows of")
+| eval Open = coalesce(rk_popen, 0)
+| eval "This port needs" = case(rk_pclass == "cve", "a CVE alone: " . rk_pwire, rk_pclass == "foothold", "a foothold first: " . rk_pfoot, rk_pclass == "unrated", "cannot say, no CVSS vector", 1=1, "a zero-day or permissions")
+| eval "Jump needs" = case(rk_class == "cve", "a CVE alone", rk_class == "foothold", "a foothold first", rk_class == "unrated", "cannot say", 1=1, "a zero-day or permissions")
 | eval "Last seen" = if(isnotnull(edge_last_seen) AND edge_last_seen &gt; 0, strftime(tonumber(edge_last_seen), "%Y-%m-%d %H:%M"), "")
 | eval "On CVEs alone" = if(mvcount(dst_reach) &gt; 0, "yes", "no")
-| rename src AS From, dst AS To, port AS Port, sessions AS Sessions, ports AS Ports
-| table Kind, From, To, Port, Needs, "On CVEs alone", Sessions, Ports, "Last seen"</query>
+| rename src AS From, dst AS To, rk_p AS Port, sessions AS "Sessions, all ports"
+| table Kind, From, To, Port, Listening, Open, "This port needs", "Jump needs", "On CVEs alone", "Sessions, all ports", "Last seen"</query>
           <earliest>-30d</earliest>
           <latest>now</latest>
         </search>
         <option name="riskability.riskability_grid.wrap">yes</option>
         <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">No jump has been observed from a declared entry point, and no permitted host-to-host flow resolved to two inventory hosts. The list is the walk's, at most a thousand rows, worst first.</option>
+        <option name="riskability.riskability_grid.fitContent">Kind,Port,Open,Jump needs,On CVEs alone,Last seen</option>
+        <option name="riskability.riskability_grid.emptyText">No jump has been observed from a declared entry point, and no permitted host-to-host flow resolved to two inventory hosts. The list is the walk's, at most a thousand jumps, worst first, one row per port each was seen on.</option>
         <option name="height">360</option>
       </viz>
     </panel>

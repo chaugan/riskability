@@ -21,14 +21,22 @@ What is defended, and why each one is worth a test:
 5. The path table stops at the first jump that is not CVE-enabled and never
    revisits a host, so two hosts that talk both ways do not produce a path that
    goes back and forth.
-6. The chart's row contract: node_mark is column 7 and rk_labels after it,
+6. The chart's row contract: node_mark is column 7, the edge's note and the
+   point a click on it selects are columns 8 to 10, and rk_labels after them,
    because the chart reads rows by position.
 7. The page reads the walk's collections and never the firewall index: the
    chart, the path table and the jump list all start from inputlookup, the
-   chart trims through riskabilitywalk in view mode, the listeners come in
-   through inputlookup append rather than a subsearch with a row ceiling, the
-   page opens on CVE-enabled jumps with a per-hop cap, and the two jobs that
-   write the collections are scheduled after the assess job.
+   chart trims through riskabilitywalk in view mode, what listens comes in
+   through lookup rather than a subsearch with a row ceiling, the page opens
+   on CVE-enabled jumps with a per-hop cap, and the two jobs that write the
+   collections are scheduled after the assess job.
+8. The software is on the jump, not in a column of its own. The chart's
+   columns are the entry point and the hops only; every jump's label names
+   its port and the software listening there; the tooltip lists every port
+   the jump was seen on; a click on a jump selects those ports; and the panel
+   grows with its densest hop. A "software listening" column fed by every hop
+   put the first hop's nginx beside the fourth hop's samba with nothing to say
+   which jump each belonged to.
 """
 import re
 import sys
@@ -47,6 +55,7 @@ def check(cond, msg):
 
 
 view = open(VIEW, encoding='utf-8').read()
+walkpy = open(ROOT + '/app/riskability/bin/riskability/walk.py', encoding='utf-8').read()
 viz = open(VIZ, encoding='utf-8').read()
 macros = open(MACROS, encoding='utf-8').read()
 
@@ -62,7 +71,7 @@ classes = {'cve', 'foothold', 'unrated', 'permitted'}
 for c in classes:
     check(re.search(r'\b%s:\s*\{\s*color:' % c, viz) is not None, 'EDGE_STYLE lacks %s' % c)
     check(re.search(r'\b%s: \'' % c, viz[viz.index('EDGE_SAYS'):]) is not None, 'EDGE_SAYS lacks %s' % c)
-    check('"%s"' % c in view, 'the view never emits class %s' % c)
+    check('"%s"' % c in walkpy, 'the walk never emits class %s' % c)
 check('rk-exec-legend' in view, 'the chart has no legend')
 for word in ('CVE-enabled', 'needs a foothold', 'unrated', 'permitted only', 'on CVEs alone'):
     check(word in view[view.index('rk-exec-legend'):view.index('rk-exec-legend') + 2000], 'legend lacks "%s"' % word)
@@ -98,9 +107,11 @@ check('paths_truncated' in paths, 'the page must say when the walk cut the list'
 check('full_cve == 1' in paths, 'the Show filter must narrow paths the way it narrows the graph')
 
 # 6. the row contract
-check('| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, rk_labels, ' in chain,
-      'node_mark must be column 7, before rk_labels')
+check('| fields source, source_kind, target, target_kind, value, edge_label, edge_class, node_mark, edge_note, edge_point, edge_point_kind, rk_labels, ' in chain,
+      'node_mark must be column 7, the edge note and click point 8 to 10, before rk_labels')
 check("rows[i][7]" in viz, 'the chart must read the mark from column 7')
+check("rkNote: cell(8), rkPoint: cell(9), rkPointKind: cell(10)" in viz, 'the chart must read columns 8 to 10 off the edge')
+check("params.data.rkPoint" in viz[viz.index("this.chart.on('click'"):], 'an edge click must report the edge point when the row named one')
 
 # 7. collections in, firewall index out
 check('| inputlookup riskability_routeedges_lookup\n| riskabilitywalk mode=view' in chain,
@@ -109,8 +120,43 @@ check('entry=$entry_filter|s$ host=$host_filter|s$ top=$top|s$ classes=$show|s$'
       'the view mode must take the four page inputs')
 check('riskability_fw_edges' not in chain and 'riskability_netevidence_lookup' not in chain,
       'the chart must not read the firewall index or the evidence ledger itself')
-check('| inputlookup append=true riskability_routelisteners_lookup' in chain,
-      'listeners must come in through inputlookup append, not a subsearch')
+check('| lookup riskability_routelisteners_lookup hostname AS dst, port AS rk_p OUTPUT' in chain,
+      'what listens must come in through lookup, not a subsearch')
+check(re.search(r'\|\s*join\b', chain) is None and 'append=true' not in chain,
+      'the chart search must not join or append')
+
+# 8. the software is on the jump, not in a column of its own
+check('software listening' not in chain[chain.index('<query>'):chain.index('</query>')]
+      and 'open findings' not in chain[chain.index('<query>'):chain.index('</query>')],
+      'the chart must not draw software or findings columns')
+check('c0:entry point,c1:hop 1" . if(rk_maxhop' in chain and ':software' not in chain,
+      'the columns must be the entry point and the hops only')
+check('| eval edge_label = protocol . "/" . port . " · " . rk_best_sw' in chain,
+      'the jump label must name the port and the software listening there')
+check('| mvexpand rk_p' in chain and 'list(rk_line) AS rk_lines' in chain and 'mvjoin(rk_lines, " · ")' in chain,
+      'the tooltip must list every port the jump was seen on')
+check('edge_point = dst . " · port"' in chain and 'edge_point_kind = "port"' in chain,
+      'a click on a jump must select the ports it landed on')
+findings = view[view.index('<title>Findings at the clicked'):view.index('<title>The jumps, listed')]
+check('rex field=rk_sel "^(?&lt;rk_host_of_port&gt;.+?) · ports? (?&lt;rk_plist&gt;.+)$"' in findings
+      and 'mvfind(rk_ports, rk_port_rx)' in findings,
+      'the findings panel must read the host and every port out of a jump click')
+check('<option name="riskability.riskability_chart.chainPitch">40</option>' in chain,
+      'the routes chart must ask for forty pixels per host in the densest hop')
+check("Math.max(8, num(config && config.chainPitch) || 15)" in viz and "chainPitch: this._opt(config, 'chainPitch')" in viz,
+      'the chart must read chainPitch and grow with it')
+check("Math.max(1600, LABEL_PITCH * 60)" in viz, 'the height ceiling must scale with the pitch')
+check("show: /:host$/.test(l.sourceKind)" in viz and "emphasis: l.rkLabel ? { label: { show: true } }" in viz,
+      'host-to-host jumps are labelled at rest, entry jumps on hover')
+jumps = view[view.index('<title>The jumps, listed'):]
+check('Listening' in jumps and '"This port needs"' in jumps and '| mvexpand rk_p' in jumps,
+      'the jump list must say what listens on every port of a jump')
+ss_block = open(ROOT + '/app/riskability/default/savedsearches.conf', encoding='utf-8').read()
+roll = ss_block[ss_block.index('[Riskability - roll up route listeners]'):]
+roll = roll[:roll.index('\n[', 1)]
+check('inputlookup append=true riskability_exposure_lookup' in roll and 'BY hostname, port \\' in roll
+      and 'values(rk_pkg_text) AS rk_summary' in roll,
+      'the listeners roll-up must be one row per host and port, naming the software even with nothing open')
 check('<default>cve</default>' in view and '<default>25</default>' in view,
       'the page must open on CVE-enabled jumps with a per-hop cap')
 check('rk-route-status' in view and '$rk_hidden$' in view, 'the page must say how many hosts it left out')

@@ -119,6 +119,12 @@ def test_view():
     # d sits at depth 2 (J -> b -> d), so the edge out of it is hop 3.
     check("view: an edge's hop is one past its source's depth", back["hop"] == 3 and back["src_hop"] == 2, back["hop"])
     check("view: whole session counts come back as ints", isinstance(rows[0]["sessions"], int))
+    ea = [r for r in rows if r["src"] == "E" and r["dst"] == "a"][0]
+    check("view: every port of a jump comes back, best first", ea["ports"] == "443,8080" and ea["port"] == "443", ea["ports"])
+    again = walk.view(walk.grade(ROWS), top=0)
+    ea2 = [r for r in again if r["src"] == "E" and r["dst"] == "a"][0]
+    check("view: re-merging graded rows keeps the port list and the session total",
+          ea2["ports"] == "443,8080" and ea2["n_ports"] == 2 and ea2["sessions"] == 505, (ea2["ports"], ea2["sessions"]))
     marks = {r["dst"]: r["dst_mark"] for r in rows}
     check("view: reach marks c but not d or e", marks["c"] == "reach" and marks["d"] == "" and marks["e"] == "")
     only = walk.view(graded, entry="J", top=0)

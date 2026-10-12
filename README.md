@@ -1309,10 +1309,15 @@ foothold* is a network-reachable finding that wants credentials or user action
 first. *Unrated* is an open finding with no vector, so nothing can be said.
 *Permitted only* is a flow onto a listener with nothing usable over the
 network, which means the jump needs a zero-day or permissions the app knows
-nothing about. The graph colours each jump by that grade, rings every host an
-attacker can reach from an entry point on CVE-enabled jumps all the way, and a
-table lists every path with the jump where its CVE-only stretch stops and the
-CVEs behind each jump. CVE-enabled means possible, not demonstrated; the page
+nothing about. The graph colours each jump by that grade and labels it with
+the port it landed on and the software listening there; the software belongs
+to the jump, not to a column of its own, so a chain through nginx, then
+PostgreSQL, then Kerberos names each on the jump that reaches it. Hovering a
+jump lists every port it was seen on and what is open behind each; clicking it
+opens those findings. The graph rings every host an attacker can reach from an
+entry point on CVE-enabled jumps all the way, grows with its densest hop rather
+than packing it, and a table lists every path with the jump where its CVE-only
+stretch stops and the CVEs behind each jump. CVE-enabled means possible, not demonstrated; the page
 says so beside the graph. The grading lives in two macros,
 `riskability_cvss_reach` and `riskability_route_hop_class`, and reads the same
 vector letters the escalation rules use, so the two cannot disagree about what
@@ -1324,8 +1329,8 @@ jumps*, reduces the firewall edges once, grades them, and hands them to
 `riskabilitywalk`, a search command that does the walk in Python: the hop each
 host sits at from each entry point, the CVE-only reach, and the paths worth
 listing. It writes two collections, the positioned edges and the paths, and a
-second job writes what listens behind the ports the graph reaches. The page
-reads those three collections. The paths are capped by the job, at two
+second job writes what listens behind each port the graph reaches, one row
+per host and port. The page reads those three collections. The paths are capped by the job, at two
 thousand, worst first, following at most eight onward jumps from any host and
 stopping one jump past the first that is not CVE-enabled; the table says when
 the cap cut the list. The graph opens on CVE-enabled jumps only, with at most
