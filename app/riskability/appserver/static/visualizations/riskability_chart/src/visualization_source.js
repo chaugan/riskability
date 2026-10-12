@@ -1840,6 +1840,21 @@ export default SplunkVisualizationBase.extend({
         SplunkVisualizationBase.prototype.initialize.apply(this, arguments);
         this.el.classList.add('riskability-chart');
         this.chart = null;
+        // The elements whose min-height the last render lifted, so the next
+        // one can let them go before it measures the panel. See _render.
+        this._grown = [];
+        // The panel's height is the dashboard's to change: an editor drags
+        // it, a tab opens, a print stylesheet sets it. ECharts draws into a
+        // canvas sized once, so a chart drawn at 480px and then dragged to
+        // 800px sat in the top of the panel until the page was reloaded.
+        // Watch the element and re-measure whenever it moves.
+        var self = this;
+        if (typeof window !== 'undefined' && window.ResizeObserver) {
+            this._ro = new window.ResizeObserver(function () {
+                if (self.chart) { self.chart.resize(); }
+            });
+            this._ro.observe(this.el);
+        }
         liveCharts.push(this);
     },
 
@@ -1896,6 +1911,12 @@ export default SplunkVisualizationBase.extend({
             'mapping found nothing to show, not that there is no risk.';
 
         if (!data || !data.rows) { return; }
+
+        // Let go of the room the last render asked for before measuring, or
+        // a panel grown for fifty hosts stays that tall when the next search
+        // draws five, and the floor it reads back is its own last answer.
+        (this._grown || []).forEach(function (n) { n.style.minHeight = ''; });
+        this._grown = [];
 
         var builder = BUILDERS[chartType];
         if (!builder) {
@@ -1988,7 +2009,15 @@ export default SplunkVisualizationBase.extend({
         if (option) { delete option.rkMinHeight; }
         if (wantHeight && wantHeight > 0) {
             var px = Math.round(wantHeight) + 'px';
-            host.style.height = px;
+            // A floor, not a size. The host fills the panel (height 100%) so
+            // that a panel the dashboard makes taller is a taller chart, and
+            // the floor keeps it from being made shorter than the data needs.
+            // An inline pixel height here was why a dragged panel did not
+            // redistribute until the page was reloaded: the host kept the
+            // height it was born with and ECharts, told to resize, measured
+            // the same box again.
+            host.style.height = '100%';
+            host.style.minHeight = px;
             // Growing the canvas alone is not enough. Splunk applies the panel's
             // height option to a wrapper above this element, and our own CSS
             // makes the chart height:100% of it, so a taller canvas is simply
@@ -1997,15 +2026,13 @@ export default SplunkVisualizationBase.extend({
             // Walk up and lift the constraint. Bounded, and it stops at the
             // panel body rather than continuing into the dashboard, because the
             // panel is the thing that should grow. min-height rather than
-            // height, so nothing is ever made shorter than Splunk intended.
+            // height, so nothing is ever made shorter than Splunk intended;
+            // the framework's own inline heights are left alone, since
+            // min-height wins over height on the same element.
             var node = this.el;
             for (var up = 0; node && up < 6; up++) {
                 node.style.minHeight = px;
-                // An inline height set by the framework wins over min-height on
-                // the same element, so relax it where one is present.
-                if (node.style.height && node.style.height !== 'auto') {
-                    node.style.height = 'auto';
-                }
+                this._grown.push(node);
                 var cls = ' ' + (node.className || '') + ' ';
                 if (cls.indexOf('panel-body') > -1 || cls.indexOf('dashboard-cell') > -1) {
                     break;
@@ -2385,6 +2412,7 @@ export default SplunkVisualizationBase.extend({
     remove: function () {
         var at = liveCharts.indexOf(this);
         if (at >= 0) { liveCharts.splice(at, 1); }
+        if (this._ro) { this._ro.disconnect(); this._ro = null; }
         this._disposeChart();
     },
 });
