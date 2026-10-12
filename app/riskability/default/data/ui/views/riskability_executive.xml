@@ -203,23 +203,27 @@
         dc(eval(if(rk_kev_reach = 1, hostname, null()))) AS kev_reach_hosts,
         sum(rk_unknown) AS unassessed_findings,
         dc(eval(if(rk_unknown = 1, hostname, null()))) AS unassessed_hosts
-| fillnull value=0 findings kev_reach_findings kev_reach_hosts unassessed_findings unassessed_hosts</query>
+| fillnull value=0 findings kev_reach_findings kev_reach_hosts unassessed_findings unassessed_hosts
+| eval reach_cls = if(kev_reach_findings &gt; 0, "rk-exec-big-alarm", "rk-exec-big-quiet")
+| eval unk_text = if(unassessed_findings &gt; 0, "findings on " . unassessed_hosts . " systems", "findings; every system reported its listening ports")</query>
     <earliest>0</earliest>
     <latest>now</latest>
     <done>
       <condition match="$result.unassessed_findings$ &gt; 0">
         <set token="x_kev_reach_f">$result.kev_reach_findings$</set>
         <set token="x_kev_reach_h">$result.kev_reach_hosts$</set>
+        <set token="x_reach_cls">$result.reach_cls$</set>
         <set token="x_unk_f">$result.unassessed_findings$</set>
-        <set token="x_unk_h">$result.unassessed_hosts$</set>
+        <set token="x_unk_text">$result.unk_text$</set>
         <set token="x_unk_cls">rk-exec-warned</set>
         <set token="rk_ready">1</set>
       </condition>
       <condition>
         <set token="x_kev_reach_f">$result.kev_reach_findings$</set>
         <set token="x_kev_reach_h">$result.kev_reach_hosts$</set>
+        <set token="x_reach_cls">$result.reach_cls$</set>
         <set token="x_unk_f">$result.unassessed_findings$</set>
-        <set token="x_unk_h">$result.unassessed_hosts$</set>
+        <set token="x_unk_text">$result.unk_text$</set>
         <set token="x_unk_cls">rk-exec-plain</set>
         <set token="rk_ready">1</set>
       </condition>
@@ -499,9 +503,14 @@
       <title>Of those, answering the network right now</title>
       <html>
         <div class="rk-exec-card">
-          <span class="rk-exec-big">$x_kev_reach_f$<small>findings on $x_kev_reach_h$ systems</small></span>
+          <!-- The headline is coloured like the KEV tile beside it: red when
+               any exploited vulnerability answers the network, grey at zero.
+               It was plain white, which read as a figure with no verdict next
+               to a red one. The could-not-be-checked zero says why it is zero,
+               since "0 findings on 0 systems" explains nothing. -->
+          <span class="rk-exec-big $x_reach_cls$">$x_kev_reach_f$<small>findings on $x_kev_reach_h$ systems</small></span>
           <div class="rk-exec-facts">
-            <div class="rk-exec-fact $x_unk_cls$"><span>Could not be checked</span><b>$x_unk_f$</b> findings on $x_unk_h$ systems</div>
+            <div class="rk-exec-fact $x_unk_cls$"><span>Could not be checked</span><b>$x_unk_f$</b> $x_unk_text$</div>
           </div>
           <span class="rk-exec-sub">A system that never reported its listening ports is unknown risk,
           not low risk. All match confidences, as Exposure shows them.</span>

@@ -44,10 +44,17 @@
 }
 .rk-exec-sub b { color: #d5d8dc; font-weight: 600; }
 
+/* The facts sit under a rule, clear of the headline above them, and each
+   label hugs its own number. Without the rule a label such as "Could not be
+   checked" read as a caption on the headline figure above it rather than
+   the name of the number below it. */
 .rk-exec-facts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px 18px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid #2b3036;
 }
 .rk-exec-facts-two { grid-template-columns: 1fr 1fr; }
 .rk-exec-fact {
@@ -59,7 +66,7 @@
   display: block;
   color: #9aa2ab;
   font-size: 11px;
-  margin-bottom: 3px;
+  margin-bottom: 1px;
 }
 .rk-exec-fact b {
   color: #f2f4f5;
@@ -201,6 +208,7 @@
   .single-value .single-result { color: #24292e; }
 
   .rk-exec-card { border-color: #d5d8dc !important; min-height: 0; }
+  .rk-exec-facts { border-top-color: #d5d8dc !important; }
   .rk-exec-big, .rk-exec-fact b, .rk-exec-asof b, .rk-exec-sub b, .rk-exec-plain b { color: #24292e !important; }
   .rk-exec-big small, .rk-exec-sub, .rk-exec-fact, .rk-exec-fact span, .rk-exec-asof { color: #5c6773 !important; }
   .rk-exec-alarm b  { color: #a4302a !important; }
