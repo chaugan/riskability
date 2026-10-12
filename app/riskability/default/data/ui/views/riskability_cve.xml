@@ -7,9 +7,17 @@
        this app links here with form.cve_tok already filled, so that token has
        to stand alone without a search having been typed.
 
-       No panel is hidden behind a token. Simple XML can do it, but conditional
-       visibility here has a habit of leaving a page that is blank for reasons
-       the reader cannot see. Each panel says what it is waiting for instead. -->
+       No panel is hidden behind a token, bar one. Simple XML can do it, but
+       conditional visibility here has a habit of leaving a page that is blank
+       for reasons the reader cannot see. Each panel says what it is waiting
+       for instead. The exception is the phrase search's result list, which
+       sits under the phrase box and appears when the box has text; see the
+       note on that row.
+
+       Order: the phrase results if any, the figures, then the fleet answer
+       (which hosts have it) before the feed's description of the CVE, then
+       the fixes. The hosts used to come seventh, after five panels of feed
+       text, on a page whose promise is "where it sits in this fleet". -->
   <!-- Both labels are kept to one line deliberately. Splunk stacks an input's
        label above its field and does not equalise label heights across a
        fieldset, so a label that wraps pushes its own field a line lower than
@@ -62,6 +70,62 @@
             nobody has described. Rebuild the feed with <code>--cve-list</code> and import it
             to fill this in. Everything else on this page, the matching, the severity, the KEV
             status and the affected ranges, works without it.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <!-- The one panel on this page behind a token, and the reason is the
+       opposite of the rule above: it is the result of the phrase box, so it
+       sits directly under that box and shows the moment the box has text.
+       Without text there is nothing it is waiting for, and a reader who
+       arrived with a CVE id would otherwise meet an empty grid before the
+       figures. -->
+  <!-- depends on the text token itself does not do it: a text input with an
+       empty box sets its token to "", which depends counts as set, so the
+       panel showed for everyone. A one-row search turns the text into a
+       token that exists only when there is text. -->
+  <search>
+    <query>| makeresults | eval q = $q_tok|s$ | where q != ""</query>
+    <done>
+      <condition match="$job.resultCount$ &gt; 0">
+        <set token="q_on">1</set>
+      </condition>
+      <condition>
+        <unset token="q_on"></unset>
+      </condition>
+    </done>
+  </search>
+  <row depends="$q_on$">
+    <panel>
+      <title>Find a vulnerability by product or phrase</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_cvedetail_lookup
+| search products="*$q_tok$*" OR description="*$q_tok$*" OR cve_id="*$q_tok$*"
+| head 200
+| eval Product = mvindex(split(products, "
+"), 0)
+| lookup riskability_advisories_lookup cve_id OUTPUT severity, cvss_score, epss, kev_added
+| eval Severity = coalesce(severity, ""), CVSS = coalesce(cvss_score, ""),
+       "EPSS %" = if(isnotnull(epss), round(epss*100, 1), null()),
+       KEV = if(coalesce(kev_added, "")!="", "yes", "")
+| table cve_id, Product, Severity, CVSS, "EPSS %", KEV
+| rename cve_id AS CVE
+| sort 200 - CVSS</query>
+        </search>
+        <option name="riskability.riskability_grid.emptyText">Nothing in the CVE Program product names or descriptions matches this phrase. Try a product, a vendor or a phrase: "openssl", "Red Hat", "buffer overflow". This searches what the vulnerabilities are, not what your distribution happened to call the package. It needs a bundle built with the CVE Program source; without one, use the CVE box instead.</option>
+        <drilldown>
+          <set token="cve_tok">$row.CVE$</set>
+        </drilldown>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            Click any row to load it into the page below. This searches the feed, not this fleet, which is the
+            point: an encyclopaedia has to be able to tell you about something you do not run.
+            Capped at 200, worst CVSS first.
           </span>
         </div>
       </html>
@@ -166,6 +230,45 @@
             <code>CVE-2023-486*</code> and they describe the set, which is why they read "worst"
             and "highest" rather than giving a single vulnerability's score. Empty means nothing
             was matched, not that anything was found to be harmless.
+          </span>
+        </div>
+      </html>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Matching hosts in this fleet</title>
+      <viz type="riskability.riskability_grid">
+        <search>
+          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$"
+| eval rk_key = if(match(coalesce(scope_id, ""), "^container:"),
+      "container:" . substr(replace(scope_id, "^container:", ""), 1, 12), package)
+| lookup riskability_reach_lookup hostname, rk_key OUTPUT reach_class
+| eval Reach = coalesce(reach_class, "not assessed")
+| eval Accepted = if(accepted="1", "yes", "")
+| eval path = replace(path, "\\\\\\\\", "\\\\")
+| table cve_id, hostname, package, last_version, fixed_version, path, scope, confidence, Reach, status, Accepted
+| rename cve_id AS CVE, hostname AS Host, package AS Package, last_version AS Installed,
+         fixed_version AS "Fixed in", path AS "Found at", scope AS Scope, confidence AS Confidence, status AS Status
+| sort 500 CVE, Host, Package</query>
+        </search>
+        <option name="riskability.riskability_grid.drilldown">disabled</option>
+        <option name="riskability.riskability_grid.emptyText">Nothing in this fleet matches this CVE. That means no host reports an affected package at an affected version. It does not mean immunity: Coverage lists what the feed cannot assess at all.</option>
+      </viz>
+      <html>
+        <div class="rk-status" style="margin:8px 0 0">
+          <span>
+            <b>Found at is where the collector found the package, in the collector's own words.</b>
+            For a package a package manager owns it is the file. For a Windows product read
+            from the registry it is the directory the product registered as its install
+            location, because the registry names no executable; that directory is whatever the
+            installer wrote there, and some vendors register their installer's folder rather
+            than the product's. Where a listening service is behind the finding, the
+            <a href="riskability_exposure">Exposure</a> page names the process on the port.
+            <b>Installed</b> is the version the same registry entry reports, verbatim, so a
+            product that publishes "V2.7" in one entry and "02.07.00.00" in another is two
+            rows in the inventory and may match on either.
           </span>
         </div>
       </html>
@@ -294,80 +397,6 @@
         <option name="riskability.riskability_grid.drilldown">disabled</option>
         <option name="riskability.riskability_grid.emptyText">No weakness class recorded for this CVE. About a third of advisories carry no CWE, and the technique mapping needs the MITRE source in the bundle.</option>
       </viz>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Find a vulnerability by product or phrase</title>
-      <viz type="riskability.riskability_grid">
-        <search>
-          <query>| inputlookup riskability_cvedetail_lookup
-| search products="*$q_tok$*" OR description="*$q_tok$*" OR cve_id="*$q_tok$*"
-| head 200
-| eval Product = mvindex(split(products, "
-"), 0)
-| lookup riskability_advisories_lookup cve_id OUTPUT severity, cvss_score, epss, kev_added
-| eval Severity = coalesce(severity, ""), CVSS = coalesce(cvss_score, ""),
-       "EPSS %" = if(isnotnull(epss), round(epss*100, 1), null()),
-       KEV = if(coalesce(kev_added, "")!="", "yes", "")
-| table cve_id, Product, Severity, CVSS, "EPSS %", KEV
-| rename cve_id AS CVE
-| sort 200 - CVSS</query>
-        </search>
-        <option name="riskability.riskability_grid.emptyText">Type a product, a vendor or a phrase in the search box at the top. "openssl", "Red Hat", "buffer overflow". This searches the CVE Program product names and description text, so it finds vulnerabilities by what they are rather than by what your distribution happened to call the package. It needs a bundle built with the CVE Program source; without one, use the CVE box instead.</option>
-        <drilldown>
-          <set token="cve_tok">$row.CVE$</set>
-        </drilldown>
-      </viz>
-      <html>
-        <div class="rk-status" style="margin:8px 0 0">
-          <span>
-            Click any row to load it above. This searches the feed, not this fleet, which is the
-            point: an encyclopaedia has to be able to tell you about something you do not run.
-            Capped at 200, worst CVSS first.
-          </span>
-        </div>
-      </html>
-    </panel>
-  </row>
-
-  <row>
-    <panel>
-      <title>Matching hosts in this fleet</title>
-      <viz type="riskability.riskability_grid">
-        <search>
-          <query>| inputlookup riskability_findings_state_lookup where cve_id="$cve_tok$"
-| eval rk_key = if(match(coalesce(scope_id, ""), "^container:"),
-      "container:" . substr(replace(scope_id, "^container:", ""), 1, 12), package)
-| lookup riskability_reach_lookup hostname, rk_key OUTPUT reach_class
-| eval Reach = coalesce(reach_class, "not assessed")
-| eval Accepted = if(accepted="1", "yes", "")
-| eval path = replace(path, "\\\\\\\\", "\\\\")
-| table cve_id, hostname, package, last_version, fixed_version, path, scope, confidence, Reach, status, Accepted
-| rename cve_id AS CVE, hostname AS Host, package AS Package, last_version AS Installed,
-         fixed_version AS "Fixed in", path AS "Found at", scope AS Scope, confidence AS Confidence, status AS Status
-| sort 500 CVE, Host, Package</query>
-        </search>
-        <option name="riskability.riskability_grid.drilldown">disabled</option>
-        <option name="riskability.riskability_grid.emptyText">Nothing in this fleet matches this CVE. That means no host reports an affected package at an affected version. It does not mean immunity: Coverage lists what the feed cannot assess at all.</option>
-      </viz>
-      <html>
-        <div class="rk-status" style="margin:8px 0 0">
-          <span>
-            <b>Found at is where the collector found the package, in the collector's own words.</b>
-            For a package a package manager owns it is the file. For a Windows product read
-            from the registry it is the directory the product registered as its install
-            location, because the registry names no executable; that directory is whatever the
-            installer wrote there, and some vendors register their installer's folder rather
-            than the product's. Where a listening service is behind the finding, the
-            <a href="riskability_exposure">Exposure</a> page names the process on the port.
-            <b>Installed</b> is the version the same registry entry reports, verbatim, so a
-            product that publishes "V2.7" in one entry and "02.07.00.00" in another is two
-            rows in the inventory and may match on either.
-          </span>
-        </div>
-      </html>
     </panel>
   </row>
 
