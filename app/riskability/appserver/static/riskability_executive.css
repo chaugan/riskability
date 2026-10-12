@@ -126,7 +126,7 @@
 }
 .rk-exec-print:hover { background: #363c44; }
 .rk-exec-print:focus-visible { outline: 2px solid #f8be34; outline-offset: 1px; }
-.rk-exec-print-bar .rk-dim { max-width: 420px; text-align: right; margin: 0; }
+.rk-exec-print-bar .rk-dim { max-width: 560px; text-align: right; margin: 0; }
 
 /* Print-only elements stay out of the screen layout. */
 .rk-exec-foot { display: none; }

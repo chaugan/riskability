@@ -469,11 +469,11 @@
     <panel depends="$rk_ready$,$rk_ready2$">
       <html>
         <div class="rk-exec-print-bar">
-          <button type="button" class="rk-exec-print">Print or save as PDF (A4 landscape)</button>
-          <p class="rk-dim">Three landscape sheets: the figures, the two pictures, what changed and
-          what to do. Choose "Save as PDF" in the print dialog for a file. Safari ignores the
-          page's own orientation, so pick landscape there. Splunk's own Export to PDF leaves the
-          charts out. Nobody can schedule this; it is this page, printed by your browser.</p>
+          <!-- One line under the button. The how-to that used to sit here ran
+               to five lines and made the whole row that tall; it lives in
+               the button's tooltip now, where it is read when needed. -->
+          <button type="button" class="rk-exec-print" title="Three A4 landscape sheets: the figures, the two pictures, what changed and what to do. Choose &quot;Save as PDF&quot; in the print dialog for a file. Safari ignores the page's own orientation, so pick landscape there. Splunk's own Export to PDF leaves the charts out. Nobody can schedule this; it is this page, printed by your browser.">Print or save as PDF (A4 landscape)</button>
+          <p class="rk-dim">Three landscape sheets, printed by your browser. Hover the button for how.</p>
         </div>
       </html>
     </panel>
