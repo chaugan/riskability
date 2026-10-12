@@ -588,6 +588,20 @@ export default SplunkVisualizationBase.extend({
             if (!isColoured(title)) {
                 col.formatter = function (cell) {
                     var v = cell.getValue();
+                    // A multivalue field arrives as an array. Tabulator's own
+                    // rendering would String() it, which joins the values
+                    // with bare commas and runs a list of sentences into one
+                    // line. One line per value instead, which is what a
+                    // multivalue column means.
+                    if (Array.isArray(v)) {
+                        var list = document.createElement('div');
+                        v.forEach(function (item) {
+                            var line = document.createElement('div');
+                            line.textContent = item === null || item === undefined ? '' : String(item);
+                            list.appendChild(line);
+                        });
+                        return list;
+                    }
                     var text = v === null || v === undefined ? '' : String(v);
                     if (!ADVISORY_RE.test(text)) { return text; }
                     var a = document.createElement('a');

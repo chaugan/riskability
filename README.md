@@ -827,7 +827,7 @@ under a condition, noted in their row.
 | **Host overview** | Every host at a glance, split by filesystem root. Under the Hosts menu with Host detail |
 | **Host detail** | Everything known about one machine: what has been measured on it and what has not, what it is configured to run, its Windows patch level, and what on it is no longer supported |
 | **Network evidence** | Which listening ports a permitted flow has actually been observed reaching, graded, and which have never been reached. Under the Network analysis menu, present once a firewall source is named |
-| **Routes** | The jumps a permitted flow has been seen to make, from a declared entry point onward, and what is listening with findings open where it lands. Under the Network analysis menu, present once a firewall source is named |
+| **Routes** | The jumps a permitted flow has been seen to make, from a declared entry point onward, each graded by what an attacker would need to take it: a CVE alone, a foothold first, or something the app does not know about. Every path listed with where its CVE-only stretch stops. Under the Network analysis menu, present once a firewall source is named |
 | **Coverage** | What the feed *cannot* say anything about, and when support ends for the software it can |
 | **Risk exceptions** | Findings someone accepted, why, until when, and who said so |
 | **CVE encyclopaedia** | What any vulnerability the feed carries actually is, and where it sits in this fleet. Offline |
@@ -1297,6 +1297,26 @@ often, and grades it `confirmed observed`, `historically observed`, `unknown` or
 the hard part, and the app refuses to answer rather than guess: an address the
 inventory cannot tie to exactly one machine at that moment is graded `unknown`
 with the reason recorded.
+
+**The Routes page then says what each jump would take.** A permitted flow is
+a path, not an exploit, and the firewall log says nothing about what an
+attacker standing at its near end would need. The open findings on the software
+listening where the flow lands do: their CVSS vectors say whether a flaw is
+reachable over the network, whether it needs privileges, and whether a user has
+to act. The page grades every jump from them. *CVE-enabled* is a jump an open
+finding can make over the wire with no credentials and no click. *Needs a
+foothold* is a network-reachable finding that wants credentials or user action
+first. *Unrated* is an open finding with no vector, so nothing can be said.
+*Permitted only* is a flow onto a listener with nothing usable over the
+network, which means the jump needs a zero-day or permissions the app knows
+nothing about. The graph colours each jump by that grade, rings every host an
+attacker can reach from an entry point on CVE-enabled jumps all the way, and a
+table lists every path with the jump where its CVE-only stretch stops and the
+CVEs behind each jump. CVE-enabled means possible, not demonstrated; the page
+says so beside the graph. The grading lives in two macros,
+`riskability_cvss_reach` and `riskability_route_hop_class`, and reads the same
+vector letters the escalation rules use, so the two cannot disagree about what
+network reachable means.
 
 **A site without firewall logs loses nothing.** Every finding grades `unknown`,
 carrying a reason that says nothing is known about permitted traffic to that

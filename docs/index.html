@@ -163,15 +163,19 @@
       </figure>
       <figure class="card" id="routes" data-name="routes">
         <a href="screenshots/routes.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes.png" alt="Routes"></a>
-        <figcaption><b>Routes</b> <span class="dim">The jumps a permitted flow has been seen to make, laid out by hop: entry point, the host reached, its port, the software listening, the findings open in it. Each host to host jump carries the port and session count; a red edge lands on software with a known exploited or high EPSS finding open.</span><span class="date">2026-09-03</span></figcaption>
+        <figcaption><b>Routes</b> <span class="dim">The jumps a permitted flow has been seen to make, laid out by hop: entry point, the host reached, its port, the software listening, the findings open in it. Each host to host jump carries the port and session count; a red edge is a jump a CVE alone can make, amber needs a foothold first, dashed is a permitted flow onto nothing usable over the network, and a red ring marks a host reachable from an entry point on CVEs alone. Under the graph, every path with the jump where its CVE-only stretch stops.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
       <figure class="card" id="routes-drilldown" data-name="routes-drilldown">
         <a href="screenshots/routes-drilldown.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-drilldown.png" alt="Routes, drill-down"></a>
-        <figcaption><b>Routes, drill-down</b> <span class="dim">Clicking a point on the route opens the findings behind it on the same page, with tier, score, KEV, fix version and the pipeline&#x27;s rationale.</span><span class="date">2026-09-03</span></figcaption>
+        <figcaption><b>Routes, drill-down</b> <span class="dim">Clicking a point on the route opens the findings behind it on the same page, with tier, score, whether each is usable over the wire, KEV, fix version and the pipeline&#x27;s rationale.</span><span class="date">2026-09-03</span></figcaption>
       </figure>
       <figure class="card" id="routes-host-filter" data-name="routes-host-filter">
         <a href="screenshots/routes-host-filter.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-host-filter.png" alt="Routes, one host"></a>
         <figcaption><b>Routes, one host</b> <span class="dim">Filtered to one host: only the chains through it, at the hops the unfiltered graph gives them. A host reached both directly and through two others sits in both columns.</span><span class="date">2026-09-03</span></figcaption>
+      </figure>
+      <figure class="card" id="routes-paths" data-name="routes-paths">
+        <a href="screenshots/routes-paths.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/routes-paths.png" alt="Routes, every path"></a>
+        <figcaption><b>Routes, every path</b> <span class="dim">One row per path the firewall has seen, entry point first: how many jumps, how far an attacker gets on CVEs alone, the jump where that stops, and the CVEs behind each jump. A path that is CVE-enabled all the way is a possibility, not a demonstrated route.</span><span class="date">2026-10-12</span></figcaption>
       </figure>
       <figure class="card" id="start-here" data-name="start-here">
         <a href="screenshots/start-here.png" target="_blank" rel="noopener"><img loading="lazy" src="screenshots/start-here.png" alt="Start here"></a>

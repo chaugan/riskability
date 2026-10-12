@@ -1546,6 +1546,12 @@ function buildChainGraph(rows, t, config) {
         // flow that happened. It changes what the reader is told about it.
         var eLabel = rows[i].length > 5 && rows[i][5] !== null && rows[i][5] !== undefined ? String(rows[i][5]) : '';
         var eClass = rows[i].length > 6 && rows[i][6] !== null && rows[i][6] !== undefined ? String(rows[i][6]).toLowerCase() : '';
+        // Optional, column 7: a mark on the TARGET node. "reach" is a host an
+        // attacker can get to from an entry point on open CVEs alone, every
+        // jump on the way being CVE-enabled. It is drawn as a red ring so the
+        // CVE-only frontier can be read off the graph without tracing edges.
+        var tMark = rows[i].length > 7 && rows[i][7] !== null && rows[i][7] !== undefined ? String(rows[i][7]).toLowerCase() : '';
+        if (tMark) { nodes[tid].mark = tMark; }
         links.push({ source: sid, target: tid, value: v,
                      targetKind: tKind, sourceKind: sKind,
                      rkLabel: eLabel, rkClass: eClass });
@@ -1632,31 +1638,59 @@ function buildChainGraph(rows, t, config) {
             value: [n.layer, n.y],
             symbolSize: size,
             rkKind: n.kind,
+            rkMark: n.mark || '',
             // Every label to the right of its node, including the last
             // column's -- the grid reserves margin for them, so they land in
             // clear space instead of on top of the edges feeding the node.
             label: { show: n.labelled, position: 'right' },
             itemStyle: {
                 color: n.color,
-                borderColor: n.dashed ? '#f8be34' : t.axis,
-                borderWidth: n.dashed ? 2 : 1,
+                borderColor: n.mark === 'reach' ? '#dc4e41' : n.dashed ? '#f8be34' : t.axis,
+                borderWidth: n.mark === 'reach' ? 3 : n.dashed ? 2 : 1,
                 borderType: n.dashed ? 'dashed' : 'solid',
             },
         };
     });
 
+    // What an edge's class means for how it is drawn. The route page grades
+    // every jump by what an attacker standing at its near end would need:
+    //   cve        an open finding on the listener is reachable over the
+    //              network with no foothold -- solid red, this jump can be
+    //              made with a CVE alone
+    //   foothold   reachable over the network but it wants credentials or a
+    //              user's click first -- solid amber
+    //   unrated    an open finding with no CVSS vector, so nothing can be
+    //              said -- dashed amber
+    //   permitted  a flow the firewall allowed and nothing usable over the
+    //              network open at the far end -- dashed and muted; the jump
+    //              needs a zero-day or permissions
+    // The older "exploitable" and "critical" classes (KEV or EPSS, and tier)
+    // keep their red and amber so a dashboard still sending them draws as
+    // before.
+    var EDGE_STYLE = {
+        cve:         { color: '#dc4e41', opacity: 0.9,  type: 'solid' },
+        foothold:    { color: '#f8be34', opacity: 0.85, type: 'solid' },
+        unrated:     { color: '#f8be34', opacity: 0.7,  type: 'dashed' },
+        permitted:   { color: '#8fa3b5', opacity: 0.45, type: 'dashed' },
+        exploitable: { color: '#dc4e41', opacity: 0.85, type: 'solid' },
+        critical:    { color: '#f8be34', opacity: 0.85, type: undefined },
+    };
     var linkData = links.map(function (l) {
+        var es = EDGE_STYLE[l.rkClass] || { color: 'source', opacity: 0.45, type: undefined };
         return {
             source: l.source, target: l.target, value: l.value,
-            targetKind: l.targetKind,
+            targetKind: l.targetKind, sourceKind: l.sourceKind,
+            // The tooltip reads these. They were built above and then left
+            // behind here, which is why every edge once read "N CVEs through
+            // this hop" with N being its session count.
+            rkLabel: l.rkLabel, rkClass: l.rkClass,
             lineStyle: {
                 width: vmax > 0 ? 1 + 2.4 * (l.value / vmax) : 1.4,
                 // The class overrides the source colour: a red edge is the
                 // one thing on the page that says "this jump can be taken".
-                color: l.rkClass === 'exploitable' ? '#dc4e41'
-                     : l.rkClass === 'critical' ? '#f8be34' : 'source',
-                opacity: l.rkClass ? 0.85 : 0.45,
-                type: l.rkClass === 'exploitable' ? 'solid' : undefined,
+                color: es.color,
+                opacity: es.opacity,
+                type: es.type,
             },
             label: (l.rkLabel && /:host$/.test(l.sourceKind) && /:host$/.test(l.targetKind))
                 ? { show: true, formatter: shorten(l.rkLabel, 22), fontSize: 9,
@@ -1695,18 +1729,35 @@ function buildChainGraph(rows, t, config) {
                 return [x, size.viewSize[1] - size.contentSize[1] - 6];
             },
             formatter: function (p) {
+                var EDGE_SAYS = {
+                    cve: 'a CVE can make this jump: an open finding on the listener is reachable over the network, with no credentials and no user action',
+                    foothold: 'a CVE here is reachable over the network, but it needs credentials or user action first',
+                    unrated: 'an open finding here has no CVSS vector, so what this jump needs cannot be said',
+                    permitted: 'permitted flow only: nothing open at the far end is usable over the network, so this jump needs a zero-day or permissions',
+                    exploitable: 'an open finding here is known-exploited or high-EPSS',
+                    critical: 'worst open finding here is P0 or P1',
+                };
                 if (p.dataType === 'edge') {
                     var head = escapeHtml(chainNodeLabel(p.data.source)) + ' &#8594; ' +
                         escapeHtml(chainNodeLabel(p.data.target));
+                    var says = EDGE_SAYS[p.data.rkClass] ? ' &#183; <b>' + escapeHtml(EDGE_SAYS[p.data.rkClass]) + '</b>' : '';
                     if (p.data.rkLabel) {
-                        var cls = p.data.rkClass === 'exploitable' ? ' &#183; <b>an open finding here is known-exploited or high-EPSS</b>'
-                                : p.data.rkClass === 'critical' ? ' &#183; <b>worst open finding here is P0 or P1</b>' : '';
-                        return head + ' &#183; ' + escapeHtml(p.data.rkLabel) + cls;
+                        return head + ' &#183; ' + escapeHtml(p.data.rkLabel) + says;
                     }
-                    return head + ' &#183; <b>' + p.data.value + '</b> CVEs through this hop';
+                    // No label: say what the width IS. On a route the left-hand
+                    // edges are sessions and only the edges into the findings
+                    // column are CVEs; the other chains (exposure, the
+                    // encyclopaedia) are CVE counts throughout.
+                    var n = Number(p.data.value) || 0;
+                    var unit = /:(host|port)$/.test(String(p.data.targetKind || ''))
+                        ? (n === 1 ? ' session through this hop' : ' sessions through this hop')
+                        : (n === 1 ? ' CVE through this hop' : ' CVEs through this hop');
+                    return head + ' &#183; <b>' + n + '</b>' + unit + says;
                 }
+                var mark = p.data && p.data.rkMark === 'reach'
+                    ? ' &#183; <b>reachable from an entry point on open CVEs alone</b>' : '';
                 return '<b>' + escapeHtml(chainNodeLabel(p.name)) + '</b> &#183; ' +
-                    escapeHtml(LAYERS[p.value[0]] || 'unclassified');
+                    escapeHtml(LAYERS[p.value[0]] || 'unclassified') + mark;
             },
         },
         grid: { left: 18, right: 176, top: 46, bottom: 16, containLabel: false },
