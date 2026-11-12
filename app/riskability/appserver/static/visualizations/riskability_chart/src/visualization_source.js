@@ -1708,14 +1708,15 @@ function buildChainGraph(rows, t, config) {
                 opacity: es.opacity,
                 type: es.type,
             },
-            // A host-to-host jump carries its label, the port and the
-            // software listening there, at rest. A jump from an entry point
-            // carries the same label but shows it on hover only: an entry
-            // point fans out to every hop-1 host, the fans cross, and their
-            // labels at mid-edge overprint one another into nothing. On a
-            // capped estate that is twenty-five labels on one spot.
+            // Every jump carries its label at rest, mid-edge: the protocol,
+            // the port and the software listening there. A jump from an entry
+            // point once showed it on hover only, for fear that the fans out
+            // of an entry point cross and their labels overprint; that left
+            // the first jump the one jump on the chart that did not say what
+            // it lands on, and on a graph capped by "top" the fans are few
+            // enough to read.
             label: (l.rkLabel && /:(host|entry)$/.test(l.sourceKind) && /:host$/.test(l.targetKind))
-                ? { show: /:host$/.test(l.sourceKind), formatter: shorten(l.rkLabel, 30), fontSize: 9,
+                ? { show: true, formatter: shorten(l.rkLabel, 30), fontSize: 9,
                     color: t.muted, position: 'middle',
                     backgroundColor: t.tooltipBg, padding: [1, 3], borderRadius: 2 }
                 : undefined,

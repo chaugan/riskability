@@ -148,8 +148,9 @@ check('<option name="riskability.riskability_chart.chainPitch">40</option>' in c
 check("Math.max(8, num(config && config.chainPitch) || 15)" in viz and "chainPitch: this._opt(config, 'chainPitch')" in viz,
       'the chart must read chainPitch and grow with it')
 check("Math.max(1600, LABEL_PITCH * 60)" in viz, 'the height ceiling must scale with the pitch')
-check("show: /:host$/.test(l.sourceKind)" in viz and "emphasis: l.rkLabel ? { label: { show: true } }" in viz,
-      'host-to-host jumps are labelled at rest, entry jumps on hover')
+check("show: true, formatter: shorten(l.rkLabel, 30)" in viz and "position: 'middle'" in viz
+      and "show: /:host$/.test(l.sourceKind)" not in viz,
+      'every jump, the first one from an entry point included, is labelled at rest mid-edge')
 jumps = view[view.index('<title>The jumps, listed'):]
 check('Listening' in jumps and '"This port needs"' in jumps and '| mvexpand rk_p' in jumps,
       'the jump list must say what listens on every port of a jump')
