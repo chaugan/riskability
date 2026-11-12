@@ -68,7 +68,18 @@ def _can_explain(service) -> bool:
         body = service.get("/services/authentication/current-context",
                            output_mode="json").body.read()
         caps = json.loads(body)["entry"][0]["content"].get("capabilities") or []
-        return "riskability_ai_explain" in caps
+        if "riskability_ai_explain" in caps:
+            return True
+        # Splunk Free has no access control: every visitor is "admin",
+        # current-context lists NO capabilities at all, and splunkd lets every
+        # request through. Read literally, that disabled the button on every
+        # Free instance with a message about groups that do not exist there.
+        # Only Free gets this reading, and only when the list is empty: on a
+        # licensed instance the capability decides, exactly as before.
+        if not caps:
+            info = service.get("/services/server/info", output_mode="json").body.read()
+            return str(json.loads(info)["entry"][0]["content"].get("isFree")).lower() in ("1", "true")
+        return False
     except Exception:
         return True   # unknown: leave the button, the endpoint still decides
 

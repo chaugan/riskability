@@ -553,6 +553,29 @@ def main():
     check("status reply says whether the viewer may ask the model",
           '"can_explain": _can_explain(service)' in status_src
           and '"riskability_ai_explain" in caps' in status_src)
+    # Run _can_explain itself against the three answers current-context gives.
+    fn_src = status_src[status_src.index("def _can_explain"):status_src.index("def _overview_from_kv")]
+    ns = {"json": json}
+    exec(fn_src, ns)
+
+    class _Ctx:
+        def __init__(self, caps, free):
+            self.caps, self.free = caps, free
+
+        def get(self, path, **kw):
+            content = ({"capabilities": self.caps} if path.endswith("current-context")
+                       else {"isFree": self.free})
+            body = json.dumps({"entry": [{"content": content}]}).encode()
+            return type("R", (), {"body": type("B", (), {"read": lambda _s: body})()})()
+
+    check("a role holding riskability_ai_explain may ask",
+          ns["_can_explain"](_Ctx(["search", "riskability_ai_explain"], False)) is True)
+    check("a role without it may not",
+          ns["_can_explain"](_Ctx(["search"], False)) is False)
+    check("Splunk Free (no access control, an empty capability list) may ask",
+          ns["_can_explain"](_Ctx([], True)) is True)
+    check("a licensed instance's empty capability list is read literally: may not ask",
+          ns["_can_explain"](_Ctx([], False)) is False)
     page_src = open(os.path.join(ROOT, "app", "riskability", "appserver", "static", "riskability_ai_overview.js")).read()
     check("the page disables Explain for a viewer who may not ask, before the click",
           "state.can_explain === false" in page_src and "Explain in depth (administrators)" in page_src)
