@@ -536,7 +536,8 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
             })
             importer._write_status(service.kvstore, state="queued",
                                    message="waiting for the feed worker",
-                                   bundle_version=os.path.basename(path))
+                                   bundle_version=os.path.basename(path),
+                                   filename=os.path.basename(path))
             return _reply(202, {"ok": True, "filename": os.path.basename(path),
                                 "size_bytes": written, "final": True,
                                 "queued": True})
@@ -588,7 +589,8 @@ class FeedAdminHandler(PersistentServerConnectionApplication):
         })
         importer._write_status(service.kvstore, state="queued",
                                message="waiting for the feed worker",
-                               bundle_version=os.path.basename(path))
+                               bundle_version=os.path.basename(path),
+                               filename=os.path.basename(path))
         return _reply(202, {"ok": True, "queued": True,
                             "filename": os.path.basename(path)})
 

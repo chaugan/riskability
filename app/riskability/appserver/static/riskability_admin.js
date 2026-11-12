@@ -108,7 +108,12 @@
         var st = state.status || {};
         if (["queued", "importing", "cleaning"].indexOf(st.state) >= 0) {
             var prog = el("div", "rk-status rk-warn");
-            var loaded = st.loaded_ranges || 0, want = st.expected_ranges || 0;
+            // Ranges and advisories together: the advisories load after the
+            // ranges, and a percentage of ranges alone sat at 99% for the
+            // whole advisory phase, which looked like a hang.
+            var lr = st.loaded_ranges || 0, er = st.expected_ranges || 0;
+            var la = st.loaded_advisories || 0, ea = st.expected_advisories || 0;
+            var loaded = lr + la, want = er + ea;
             var pct = want ? Math.min(99, Math.round(loaded * 100 / want)) : 0;
             prog.appendChild(el("b", null,
                 st.state === "queued"
@@ -121,7 +126,8 @@
                 "The import continues on the server whether or not this page is open."));
             if (want) {
                 prog.appendChild(el("div", "rk-dim",
-                    loaded.toLocaleString() + " of " + want.toLocaleString() + " ranges loaded"));
+                    lr.toLocaleString() + " of " + er.toLocaleString() + " ranges, " +
+                    la.toLocaleString() + " of " + ea.toLocaleString() + " advisories loaded"));
             }
             card.appendChild(prog);
         } else if (st.state === "failed") {
@@ -309,6 +315,12 @@
         dir.appendChild(document.createTextNode(" on this search head, or upload one below."));
         staged.appendChild(dir);
 
+        // While an import (or a fetch) runs, the bundle it is loading must
+        // not offer an Import button: the list redraws every few seconds, and
+        // a fresh button on the very file being imported read as "nothing
+        // started". No other bundle may start one either, the worker runs one
+        // at a time.
+        var busy = ["queued", "importing", "cleaning", "fetching"].indexOf(st.state) >= 0;
         if (!state.incoming || !state.incoming.length) {
             staged.appendChild(el("p", "rk-dim", "Nothing staged."));
         } else {
@@ -332,8 +344,17 @@
                 row.appendChild(info);
 
                 var actions = el("div", "rk-staged-actions");
-                if (!item.error) {
+                var mine = busy && st.filename === item.filename;
+                if (mine) {
+                    actions.appendChild(el("span", "rk-dim",
+                        st.state === "cleaning" ? "Imported - removing the previous feed, see above"
+                            : "Importing - see progress above"));
+                } else if (!item.error) {
                     var imp = el("button", "rk-btn rk-btn-primary", "Import");
+                    if (busy) {
+                        imp.disabled = true;
+                        imp.title = "Another import is running; this one can start when it finishes.";
+                    }
                     imp.addEventListener("click", function () {
                         if (!window.confirm(
                             "Import " + item.filename + "?\n\n" +
@@ -349,6 +370,10 @@
                     actions.appendChild(imp);
                 }
                 var del = el("button", "rk-btn", "Delete");
+                if (mine) {
+                    del.disabled = true;
+                    del.title = "This bundle is being imported.";
+                }
                 del.addEventListener("click", function () {
                     if (!window.confirm("Delete the staged file " + item.filename + "?")) return;
                     request("POST", { action: "delete", filename: item.filename })

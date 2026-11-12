@@ -273,8 +273,13 @@ def _import_bundle(
     _delete_generation(kvstore, new_gen)
 
     expected = manifest.get("counts", {})
+    # message and finished_at are reset here because the status row is merged
+    # forward: without this the page's "waiting for the feed worker" stayed on
+    # the row for the whole import, and the previous run's finished_at sat
+    # beside this run's started_at.
     _write_status(kvstore, state="importing", generation=new_gen,
                   bundle_version=manifest.get("bundle_version", ""),
+                  message="loading ranges and advisories", finished_at=None,
                   started_at=int(time.time()),
                   expected_ranges=expected.get("ranges", 0),
                   expected_advisories=expected.get("advisories", 0),
@@ -422,7 +427,7 @@ def _import_bundle(
         _delete_generation(kvstore, gen, heartbeat=beat)
 
     _write_status(kvstore, state="done", generation=new_gen,
-                  bundle_version=state["bundle_version"],
+                  message="", bundle_version=state["bundle_version"],
                   finished_at=int(time.time()),
                   loaded_ranges=counts.get("ranges", 0),
                   loaded_advisories=counts.get("advisories", 0),
