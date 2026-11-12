@@ -83,6 +83,8 @@ reach = macros[macros.index('[riskability_cvss_reach]'):macros.index('[riskabili
 for letter in ('AV:[NA]', 'PR:N', 'UI:N'):
     check(letter in reach, 'riskability_cvss_reach does not read %s' % letter)
 check('mvmap(' in reach, 'the rank must be computed per vector, a CVE can carry several')
+check('(C|I|VC|VI|SC|SI):[HC]' in reach and 'rk_down' in reach,
+      'only a high confidentiality or integrity impact opens a jump (CVE-2024-0760 is availability only)')
 chain = view[view.index('<title>Possible jumps'):view.index('<title>Every path')]
 check('rk_exploit' not in chain and 'EPSS 50%' not in chain,
       'the chain must not grade an edge from KEV or EPSS')

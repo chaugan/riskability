@@ -26,7 +26,10 @@ job decides whether the flow was observed at all, and ``riskability_route_hop_cl
 reads the CVSS vectors of the open findings on the listener where the flow
 lands. This module is handed each edge with a rank already on it:
 
-    3  cve        reachable over the network with no foothold
+    3  cve        reachable over the network with no foothold, and a high
+                  impact on confidentiality or integrity (a flaw that can
+                  only crash the service, or leak or change a little, does
+                  not count)
     2  foothold   reachable over the network, but wants credentials or a click
     1  unrated    an open finding with no CVSS vector, so nothing can be said
     0  permitted  the flow was allowed and nothing usable over the network is

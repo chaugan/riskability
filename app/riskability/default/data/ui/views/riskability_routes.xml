@@ -257,7 +257,8 @@
           <b>A jump here is a permitted flow the firewall logged, and its colour is what an attacker would need to take it.</b>
           <span>Every jump is graded from the open findings on the software listening
           where it lands, using the CVSS vector: reachable over the network with no
-          privileges and no user action is <i>CVE-enabled</i>; reachable but wanting
+          privileges and no user action, with a high impact on confidentiality or
+          integrity, is <i>CVE-enabled</i>; reachable but wanting
           credentials or a click <i>needs a foothold</i>; and a flow onto a listener
           with nothing usable over the network is <i>permitted only</i>, which means
           the jump needs a zero-day or permissions the firewall knows nothing about.
@@ -369,7 +370,7 @@
 | dedup finding_key
 | lookup riskability_aiverdicts_lookup cve_id OUTPUT priority_tier, priority_score, recommended_action, rationale
 | `riskability_cvss_reach`
-| eval "Over the wire" = case(rk_rank == 3, "yes, no foothold needed", rk_rank == 2, "yes, but needs credentials or a click", rk_rank == 1, "no CVSS vector", 1=1, "no, local only")
+| eval "Over the wire" = case(rk_rank == 3, "yes, no foothold needed", rk_rank == 2, "yes, but needs credentials or a click", rk_rank == 1, "no CVSS vector", rk_down == 1, "only to take it down, not to get in", rk_down == 2, "only a minor leak or change, not a way in", 1=1, "no, local only")
 | eval Tier = coalesce(priority_tier, "P" . case(severity=="critical", 1, severity=="high", 2, severity=="medium", 3, 1=1, 4))
 | eval Score = coalesce(priority_score, ""), KEV = if(isnotnull(kev_added) AND kev_added != "", "yes", "")
 | eval Fix = coalesce(fixed_version, "")
@@ -409,8 +410,12 @@
           findings that were open on the software listening there, with the
           pipeline's tier where it has analysed them and a tier from severity
           where it has not. <i>Over the wire</i> reads the CVSS vector: the
-          attack vector, whether privileges are needed, and whether a user has
-          to act. A row that says "no foothold needed" is the one that makes a
+          attack vector, whether privileges are needed, whether a user has
+          to act, and whether it gains the attacker enough to get in: a high
+          impact on confidentiality or integrity. A flaw that can only crash the
+          listener reads "only to take it down", and one with a low impact only
+          reads "only a minor leak or change"; neither opens a jump.
+          A row that says "no foothold needed" is the one that makes a
           jump CVE-enabled; the rest sit behind the jump without opening it. A
           click on a jump lists the findings on the software listening on the
           ports that jump landed on; a host click lists only the findings behind
@@ -435,11 +440,11 @@
 | head 1000
 | eval rk_p = split(ports, ",")
 | mvexpand rk_p
-| lookup riskability_routelisteners_lookup hostname AS dst, port AS rk_p OUTPUT packages AS rk_sw, rk_open AS rk_popen, rk_hop_class AS rk_pclass, rk_wire_text AS rk_pwire, rk_foot_text AS rk_pfoot
+| lookup riskability_routelisteners_lookup hostname AS dst, port AS rk_p OUTPUT packages AS rk_sw, rk_open AS rk_popen, rk_hop_class AS rk_pclass, rk_wire_text AS rk_pwire, rk_foot_text AS rk_pfoot, rk_n_down AS rk_pdown
 | eval Kind = if(kind == "entry", "entry point to host", "host to host, hop " . hop)
 | eval Listening = coalesce(mvjoin(rk_sw, ", "), "nothing the inventory knows of")
 | eval Open = coalesce(rk_popen, 0)
-| eval "This port needs" = case(rk_pclass == "cve", "a CVE alone: " . rk_pwire, rk_pclass == "foothold", "a foothold first: " . rk_pfoot, rk_pclass == "unrated", "cannot say, no CVSS vector", 1=1, "a zero-day or permissions")
+| eval "This port needs" = case(rk_pclass == "cve", "a CVE alone: " . rk_pwire, rk_pclass == "foothold", "a foothold first: " . rk_pfoot, rk_pclass == "unrated", "cannot say, no CVSS vector", 1=1, "a zero-day or permissions" . if(tonumber(rk_pdown) &gt; 0, "; what is open here can only crash it or leak or change a little", ""))
 | eval "Jump needs" = case(rk_class == "cve", "a CVE alone", rk_class == "foothold", "a foothold first", rk_class == "unrated", "cannot say", 1=1, "a zero-day or permissions")
 | eval "Last seen" = if(isnotnull(edge_last_seen) AND edge_last_seen &gt; 0, strftime(tonumber(edge_last_seen), "%Y-%m-%d %H:%M"), "")
 | eval "On CVEs alone" = if(mvcount(dst_reach) &gt; 0, "yes", "no")
