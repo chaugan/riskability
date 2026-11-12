@@ -57,7 +57,10 @@ API=https://127.0.0.1:8089
 NS=$API/servicesNS/nobody/riskability
 KV=$NS/storage/collections/data
 AUTH="admin:$SPLUNK_PASSWORD"
-BACKUPS=${RK_BACKUP_DIR:-/var/tmp/riskability-refresh-backups}
+# Private to this user, not /var/tmp: the backup is the estate's host and
+# address list, and a predictable name in a shared directory can be read by
+# anyone on the box or pre-planted as a symlink that the write follows.
+BACKUPS=${RK_BACKUP_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/riskability/refresh-backups}
 
 # The real hosts' captured scans. The first three live in the forwarder's
 # staging dir, which is gitignored and which build_demo_instance.sh empties,
@@ -172,9 +175,14 @@ if [ "$KEEP_OLD" = 0 ]; then
 fi
 
 say "back up and clear the address claims (riskability_hostaddr)"
-mkdir -p "$BACKUPS"
+( umask 077; mkdir -p "$BACKUPS" ) || die "could not create $BACKUPS"
+[ -d "$BACKUPS" ] && [ ! -L "$BACKUPS" ] && [ -O "$BACKUPS" ] \
+  || die "$BACKUPS is not a directory this user owns (or is a symlink); not writing the backup there"
+chmod 700 "$BACKUPS"
 bk="$BACKUPS/hostaddr-$NOW.json"
-rest "$KV/riskability_hostaddr?limit=0&output_mode=json" > "$bk"
+# noclobber: refuse a file (or a planted symlink) already at that name.
+( umask 077; set -o noclobber; rest "$KV/riskability_hostaddr?limit=0&output_mode=json" > "$bk" ) \
+  || die "could not write the backup to $bk; not clearing riskability_hostaddr"
 python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); assert isinstance(d,list); print("  %d rows saved to %s" % (len(d), sys.argv[1]))' "$bk" \
   || die "could not back up riskability_hostaddr; not clearing it"
 code=$(rest -X DELETE "$KV/riskability_hostaddr" -o /dev/null -w '%{http_code}')
