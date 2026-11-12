@@ -19,7 +19,7 @@ Findings are seeded on the packages behind those ports so the last two
 columns of the chain have something to draw. Every record carries
 demo=true so the batch can be removed with one search.
 """
-import json, random, sys, time
+import json, random, sys, time, zlib
 
 random.seed(11)
 # host, tier address, listening ports -> (package, purl)
@@ -66,7 +66,10 @@ def main():
                     continue
                 seen.add(pkg)
                 for cve, sev, epss, kev, fix in FINDINGS.get(pkg, []):
-                    key = "demo%08x" % (hash((host, pkg, cve)) & 0xffffffff)
+                    # crc32, not hash(): str hashing is salted per process, so
+                    # hash() gave every run new keys and re-seeding duplicated
+                    # the demo findings instead of replacing them.
+                    key = "demo%08x" % zlib.crc32(("%s|%s|%s" % (host, pkg, cve)).encode())
                     row = {"_key": key, "finding_key": key, "hostname": host, "package": pkg,
                            "path": "/var/lib/dpkg/info/%s.list" % pkg, "cve_id": cve, "severity": sev,
                            "epss": epss, "kev_added": ("2024-07-01" if kev else ""), "fixed_version": fix,
