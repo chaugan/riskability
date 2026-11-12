@@ -16,11 +16,13 @@ services:
       SPLUNK_START_ARGS: --accept-license
       SPLUNK_PASSWORD: ${SPLUNK_PASSWORD}
       SPLUNK_HOME_OWNERSHIP_ENFORCEMENT: "false"
-      # Free, not the 60-day Enterprise trial. The trial expired on 22 Oct 2026
-      # and its zero quota logged a licence warning every day after, which
-      # blocked search. Free has no login: anyone who reaches :8000 is admin,
+      # The image's own default unless docker/.env says otherwise, so a clone
+      # gets the Enterprise trial with its login, or the licence it names.
+      # Set SPLUNK_LICENSE_URI=Free in docker/.env to run on Splunk Free once
+      # the trial has expired (its zero quota then logs a warning a day and
+      # blocks search). Free has no login: anyone who reaches :8000 is admin,
       # which is why every port below is bound to 127.0.0.1.
-      SPLUNK_LICENSE_URI: Free
+      SPLUNK_LICENSE_URI: ${SPLUNK_LICENSE_URI:-splunk.lic}
       # Trim the default app set we do not need, to save RAM and startup time.
       SPLUNK_DISABLE_DISTRIBUTED_SEARCH: "true"
     ports:
