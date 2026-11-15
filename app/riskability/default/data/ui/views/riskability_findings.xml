@@ -55,6 +55,29 @@
       <default>*</default>
       <initialValue>*</initialValue>
     </input>
+    <!-- When the app first REPORTED the finding, not when the host's
+         inventory was collected: a new feed can flag software that has not
+         changed in months, and that finding is new today. Rows older than the
+         field fall back to first_seen, which is never later than the truth.
+         Start here links to this with 7 days and accepted risks hidden, so the
+         list it lands on is the count it showed. Both values pass through |s
+         because a URL can carry anything, not only the choices below. -->
+    <input type="dropdown" token="found_days" searchWhenChanged="true">
+      <label>First reported</label>
+      <choice value="0">Any time</choice>
+      <choice value="1">In the last 24 hours</choice>
+      <choice value="7">In the last 7 days</choice>
+      <choice value="30">In the last 30 days</choice>
+      <default>0</default>
+      <initialValue>0</initialValue>
+    </input>
+    <input type="dropdown" token="accepted_tok" searchWhenChanged="true">
+      <label>Accepted risks</label>
+      <choice value="show">Shown, marked</choice>
+      <choice value="hide">Hidden</choice>
+      <default>show</default>
+      <initialValue>show</initialValue>
+    </input>
   </fieldset>
 
   <row>
@@ -78,17 +101,22 @@
         <search>
           <query>| `riskability_open_findings_all_for($host_tok|s$, $package_tok|s$, $cve_tok|s$, $confidence_tok|s$)`
 | search $scope_tok$
+| eval rk_found = tonumber(coalesce(first_found, first_seen))
+| eval rk_days = coalesce(tonumber($found_days|s$), 0)
+| where rk_days = 0 OR rk_found &gt;= now() - rk_days * 86400
+| where $accepted_tok|s$ != "hide" OR coalesce(accepted, "0") != "1"
+| eval first_reported = strftime(rk_found, "%Y-%m-%d %H:%M")
 | eval installed_version = last_version
 | eval epss_pct = if(isnotnull(epss), round(epss*100, 2), null())
 | eval kev = if(kev_added!="", "yes", "")
 | eval accepted_label = if(accepted=="1", "accepted", "")
 | eval path = replace(path, "\\\\\\\\", "\\\\")
 | search path=$path_tok|s$
-| table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, title, finding_key
+| table cve_id, package, installed_version, fixed_version, hostname, scope_id, path, ecosystem, match_authority, confidence, epss_pct, kev, accepted_label, first_reported, title, finding_key
 | rename cve_id AS "CVE", package AS "Package", installed_version AS "Installed",
          fixed_version AS "Fixed in", hostname AS "Host", scope_id AS "Root", path AS "Found at",
          ecosystem AS "Type", match_authority AS "Authority", confidence AS "Confidence",
-         epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted",
+         epss_pct AS "EPSS %", kev AS "KEV", accepted_label AS "Accepted", first_reported AS "First reported",
          title AS "Summary", finding_key AS "Key"
 | sort 50000 - "EPSS %"</query>
         </search>

@@ -443,6 +443,27 @@
       </single>
     </panel>
     <panel>
+      <title>New findings</title>
+      <!-- From the same hourly rollup as Open findings beside it, so the two
+           never disagree, and the link lands on Findings with the same three
+           conditions: open, not accepted, first reported in the last 7 days,
+           at every confidence. new_7d counts by first_found, the match run
+           that first reported a finding, not by when the inventory was
+           collected, or a new feed's findings on unchanged software would
+           never count as new. fillnull so an empty fleet reads 0, not N/A. -->
+      <single>
+        <search>
+          <query>| inputlookup riskability_openstate_host_lookup | stats sum(new_7d) AS n | fillnull value=0 n</query>
+        </search>
+        <option name="underLabel">first reported in the last 7 days; click to list them</option>
+        <option name="useColors">0</option>
+        <option name="drilldown">all</option>
+        <drilldown>
+          <link target="_self">/app/riskability/riskability_findings?form.found_days=7&amp;form.accepted_tok=hide&amp;form.confidence_tok=*&amp;form.host_tok=*&amp;form.package_tok=*&amp;form.path_tok=*&amp;form.cve_tok=*&amp;form.scope_tok=scope%3D*</link>
+        </drilldown>
+      </single>
+    </panel>
+    <panel>
       <title>Accepted risks</title>
       <single>
         <search>
