@@ -77,9 +77,11 @@ say()  { printf '\n[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die()  { printf '\nFAILED: %s\n' "$*" >&2; exit 1; }
 rest() { curl -sk -u "$AUTH" "$@"; }
 # A search, CSV out. $2 is earliest_time.
+# latest_time is url-encoded: sent raw, its "+" is a form-encoded space and
+# Splunk rejects " 1d" as not after earliest_time.
 q() {
   rest "$API/servicesNS/admin/riskability/search/jobs/export" -d output_mode=csv \
-    -d earliest_time="${2:-0}" -d latest_time=+1d --data-urlencode "search=$1"
+    -d earliest_time="${2:-0}" --data-urlencode latest_time=+1d --data-urlencode "search=$1"
 }
 # The single number a "| stats count" style search returns, or empty.
 # "|| true": head closing the pipe early must not trip set -e/pipefail.
